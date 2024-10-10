@@ -16,6 +16,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Install hunspell
+        run: sudo apt-get install hunspell
       - name: Run go tests
         run: |
           go test ./...

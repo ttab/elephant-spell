@@ -1,6 +1,10 @@
-FROM golang:1.23.2-alpine3.20 AS build
+FROM golang:1.23.2-bookworm AS build
 
 WORKDIR /usr/src
+
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y build-essential libhunspell-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 ADD . ./
 
@@ -8,12 +12,13 @@ ARG TARGETOS TARGETARCH
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -o /build/spell ./cmd/spell
 
-FROM alpine:3.20
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y libhunspell-1.7-0 && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /build/spell /usr/local/bin/spell
-
-RUN apk upgrade --no-cache \
-    && apk add tzdata
 
 # API server
 EXPOSE 1080

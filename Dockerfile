@@ -15,7 +15,7 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH \
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get upgrade -y && \
-    apt-get install -y libhunspell-1.7-0 && \
+    apt-get install -y libhunspell-1.7-0 ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /build/spell /usr/local/bin/spell

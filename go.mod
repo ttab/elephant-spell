@@ -7,7 +7,7 @@ require (
 	github.com/dghubble/trie v0.1.0
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/joho/godotenv v1.5.1
-	github.com/prometheus/client_golang v1.20.4
+	github.com/prometheus/client_golang v1.20.5
 	github.com/ttab/elephant-api v0.17.1
 	github.com/ttab/elephantine v0.15.0
 	github.com/ttab/mage v0.7.0

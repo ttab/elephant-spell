@@ -215,7 +215,7 @@ func (a *Application) Run(ctx context.Context) error {
 // DeleteEntry implements spell.Dictionaries.
 func (a *Application) DeleteEntry(
 	ctx context.Context, req *spell.DeleteEntryRequest,
-) (*spell.DeleteEntryResponse, error) {
+) (_ *spell.DeleteEntryResponse, outErr error) {
 	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
 	if err != nil {
 		return nil, err //nolint: wrapcheck
@@ -234,7 +234,7 @@ func (a *Application) DeleteEntry(
 		return nil, twirp.InternalErrorf("start transaction: %w", err)
 	}
 
-	defer pg.SafeRollback(ctx, a.logger, tx, "set entry")
+	defer pg.Rollback(tx, &outErr)
 
 	q := a.q.WithTx(tx)
 
@@ -383,7 +383,7 @@ func (a *Application) ListEntries(
 // SetEntry implements spell.Dictionaries.
 func (a *Application) SetEntry(
 	ctx context.Context, req *spell.SetEntryRequest,
-) (*spell.SetEntryResponse, error) {
+) (_ *spell.SetEntryResponse, outErr error) {
 	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
 	if err != nil {
 		return nil, err //nolint: wrapcheck
@@ -416,7 +416,7 @@ func (a *Application) SetEntry(
 		return nil, twirp.InternalErrorf("start transaction: %w", err)
 	}
 
-	defer pg.SafeRollback(ctx, a.logger, tx, "set entry")
+	defer pg.Rollback(tx, &outErr)
 
 	q := a.q.WithTx(tx)
 

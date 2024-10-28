@@ -31,7 +31,10 @@ POST twirp/elephant.spell.Check/Text
 
 {
   "language": "sv-se",
-  "text": "Detta är text som är rätstavad, nej, jag menar rätsstavad! Vitryssland är ett land i Europa."
+  "text": [
+    "Detta är text som är rätstavad, nej, jag menar rätsstavad!",
+    "Vitryssland är ett land i Europa."
+  ]
 }
 ```
 
@@ -41,39 +44,47 @@ POST twirp/elephant.spell.Check/Text
 {
   "misspelled": [
     {
-      "text": "Vitryssland",
-      "suggestions": [
+      "entries": [
         {
-          "text": "Belarus",
-          "description": "Vitryssland var det gamla namnet på Belarus"
+          "text": "rätstavad",
+          "suggestions": [
+            {
+              "text": "rättstavad"
+            }
+          ]
+        },
+        {
+          "text": "rätsstavad",
+          "suggestions": [
+            {
+              "text": "rättstavad"
+            },
+            {
+              "text": "lättstavad"
+            },
+            {
+              "text": "rättsstat"
+            },
+            {
+              "text": "vadarstav"
+            },
+            {
+              "text": "stadsrätt"
+            }
+          ]
         }
       ]
     },
     {
-      "text": "rätstavad",
-      "suggestions": [
+      "entries": [
         {
-          "text": "rättstavad"
-        }
-      ]
-    },
-    {
-      "text": "rätsstavad",
-      "suggestions": [
-        {
-          "text": "rättstavad"
-        },
-        {
-          "text": "lättstavad"
-        },
-        {
-          "text": "rättsstat"
-        },
-        {
-          "text": "vadarstav"
-        },
-        {
-          "text": "stadsrätt"
+          "text": "Vitryssland",
+          "suggestions": [
+            {
+              "text": "Belarus",
+              "description": "Vitryssland var det gamla namnet på Belarus"
+            }
+          ]
         }
       ]
     }

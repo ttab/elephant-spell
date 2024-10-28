@@ -7,12 +7,12 @@ require (
 	github.com/dghubble/trie v0.1.0
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/joho/godotenv v1.5.1
-	github.com/prometheus/client_golang v1.20.4
-	github.com/ttab/elephant-api v0.17.1
-	github.com/ttab/elephantine v0.15.0
+	github.com/prometheus/client_golang v1.20.5
+	github.com/ttab/elephant-api v0.17.2
+	github.com/ttab/elephantine v0.15.1
 	github.com/ttab/mage v0.7.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/urfave/cli/v2 v2.27.4
+	github.com/urfave/cli/v2 v2.27.5
 	golang.org/x/sync v0.8.0
 )
 
@@ -20,7 +20,7 @@ require (
 	github.com/MicahParks/jwkset v0.5.19 // indirect
 	github.com/MicahParks/keyfunc/v3 v3.3.5 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.32.2 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.27.43 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.28.0 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.41 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.21 // indirect
@@ -36,7 +36,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect

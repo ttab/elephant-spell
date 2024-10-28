@@ -215,7 +215,7 @@ func (a *Application) Run(ctx context.Context) error {
 // DeleteEntry implements spell.Dictionaries.
 func (a *Application) DeleteEntry(
 	ctx context.Context, req *spell.DeleteEntryRequest,
-) (*spell.DeleteEntryResponse, error) {
+) (_ *spell.DeleteEntryResponse, outErr error) {
 	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
 	if err != nil {
 		return nil, err //nolint: wrapcheck
@@ -234,7 +234,7 @@ func (a *Application) DeleteEntry(
 		return nil, twirp.InternalErrorf("start transaction: %w", err)
 	}
 
-	defer pg.SafeRollback(ctx, a.logger, tx, "set entry")
+	defer pg.Rollback(tx, &outErr)
 
 	q := a.q.WithTx(tx)
 
@@ -383,7 +383,7 @@ func (a *Application) ListEntries(
 // SetEntry implements spell.Dictionaries.
 func (a *Application) SetEntry(
 	ctx context.Context, req *spell.SetEntryRequest,
-) (*spell.SetEntryResponse, error) {
+) (_ *spell.SetEntryResponse, outErr error) {
 	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
 	if err != nil {
 		return nil, err //nolint: wrapcheck
@@ -416,7 +416,7 @@ func (a *Application) SetEntry(
 		return nil, twirp.InternalErrorf("start transaction: %w", err)
 	}
 
-	defer pg.SafeRollback(ctx, a.logger, tx, "set entry")
+	defer pg.Rollback(tx, &outErr)
 
 	q := a.q.WithTx(tx)
 
@@ -463,9 +463,23 @@ func (a *Application) Text(
 		return nil, twirp.InvalidArgument.Errorf("unsupported language %q", req.Language)
 	}
 
-	var res spell.TextResponse
+	res := spell.TextResponse{
+		Misspelled: make([]*spell.Misspelled, len(req.Text)),
+	}
 
-	textData := []byte(req.Text)
+	for i := range req.Text {
+		res.Misspelled[i] = a.spellcheck(req.Text[i], checker, langCode)
+	}
+
+	return &res, nil
+}
+
+func (a *Application) spellcheck(
+	text string, checker *hunspell.Checker, langCode string,
+) *spell.Misspelled {
+	var res spell.Misspelled
+
+	textData := []byte(text)
 
 	a.m.RLock()
 	trie := a.phrases[langCode]
@@ -480,7 +494,7 @@ func (a *Application) Text(
 
 		if p.Text != text {
 			// Make sure that we only act once on a custom entry.
-			oldNews := slices.ContainsFunc(res.Misspelled,
+			oldNews := slices.ContainsFunc(res.Entries,
 				func(m *spell.MisspelledEntry) bool {
 					return m.Text == text
 				})
@@ -488,7 +502,7 @@ func (a *Application) Text(
 				continue
 			}
 
-			res.Misspelled = append(res.Misspelled,
+			res.Entries = append(res.Entries,
 				&spell.MisspelledEntry{
 					Text: text,
 					Suggestions: []*spell.Suggestion{
@@ -535,13 +549,13 @@ func (a *Application) Text(
 			})
 		}
 
-		res.Misspelled = append(res.Misspelled, &spell.MisspelledEntry{
+		res.Entries = append(res.Entries, &spell.MisspelledEntry{
 			Text:        word,
 			Suggestions: suggestions,
 		})
 	}
 
-	return &res, nil
+	return &res
 }
 
 type EntryUpdateNotification struct {

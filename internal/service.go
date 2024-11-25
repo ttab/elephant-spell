@@ -51,7 +51,7 @@ type Parameters struct {
 	ProfileAddr    string
 	Logger         *slog.Logger
 	Database       *pgxpool.Pool
-	AuthInfoParser *elephantine.AuthInfoParser
+	AuthInfoParser elephantine.AuthInfoParser
 	Registerer     prometheus.Registerer
 }
 
@@ -155,18 +155,14 @@ func (a *Application) Run(ctx context.Context) error {
 
 	opts, err := elephantine.NewDefaultServiceOptions(
 		a.logger, a.p.AuthInfoParser, a.p.Registerer,
+		elephantine.ServiceAuthRequired,
 	)
 	if err != nil {
 		return fmt.Errorf("set up service options: %w", err)
 	}
 
-	checkServer := spell.NewCheckServer(a,
-		twirp.WithServerJSONSkipDefaults(true),
-		twirp.WithServerHooks(opts.Hooks))
-
-	dictServer := spell.NewDictionariesServer(a,
-		twirp.WithServerJSONSkipDefaults(true),
-		twirp.WithServerHooks(opts.Hooks))
+	checkServer := spell.NewCheckServer(a, opts.ServerOptions())
+	dictServer := spell.NewDictionariesServer(a, opts.ServerOptions())
 
 	server.RegisterAPI(checkServer, opts)
 	server.RegisterAPI(dictServer, opts)

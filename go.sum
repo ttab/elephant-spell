@@ -151,8 +151,8 @@ github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsT
 github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 github.com/ttab/elephant-api v0.17.3 h1:sP76XXIxf3dIsAL+RR3dNQw+cBWNbhOXXm6APQYToeI=
 github.com/ttab/elephant-api v0.17.3/go.mod h1:b0b6Y6LjV4WOyNK9oCVOITnJgQKWOCQKzYMKrkl+Zzk=
-github.com/ttab/elephantine v0.16.0 h1:lewdYLbB4Bt978WjRHSHU2kxssaM68IMCCDpmNkIRbc=
-github.com/ttab/elephantine v0.16.0/go.mod h1:PNpQa4bpa5JLmKd9SEKlaXslTocCYVo5oA9dV00jv3I=
+github.com/ttab/elephantine v0.16.1 h1:TZHFetBqxAzkYIR0B7WLQ8D7eb2sxbKRpS6OsF2qM1Y=
+github.com/ttab/elephantine v0.16.1/go.mod h1:PNpQa4bpa5JLmKd9SEKlaXslTocCYVo5oA9dV00jv3I=
 github.com/ttab/mage v0.7.1 h1:40etoCHYQ4MHofkuQ1A0aIXnH/tDI2PvkeGlPtf2/FA=
 github.com/ttab/mage v0.7.1/go.mod h1:TrsadmQ9OK/Yg0FbX+ntShyp1X3tGe8zxdWNgDOmBmw=
 github.com/twitchtv/twirp v8.1.3+incompatible h1:+F4TdErPgSUbMZMwp13Q/KgDVuI7HJXP61mNV3/7iuU=

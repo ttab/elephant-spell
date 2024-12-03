@@ -208,6 +208,21 @@ func (a *Application) Run(ctx context.Context) error {
 	return grp.Wait()
 }
 
+// SupportedLanguages implements spell.Dictionaries.
+func (a *Application) SupportedLanguages(
+	ctx context.Context, req *spell.SupportedLanguagesRequest,
+) (*spell.SupportedLanguagesResponse, error) {
+	var res spell.SupportedLanguagesResponse
+
+	for language := range a.checkers {
+		res.Languages = append(res.Languages, &spell.Language{
+			Code: language,
+		})
+	}
+
+	return &res, nil
+}
+
 // DeleteEntry implements spell.Dictionaries.
 func (a *Application) DeleteEntry(
 	ctx context.Context, req *spell.DeleteEntryRequest,

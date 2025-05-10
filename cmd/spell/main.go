@@ -58,6 +58,11 @@ func main() {
 				Name:    "db-parameter",
 				EnvVars: []string{"CONN_STRING_PARAMETER"},
 			},
+			&cli.StringSliceFlag{
+				Name:    "cors-host",
+				Usage:   "CORS hosts to allow, supports wildcards",
+				EnvVars: []string{"CORS_HOSTS"},
+			},
 		},
 	}
 
@@ -84,6 +89,7 @@ func runSpell(c *cli.Context) error {
 		profileAddr     = c.String("profile-addr")
 		paramSourceName = c.String("parameter-source")
 		logLevel        = c.String("log-level")
+		corsHosts       = c.StringSlice("cors-host")
 	)
 
 	logger := elephantine.SetUpLogger(logLevel, os.Stdout)
@@ -138,6 +144,7 @@ func runSpell(c *cli.Context) error {
 		Database:       dbpool,
 		AuthInfoParser: auth.AuthParser,
 		Registerer:     prometheus.DefaultRegisterer,
+		CORSHosts:      corsHosts,
 	})
 	if err != nil {
 		return fmt.Errorf("create application: %w", err)

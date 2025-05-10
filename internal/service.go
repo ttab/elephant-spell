@@ -53,6 +53,7 @@ type Parameters struct {
 	Database       *pgxpool.Pool
 	AuthInfoParser elephantine.AuthInfoParser
 	Registerer     prometheus.Registerer
+	CORSHosts      []string
 }
 
 func NewApplication(
@@ -151,7 +152,10 @@ type Application struct {
 
 func (a *Application) Run(ctx context.Context) error {
 	grace := elephantine.NewGracefulShutdown(a.logger, 10*time.Second)
-	server := elephantine.NewAPIServer(a.logger, a.p.Addr, a.p.ProfileAddr)
+	server := elephantine.NewAPIServer(
+		a.logger, a.p.Addr, a.p.ProfileAddr,
+		elephantine.APIServerCORSHosts(a.p.CORSHosts...),
+	)
 
 	opts, err := elephantine.NewDefaultServiceOptions(
 		a.logger, a.p.AuthInfoParser, a.p.Registerer,

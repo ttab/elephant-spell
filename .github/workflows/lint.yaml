@@ -19,7 +19,7 @@ jobs:
       - name: Install hunspell
         run: sudo apt-get install -y libhunspell-dev
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
-          version: v1.62
+          version: v2.1
           args: --timeout=4m

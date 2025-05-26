@@ -9,7 +9,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/ttab/elephant-api v0.17.22
-	github.com/ttab/elephantine v0.18.1
+	github.com/ttab/elephantine v0.18.3
 	github.com/ttab/mage v0.8.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v2 v2.27.6

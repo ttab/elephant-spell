@@ -8,7 +8,7 @@ require (
 	github.com/jackc/pgx/v5 v5.7.5
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.22.0
-	github.com/ttab/elephant-api v0.17.23
+	github.com/ttab/elephant-api v0.17.24
 	github.com/ttab/elephantine v0.19.2
 	github.com/ttab/mage v0.8.0
 	github.com/twitchtv/twirp v8.1.3+incompatible

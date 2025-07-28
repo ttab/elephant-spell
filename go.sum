@@ -137,8 +137,8 @@ github.com/ttab/elephant-api v0.17.23 h1:+xHcYYH+W/D8bP+cW0e+ZkqLeXsB/x8lv2k5B59
 github.com/ttab/elephant-api v0.17.23/go.mod h1:WGR/3SoEp5Isa/O2L0orN+nWkAxC3h6ylZtykqzVVjg=
 github.com/ttab/elephantine v0.19.2 h1:B6gm02fgcvazrUywTldDQRXjNG4Cintaw7cFBGzQw0I=
 github.com/ttab/elephantine v0.19.2/go.mod h1:BT9S6KPKlJqJsSdK9c2K9vxwM4dL91X1OY5K1qPbJbk=
-github.com/ttab/mage v0.8.0 h1:2F0GQQyq0rXpFyeBdmLaK1sXylhNTU4GnFgWPp8H97A=
-github.com/ttab/mage v0.8.0/go.mod h1:Bcw/5hjVOHou89Gy182jVVUmXOdeRf1hkPXTfJsO0/E=
+github.com/ttab/mage v0.8.2 h1:Se4TjeqqXfCZyFTMSNxUybqF+Gn4IPzP9G7fVNK1R2w=
+github.com/ttab/mage v0.8.2/go.mod h1:nemmtRhMVzb/DRo+stFa6BaQwLatMFmmZ9d8XmGgd6U=
 github.com/twitchtv/twirp v8.1.3+incompatible h1:+F4TdErPgSUbMZMwp13Q/KgDVuI7HJXP61mNV3/7iuU=
 github.com/twitchtv/twirp v8.1.3+incompatible/go.mod h1:RRJoFSAmTEh2weEqWtpPE3vFK5YBhA6bqp2l1kfCC5A=
 github.com/urfave/cli/v2 v2.27.7 h1:bH59vdhbjLv3LAvIu6gd0usJHgoTTPhCFib8qqOwXYU=

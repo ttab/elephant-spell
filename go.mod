@@ -10,7 +10,7 @@ require (
 	github.com/prometheus/client_golang v1.22.0
 	github.com/ttab/elephant-api v0.17.23
 	github.com/ttab/elephantine v0.19.2
-	github.com/ttab/mage v0.8.0
+	github.com/ttab/mage v0.8.3
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v2 v2.27.7
 	golang.org/x/sync v0.15.0

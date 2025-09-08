@@ -13,7 +13,7 @@ require (
 	github.com/ttab/mage v0.8.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v2 v2.27.7
-	golang.org/x/sync v0.15.0
+	golang.org/x/sync v0.17.0
 )
 
 require (

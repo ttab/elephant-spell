@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/blevesearch/segment v0.9.1
 	github.com/dghubble/trie v0.1.0
-	github.com/jackc/pgx/v5 v5.7.5
+	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.22.0
 	github.com/ttab/elephant-api v0.17.23

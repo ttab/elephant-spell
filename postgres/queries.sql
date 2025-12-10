@@ -1,16 +1,18 @@
 -- name: SetEntry :exec
 INSERT INTO entry(
-       language, entry, status, description, common_mistakes
+       language, entry, status, description, common_mistakes, level, data
 ) VALUES (
-       @language, @entry, @status, @description, @common_mistakes
+       @language, @entry, @status, @description, @common_mistakes, @level, @data
 ) ON CONFLICT(language, entry) DO
   UPDATE SET
-       status = @status,
-       description = @description,
-       common_mistakes = @common_mistakes;
+       status = excluded.status,
+       description = excluded.description,
+       common_mistakes = excluded.common_mistakes,
+       level = excluded.level,
+       data = excluded.data;
 
 -- name: GetEntry :one
-SELECT language, entry, status, description, common_mistakes
+SELECT language, entry, status, description, common_mistakes, level, data
 FROM entry
 WHERE language = @language AND entry = @entry;
 
@@ -19,7 +21,7 @@ DELETE FROM entry
 WHERE language = @language AND entry = @entry;
 
 -- name: ListEntries :many
-SELECT language, entry, status, description, common_mistakes
+SELECT language, entry, status, description, common_mistakes, level, data
 FROM entry
 WHERE
         (sqlc.narg('language')::text IS NULL OR language = @language)

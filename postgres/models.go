@@ -4,7 +4,52 @@
 
 package postgres
 
-import ()
+import (
+	"database/sql/driver"
+	"fmt"
+)
+
+type EntryLevel string
+
+const (
+	EntryLevelSuggestion EntryLevel = "suggestion"
+	EntryLevelError      EntryLevel = "error"
+)
+
+func (e *EntryLevel) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EntryLevel(s)
+	case string:
+		*e = EntryLevel(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EntryLevel: %T", src)
+	}
+	return nil
+}
+
+type NullEntryLevel struct {
+	EntryLevel EntryLevel
+	Valid      bool // Valid is true if EntryLevel is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEntryLevel) Scan(value interface{}) error {
+	if value == nil {
+		ns.EntryLevel, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EntryLevel.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEntryLevel) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EntryLevel), nil
+}
 
 type Entry struct {
 	Language       string
@@ -12,6 +57,8 @@ type Entry struct {
 	Status         string
 	Description    string
 	CommonMistakes []string
+	Level          EntryLevel
+	Data           *EntryData
 }
 
 type SchemaVersion struct {

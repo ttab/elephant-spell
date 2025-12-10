@@ -39,4 +39,9 @@ func TestChecker(t *testing.T) {
 
 	fOk = c.Spell(foreignWord)
 	test.Equal(t, true, fOk, "%q should be accepted after add", foreignWord)
+
+	suggestions3 := c.Suggest("al-Fatih")
+	test.EqualDiff(t, []string{
+		"al-Fatiha",
+	}, suggestions3, "make suggestions for 'al-Fatih'")
 }

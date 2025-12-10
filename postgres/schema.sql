@@ -2,12 +2,13 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 16.3
--- Dumped by pg_dump version 16.1 (Debian 16.1-1.pgdg120+1)
+-- Dumped from database version 17.4 (Debian 17.4-1.pgdg120+2)
+-- Dumped by pg_dump version 17.4 (Debian 17.4-1.pgdg120+2)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -15,6 +16,16 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: entry_level; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public.entry_level AS ENUM (
+    'suggestion',
+    'error'
+);
+
 
 SET default_tablespace = '';
 
@@ -29,7 +40,9 @@ CREATE TABLE public.entry (
     entry text NOT NULL,
     status text NOT NULL,
     description text NOT NULL,
-    common_mistakes text[]
+    common_mistakes text[],
+    level public.entry_level DEFAULT 'error'::public.entry_level NOT NULL,
+    data jsonb
 );
 
 

@@ -48,8 +48,18 @@ func TestSpellcheck(t *testing.T) {
 	result, err := check.Check(
 		t.Context(),
 		"Mohammar Khadaffi kan inte bestämma sig för om han ska fly eller rymma. Kanske blir det något mitt emmellan.",
-		true)
+		false)
+	test.Must(t, err, "spellcheck")
 
 	test.TestMessageAgainstGolden(t, regenerate, result,
 		filepath.Join("..", "testdata", t.Name(), "result.json"))
+
+	resultSugg, err := check.Check(
+		t.Context(),
+		"Mohammar Khadaffi kan inte bestämma sig för om han ska fly eller rymma. Kanske blir det något mitt emmellan.",
+		true)
+	test.Must(t, err, "spellcheck")
+
+	test.TestMessageAgainstGolden(t, regenerate, resultSugg,
+		filepath.Join("..", "testdata", t.Name(), "result-suggestions.json"))
 }

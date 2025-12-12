@@ -12,3 +12,8 @@ sql:
       overrides:
         - db_type: "uuid"
           go_type: "github.com/google/uuid.UUID"
+        - column: "entry.data"
+          go_type:
+            pointer: true
+            type: "EntryData"
+

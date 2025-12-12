@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "text": "Mohammar Khadaffi",
+      "level": "LEVEL_ERROR"
+    },
+    {
+      "text": "fly",
+      "level": "LEVEL_SUGGESTION"
+    },
+    {
+      "text": "rymma",
+      "level": "LEVEL_SUGGESTION"
+    },
+    {
+      "text": "emmellan",
+      "level": "LEVEL_ERROR"
+    }
+  ]
+}

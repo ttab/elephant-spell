@@ -1,0 +1,42 @@
+{
+  "entries": [
+    {
+      "text": "Mohammar Khadaffi",
+      "suggestions": [
+        {
+          "text": "Muammar Gaddafi"
+        }
+      ],
+      "level": "LEVEL_ERROR"
+    },
+    {
+      "text": "fly",
+      "suggestions": [
+        {
+          "text": "rymma",
+          "description": "Vi flyr nödsituationer, rymmer från plats"
+        }
+      ],
+      "level": "LEVEL_SUGGESTION"
+    },
+    {
+      "text": "rymma",
+      "suggestions": [
+        {
+          "text": "fly",
+          "description": "Vi flyr nödsituationer, rymmer från plats"
+        }
+      ],
+      "level": "LEVEL_SUGGESTION"
+    },
+    {
+      "text": "emmellan",
+      "suggestions": [
+        {
+          "text": "emellan"
+        }
+      ],
+      "level": "LEVEL_ERROR"
+    }
+  ]
+}

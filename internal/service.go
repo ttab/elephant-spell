@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,13 +9,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/blevesearch/segment"
-	"github.com/dghubble/trie"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -105,10 +100,9 @@ func NewApplication(
 		}
 	}
 
-	checkers := make(map[string]*hunspell.Checker, len(supportedLanguages))
-	phrases := make(map[string]*trie.RuneTrie)
+	languages := make(map[string]*Spellcheck, len(supportedLanguages))
 
-	// Instantiate one hunspell checker per language.
+	// Instantiate one spellchecker per language.
 	for _, lang := range supportedLanguages {
 		checker, err := hunspell.NewChecker(
 			filepath.Join(tmpDir, lang+".aff"),
@@ -122,17 +116,20 @@ func NewApplication(
 		// Convert from sv_SE to sv-se.
 		code := strings.ToLower(strings.Replace(lang, "_", "-", 1))
 
-		checkers[code] = checker
-		phrases[code] = trie.NewRuneTrie()
+		spell, err := NewSpellcheck(code, checker)
+		if err != nil {
+			return nil, fmt.Errorf("create spellchecker: %w", err)
+		}
+
+		languages[code] = spell
 	}
 
 	app := Application{
-		p:        p,
-		logger:   p.Logger,
-		db:       p.Database,
-		q:        postgres.New(p.Database),
-		checkers: checkers,
-		phrases:  phrases,
+		p:         p,
+		logger:    p.Logger,
+		db:        p.Database,
+		q:         postgres.New(p.Database),
+		languages: languages,
 	}
 
 	return &app, nil
@@ -143,11 +140,9 @@ type Application struct {
 	logger       *slog.Logger
 	db           *pgxpool.Pool
 	q            *postgres.Queries
-	checkers     map[string]*hunspell.Checker
 	entryUpdates chan EntryUpdateNotification
 
-	m       sync.RWMutex
-	phrases map[string]*trie.RuneTrie
+	languages map[string]*Spellcheck
 }
 
 func (a *Application) Run(ctx context.Context) error {
@@ -218,7 +213,7 @@ func (a *Application) SupportedLanguages(
 ) (*spell.SupportedLanguagesResponse, error) {
 	var res spell.SupportedLanguagesResponse
 
-	for language := range a.checkers {
+	for language := range a.languages {
 		res.Languages = append(res.Languages, &spell.Language{
 			Code: language,
 		})
@@ -303,6 +298,17 @@ func (a *Application) GetEntry(
 		return nil, twirp.InternalErrorf("read from database: %w", err)
 	}
 
+	level, err := entryLevelToRPC(row.Level)
+	if err != nil {
+		return nil, twirp.InternalErrorf("get entry level: %v", err)
+	}
+
+	var forms map[string]string
+
+	if row.Data != nil {
+		forms = row.Data.Forms
+	}
+
 	res := spell.GetEntryResponse{
 		Entry: &spell.CustomEntry{
 			Language:       row.Language,
@@ -310,6 +316,8 @@ func (a *Application) GetEntry(
 			Status:         row.Status,
 			Description:    row.Description,
 			CommonMistakes: row.CommonMistakes,
+			Level:          level,
+			Forms:          forms,
 		},
 	}
 
@@ -383,12 +391,25 @@ func (a *Application) ListEntries(
 	}
 
 	for i, row := range rows {
+		level, err := entryLevelToRPC(row.Level)
+		if err != nil {
+			return nil, twirp.InternalErrorf("get entry level: %v", err)
+		}
+
+		var forms map[string]string
+
+		if row.Data != nil {
+			forms = row.Data.Forms
+		}
+
 		res.Entries[i] = &spell.CustomEntry{
 			Language:       row.Language,
 			Text:           row.Entry,
 			Status:         row.Status,
 			Description:    row.Description,
 			CommonMistakes: row.CommonMistakes,
+			Level:          level,
+			Forms:          forms,
 		}
 	}
 
@@ -412,7 +433,7 @@ func (a *Application) SetEntry(
 		return nil, twirp.RequiredArgumentError("entry.language")
 	}
 
-	_, ok := a.checkers[req.Entry.Language]
+	_, ok := a.languages[req.Entry.Language]
 	if !ok {
 		return nil, twirp.InvalidArgumentError("entry.language",
 			fmt.Sprintf("unknown language %q", req.Entry.Language))
@@ -424,6 +445,11 @@ func (a *Application) SetEntry(
 
 	if req.Entry.Status == "" {
 		return nil, twirp.RequiredArgumentError("entry.status")
+	}
+
+	level, err := entryLevelFromRPC(req.Entry.Level)
+	if err != nil {
+		return nil, err
 	}
 
 	tx, err := a.db.Begin(ctx)
@@ -441,6 +467,10 @@ func (a *Application) SetEntry(
 		Status:         req.Entry.Status,
 		Description:    req.Entry.Description,
 		CommonMistakes: req.Entry.CommonMistakes,
+		Level:          level,
+		Data: &postgres.EntryData{
+			Forms: req.Entry.Forms,
+		},
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorf("write to database: %w", err)
@@ -462,6 +492,34 @@ func (a *Application) SetEntry(
 	return &spell.SetEntryResponse{}, nil
 }
 
+func entryLevelFromRPC(level spell.CorrectionLevel) (postgres.EntryLevel, error) {
+	l := postgres.EntryLevelError
+
+	switch level {
+	case spell.CorrectionLevel_LEVEL_ERROR:
+	case spell.CorrectionLevel_LEVEL_SUGGESTION:
+		l = postgres.EntryLevelSuggestion
+	case spell.CorrectionLevel_LEVEL_UNSPECIFIED:
+	default:
+		return "", twirp.InvalidArgumentError("level",
+			"unhandled level")
+	}
+
+	return l, nil
+}
+
+func entryLevelToRPC(level postgres.EntryLevel) (spell.CorrectionLevel, error) {
+	switch level {
+	case postgres.EntryLevelError:
+		return spell.CorrectionLevel_LEVEL_ERROR, nil
+	case postgres.EntryLevelSuggestion:
+		return spell.CorrectionLevel_LEVEL_SUGGESTION, nil
+	default:
+		return spell.CorrectionLevel_LEVEL_UNSPECIFIED,
+			fmt.Errorf("unexpected postgres.EntryLevel: %#v", level)
+	}
+}
+
 // Text implements spell.Check.
 func (a *Application) Text(
 	ctx context.Context, req *spell.TextRequest,
@@ -473,9 +531,10 @@ func (a *Application) Text(
 
 	langCode := strings.ToLower(req.Language)
 
-	checker, ok := a.checkers[langCode]
+	lang, ok := a.languages[langCode]
 	if !ok {
-		return nil, twirp.InvalidArgument.Errorf("unsupported language %q", req.Language)
+		return nil, twirp.InvalidArgument.Errorf(
+			"unsupported language %q", req.Language)
 	}
 
 	res := spell.TextResponse{
@@ -483,94 +542,49 @@ func (a *Application) Text(
 	}
 
 	for i := range req.Text {
-		res.Misspelled[i] = a.spellcheck(req.Text[i], checker, langCode)
+		m, err := lang.Check(ctx, req.Text[i], req.Suggestions)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"spellcheck text %d: %v", i+1, err)
+		}
+
+		res.Misspelled[i] = m
 	}
 
 	return &res, nil
 }
 
-func (a *Application) spellcheck(
-	text string, checker *hunspell.Checker, langCode string,
-) *spell.Misspelled {
-	var res spell.Misspelled
-
-	textData := []byte(text)
-
-	a.m.RLock()
-	trie := a.phrases[langCode]
-
-	for text := range PhraseIterator(textData, 3) {
-		v := trie.Get(text)
-
-		p, ok := v.(*phrase)
-		if !ok {
-			continue
-		}
-
-		if p.Text != text {
-			// Make sure that we only act once on a custom entry.
-			oldNews := slices.ContainsFunc(res.Entries,
-				func(m *spell.MisspelledEntry) bool {
-					return m.Text == text
-				})
-			if oldNews {
-				continue
-			}
-
-			res.Entries = append(res.Entries,
-				&spell.MisspelledEntry{
-					Text: text,
-					Suggestions: []*spell.Suggestion{
-						{
-							Text:        p.Text,
-							Description: p.Description,
-						},
-					},
-				})
-		}
-
-		textData = bytes.ReplaceAll(textData, []byte(text), nil)
+// Suggestions implements spell.Check.
+func (a *Application) Suggestions(
+	ctx context.Context,
+	req *spell.SuggestionsRequest,
+) (*spell.SuggestionsResponse, error) {
+	_, ok := elephantine.GetAuthInfo(ctx)
+	if !ok {
+		return nil, twirp.Unauthenticated.Error("unauthenticated")
 	}
 
-	a.m.RUnlock()
-
-	seg := segment.NewSegmenter(bytes.NewReader(textData))
-
-	seen := make(map[string]bool)
-
-	for seg.Segment() {
-		if seg.Type() != segment.Letter {
-			continue
-		}
-
-		word := seg.Text()
-
-		if seen[word] {
-			continue
-		}
-
-		seen[word] = true
-
-		correct := checker.Spell(word)
-		if correct {
-			continue
-		}
-
-		var suggestions []*spell.Suggestion
-
-		for _, sugg := range checker.Suggest(word) {
-			suggestions = append(suggestions, &spell.Suggestion{
-				Text: sugg,
-			})
-		}
-
-		res.Entries = append(res.Entries, &spell.MisspelledEntry{
-			Text:        word,
-			Suggestions: suggestions,
-		})
+	if req.Text == "" {
+		return nil, twirp.RequiredArgumentError("text")
 	}
 
-	return &res
+	langCode := strings.ToLower(req.Language)
+
+	lang, ok := a.languages[langCode]
+	if !ok {
+		return nil, twirp.InvalidArgument.Errorf(
+			"unsupported language %q", req.Language)
+	}
+
+	sugg, err := lang.Suggestions(req.Text)
+	if err != nil {
+		return nil, twirp.InternalErrorf(
+			"generate suggestions: %v", err)
+	}
+
+	return &spell.SuggestionsResponse{
+		Suggestions: sugg,
+	}, nil
 }
 
 type EntryUpdateNotification struct {

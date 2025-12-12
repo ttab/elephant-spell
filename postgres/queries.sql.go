@@ -27,7 +27,7 @@ func (q *Queries) DeleteEntry(ctx context.Context, arg DeleteEntryParams) error 
 }
 
 const getEntry = `-- name: GetEntry :one
-SELECT language, entry, status, description, common_mistakes
+SELECT language, entry, status, description, common_mistakes, level, data
 FROM entry
 WHERE language = $1 AND entry = $2
 `
@@ -46,6 +46,8 @@ func (q *Queries) GetEntry(ctx context.Context, arg GetEntryParams) (Entry, erro
 		&i.Status,
 		&i.Description,
 		&i.CommonMistakes,
+		&i.Level,
+		&i.Data,
 	)
 	return i, err
 }
@@ -82,7 +84,7 @@ func (q *Queries) ListDictionaries(ctx context.Context) ([]ListDictionariesRow, 
 }
 
 const listEntries = `-- name: ListEntries :many
-SELECT language, entry, status, description, common_mistakes
+SELECT language, entry, status, description, common_mistakes, level, data
 FROM entry
 WHERE
         ($1::text IS NULL OR language = $1)
@@ -120,6 +122,8 @@ func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Ent
 			&i.Status,
 			&i.Description,
 			&i.CommonMistakes,
+			&i.Level,
+			&i.Data,
 		); err != nil {
 			return nil, err
 		}
@@ -147,14 +151,16 @@ func (q *Queries) Notify(ctx context.Context, arg NotifyParams) error {
 
 const setEntry = `-- name: SetEntry :exec
 INSERT INTO entry(
-       language, entry, status, description, common_mistakes
+       language, entry, status, description, common_mistakes, level, data
 ) VALUES (
-       $1, $2, $3, $4, $5
+       $1, $2, $3, $4, $5, $6, $7
 ) ON CONFLICT(language, entry) DO
   UPDATE SET
-       status = $3,
-       description = $4,
-       common_mistakes = $5
+       status = excluded.status,
+       description = excluded.description,
+       common_mistakes = excluded.common_mistakes,
+       level = excluded.level,
+       data = excluded.data
 `
 
 type SetEntryParams struct {
@@ -163,6 +169,8 @@ type SetEntryParams struct {
 	Status         string
 	Description    string
 	CommonMistakes []string
+	Level          EntryLevel
+	Data           *EntryData
 }
 
 func (q *Queries) SetEntry(ctx context.Context, arg SetEntryParams) error {
@@ -172,6 +180,8 @@ func (q *Queries) SetEntry(ctx context.Context, arg SetEntryParams) error {
 		arg.Status,
 		arg.Description,
 		arg.CommonMistakes,
+		arg.Level,
+		arg.Data,
 	)
 	return err
 }

@@ -5,19 +5,19 @@ go 1.25.5
 require (
 	github.com/blevesearch/segment v0.9.1
 	github.com/dghubble/trie v0.1.0
-	github.com/jackc/pgx/v5 v5.7.6
+	github.com/jackc/pgx/v5 v5.8.0
 	github.com/jackc/puddle/v2 v2.2.2
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/ttab/clitools v0.5.2
-	github.com/ttab/elephant-api v0.19.4-0.20251210124429-43c394b43403
-	github.com/ttab/elephantine v0.23.1
+	github.com/ttab/elephant-api v0.19.4
+	github.com/ttab/elephantine v0.23.4-0.20260113074833-8453789d8c68
 	github.com/ttab/mage v0.8.4
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v3 v3.6.1
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sync v0.19.0
-	golang.org/x/text v0.32.0
+	golang.org/x/text v0.33.0
 )
 
 require (

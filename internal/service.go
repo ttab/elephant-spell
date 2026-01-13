@@ -44,6 +44,9 @@ var (
 type Parameters struct {
 	Addr           string
 	ProfileAddr    string
+	TLSAddr        string
+	CertFile       string
+	KeyFile        string
 	Logger         *slog.Logger
 	Database       *pgxpool.Pool
 	AuthInfoParser elephantine.AuthInfoParser
@@ -150,6 +153,7 @@ func (a *Application) Run(ctx context.Context) error {
 	server := elephantine.NewAPIServer(
 		a.logger, a.p.Addr, a.p.ProfileAddr,
 		elephantine.APIServerCORSHosts(a.p.CORSHosts...),
+		elephantine.APIServerTLS(a.p.TLSAddr, a.p.CertFile, a.p.KeyFile),
 	)
 
 	opts, err := elephantine.NewDefaultServiceOptions(

@@ -11,7 +11,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/ttab/clitools v0.5.2
 	github.com/ttab/elephant-api v0.19.4
-	github.com/ttab/elephantine v0.23.4-0.20260113074833-8453789d8c68
+	github.com/ttab/elephantine v0.23.4-0.20260113084303-1206e69c5f83
 	github.com/ttab/mage v0.8.4
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v3 v3.6.1

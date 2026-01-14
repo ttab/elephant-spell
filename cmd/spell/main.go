@@ -41,6 +41,19 @@ func main() {
 				Value:   ":1081",
 			},
 			&cli.StringFlag{
+				Name:    "tls-addr",
+				Value:   ":1443",
+				Sources: cli.EnvVars("TLS_ADDR", "TLS_LISTEN_ADDR"),
+			},
+			&cli.StringFlag{
+				Name:    "cert-file",
+				Sources: cli.EnvVars("TLS_CERT"),
+			},
+			&cli.StringFlag{
+				Name:    "key-file",
+				Sources: cli.EnvVars("TLS_KEY"),
+			},
+			&cli.StringFlag{
 				Name:    "log-level",
 				Sources: cli.EnvVars("LOG_LEVEL"),
 				Value:   "debug",
@@ -88,6 +101,9 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	var (
 		addr        = c.String("addr")
 		profileAddr = c.String("profile-addr")
+		tlsAddr     = c.String("tls-addr")
+		certFile    = c.String("cert-file")
+		keyFile     = c.String("key-file")
 		logLevel    = c.String("log-level")
 		corsHosts   = c.StringSlice("cors-host")
 		connString  = c.String("db")
@@ -130,6 +146,9 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	app, err := internal.NewApplication(ctx, internal.Parameters{
 		Addr:           addr,
 		ProfileAddr:    profileAddr,
+		TLSAddr:        tlsAddr,
+		CertFile:       certFile,
+		KeyFile:        keyFile,
 		Logger:         logger,
 		Database:       dbpool,
 		AuthInfoParser: auth.AuthParser,

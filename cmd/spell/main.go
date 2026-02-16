@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -72,10 +73,26 @@ func main() {
 				Name:    "db-parameter",
 				Sources: cli.EnvVars("CONN_STRING_PARAMETER"),
 			},
+			&cli.StringFlag{
+				Name:    "db-bouncer",
+				Sources: cli.EnvVars("BOUNCER_CONN_STRING"),
+			},
 			&cli.StringSliceFlag{
 				Name:    "cors-host",
 				Usage:   "CORS hosts to allow, supports wildcards",
 				Sources: cli.EnvVars("CORS_HOSTS"),
+			},
+			&cli.DurationFlag{
+				Name:    "ping-interval",
+				Usage:   "How often to send listener ping notifications",
+				Sources: cli.EnvVars("PING_INTERVAL"),
+				Value:   5 * time.Minute,
+			},
+			&cli.DurationFlag{
+				Name:    "ping-grace",
+				Usage:   "How long to wait for a ping before reconnecting the listener",
+				Sources: cli.EnvVars("PING_GRACE"),
+				Value:   7 * time.Minute,
 			},
 		},
 	}
@@ -99,14 +116,17 @@ func main() {
 
 func runSpell(ctx context.Context, c *cli.Command) error {
 	var (
-		addr        = c.String("addr")
-		profileAddr = c.String("profile-addr")
-		tlsAddr     = c.String("tls-addr")
-		certFile    = c.String("cert-file")
-		keyFile     = c.String("key-file")
-		logLevel    = c.String("log-level")
-		corsHosts   = c.StringSlice("cors-host")
-		connString  = c.String("db")
+		addr              = c.String("addr")
+		profileAddr       = c.String("profile-addr")
+		tlsAddr           = c.String("tls-addr")
+		certFile          = c.String("cert-file")
+		keyFile           = c.String("key-file")
+		logLevel          = c.String("log-level")
+		corsHosts         = c.StringSlice("cors-host")
+		connString        = c.String("db")
+		bouncerConnString = c.String("db-bouncer")
+		pingInterval      = c.Duration("ping-interval")
+		pingGrace         = c.Duration("ping-grace")
 	)
 
 	logger := elephantine.SetUpLogger(logLevel, os.Stdout)
@@ -122,19 +142,37 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		}
 	}()
 
-	dbpool, err := pgxpool.New(ctx, connString)
+	pubsubPool, err := pgxpool.New(ctx, connString)
 	if err != nil {
-		return fmt.Errorf("create connection pool: %w", err)
+		return fmt.Errorf("create pubsub connection pool: %w", err)
 	}
 
 	defer func() {
 		// Don't block for close
-		go dbpool.Close()
+		go pubsubPool.Close()
 	}()
 
-	err = dbpool.Ping(ctx)
+	err = pubsubPool.Ping(ctx)
 	if err != nil {
-		return fmt.Errorf("connect to database: %w", err)
+		return fmt.Errorf("connect to pubsub database: %w", err)
+	}
+
+	dbpool := pubsubPool
+
+	if bouncerConnString != "" && bouncerConnString != connString {
+		dbpool, err = pgxpool.New(ctx, bouncerConnString)
+		if err != nil {
+			return fmt.Errorf("create bouncer connection pool: %w", err)
+		}
+
+		defer func() {
+			go dbpool.Close()
+		}()
+
+		err = dbpool.Ping(ctx)
+		if err != nil {
+			return fmt.Errorf("connect to bouncer database: %w", err)
+		}
 	}
 
 	auth, err := elephantine.AuthenticationConfigFromCLI(
@@ -151,9 +189,12 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		KeyFile:        keyFile,
 		Logger:         logger,
 		Database:       dbpool,
+		PubsubDatabase: pubsubPool,
 		AuthInfoParser: auth.AuthParser,
 		Registerer:     prometheus.DefaultRegisterer,
 		CORSHosts:      corsHosts,
+		PingInterval:   pingInterval,
+		PingGrace:      pingGrace,
 	})
 	if err != nil {
 		return fmt.Errorf("create application: %w", err)

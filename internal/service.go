@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/ttab/elephant-api/spell"
@@ -23,7 +22,6 @@ import (
 	"github.com/ttab/elephantine"
 	"github.com/ttab/elephantine/pg"
 	"github.com/twitchtv/twirp"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -33,10 +31,13 @@ const (
 type NotifyChannel string
 
 const (
-	NotifyEntryUpdate NotifyChannel = "entry_update"
+	NotifyEntryUpdate  NotifyChannel = "entry_update"
+	NotifyListenerPing NotifyChannel = "listener_ping"
 )
 
 var (
+	errPingTimeout = errors.New("listener ping timeout")
+
 	_ spell.Check        = &Application{}
 	_ spell.Dictionaries = &Application{}
 )
@@ -49,9 +50,12 @@ type Parameters struct {
 	KeyFile        string
 	Logger         *slog.Logger
 	Database       *pgxpool.Pool
+	PubsubDatabase *pgxpool.Pool
 	AuthInfoParser elephantine.AuthInfoParser
 	Registerer     prometheus.Registerer
 	CORSHosts      []string
+	PingInterval   time.Duration
+	PingGrace      time.Duration
 }
 
 func NewApplication(
@@ -128,10 +132,11 @@ func NewApplication(
 	}
 
 	app := Application{
-		p:         p,
-		logger:    p.Logger,
-		db:        p.Database,
-		q:         postgres.New(p.Database),
+		p:        p,
+		logger:   p.Logger,
+		db:       p.Database,
+		pubsubDB: p.PubsubDatabase,
+		q:        postgres.New(p.Database),
 		languages: languages,
 	}
 
@@ -142,6 +147,7 @@ type Application struct {
 	p            Parameters
 	logger       *slog.Logger
 	db           *pgxpool.Pool
+	pubsubDB     *pgxpool.Pool
 	q            *postgres.Queries
 	entryUpdates chan EntryUpdateNotification
 
@@ -179,26 +185,38 @@ func (a *Application) Run(ctx context.Context) error {
 	a.entryUpdates = make(chan EntryUpdateNotification, 16)
 
 	grp.Go("notification_listener", func(ctx context.Context) error {
-		defer close(a.entryUpdates)
+		ctx = grace.CancelOnStop(ctx)
 
-		return a.runListener(grace.CancelOnStop(ctx))
+		for {
+			err := a.preloadEntries(ctx)
+			if err != nil {
+				return fmt.Errorf("preload entries: %w", err)
+			}
+
+			err = a.runListener(ctx)
+			if !errors.Is(err, errPingTimeout) {
+				return err
+			}
+
+			a.logger.InfoContext(ctx,
+				"listener ping timeout, reconnecting")
+		}
+	})
+
+	grp.Go("ping_sender", func(ctx context.Context) error {
+		return pg.RunInJobLock(
+			ctx, a.db, a.logger,
+			"ping-sender", "notification-ping",
+			pg.JobLockOptions{},
+			a.runPingSender)
 	})
 
 	grp.Go("entry_updater", func(ctx context.Context) error {
-		err := a.preloadEntries(ctx)
-		if err != nil {
-			return fmt.Errorf("preload entries: %w", err)
-		}
-
 		for {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case n, ok := <-a.entryUpdates:
-				if !ok {
-					return nil
-				}
-
+			case n := <-a.entryUpdates:
 				err := a.handleEntryUpdate(ctx, n)
 				if err != nil {
 					return fmt.Errorf("handle %s update of %q: %w",
@@ -598,7 +616,7 @@ type EntryUpdateNotification struct {
 }
 
 func (a *Application) runListener(ctx context.Context) (outErr error) {
-	conn, err := a.db.Acquire(ctx)
+	conn, err := a.pubsubDB.Acquire(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to acquire connection from pool: %w", err)
 	}
@@ -613,66 +631,99 @@ func (a *Application) runListener(ctx context.Context) (outErr error) {
 		}
 	}()
 
-	notifications := []NotifyChannel{
+	channels := []NotifyChannel{
 		NotifyEntryUpdate,
+		NotifyListenerPing,
 	}
 
-	for _, channel := range notifications {
+	for _, channel := range channels {
 		ident := pgx.Identifier{string(channel)}
 
 		_, err := pConn.Exec(ctx, "LISTEN "+ident.Sanitize())
 		if err != nil {
-			return fmt.Errorf("failed to start listening to %q: %w",
+			return fmt.Errorf("start listening to %q: %w",
 				channel, err)
 		}
 	}
 
-	received := make(chan *pgconn.Notification)
-	grp, gCtx := errgroup.WithContext(ctx)
+	// A separate goroutine periodically sends pings on the
+	// NotifyListenerPing channel. If we don't receive a ping
+	// within PingGrace, the connection is presumed broken and we
+	// return errPingTimeout so that the caller can reconnect.
+	lastPing := time.Now()
 
-	grp.Go(func() error {
-		for {
-			notification, err := pConn.WaitForNotification(gCtx)
-			if err != nil {
-				return fmt.Errorf(
-					"error while waiting for notification: %w", err)
+	for {
+		deadline := lastPing.Add(a.p.PingGrace)
+
+		waitCtx, cancel := context.WithDeadline(ctx, deadline)
+		notification, err := pConn.WaitForNotification(waitCtx)
+		cancel()
+
+		if err != nil {
+			// Parent context cancelled: shutting down.
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
 
-			received <- notification
-		}
-	})
+			// Ping deadline expired without a notification.
+			if waitCtx.Err() != nil {
+				return fmt.Errorf(
+					"wait for notification: %w", errPingTimeout)
+			}
 
-	grp.Go(func() error {
-		for {
-			var notification *pgconn.Notification
+			// Unexpected error (e.g. connection dropped).
+			return fmt.Errorf(
+				"wait for notification: %w", err)
+		}
+
+		switch NotifyChannel(notification.Channel) {
+		case NotifyListenerPing:
+			lastPing = time.Now()
+		case NotifyEntryUpdate:
+			var n EntryUpdateNotification
+
+			err := json.Unmarshal(
+				[]byte(notification.Payload), &n)
+			if err != nil {
+				a.logger.ErrorContext(ctx,
+					"unmarshal entry update notification",
+					elephantine.LogKeyError, err,
+					"payload", notification.Payload,
+				)
+
+				continue
+			}
 
 			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case notification = <-received:
-			}
-
-			switch NotifyChannel(notification.Channel) {
-			case NotifyEntryUpdate:
-				var n EntryUpdateNotification
-
-				err := json.Unmarshal(
-					[]byte(notification.Payload), &n)
-				if err != nil {
-					break
-				}
-
-				a.entryUpdates <- n
+			case a.entryUpdates <- n:
+			default:
+				return errors.New(
+					"entry update channel full")
 			}
 		}
-	})
+	}
+}
 
-	err = grp.Wait()
+func (a *Application) runPingSender(ctx context.Context) error {
+	ticker := time.NewTicker(a.p.PingInterval)
+	defer ticker.Stop()
+
+	err := pgNotify(ctx, a.q, NotifyListenerPing, struct{}{})
 	if err != nil {
-		return err //nolint:wrapcheck
+		return fmt.Errorf("send listener ping: %w", err)
 	}
 
-	return nil
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			err := pgNotify(ctx, a.q, NotifyListenerPing, struct{}{})
+			if err != nil {
+				return fmt.Errorf("send listener ping: %w", err)
+			}
+		}
+	}
 }
 
 func notifyEntryUpdated(

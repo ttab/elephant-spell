@@ -57,6 +57,20 @@ type Spellcheck struct {
 func (s *Spellcheck) AddPhrase(p Phrase) {
 	s.m.Lock()
 
+	// Remove old common mistakes and forms before adding new ones,
+	// so that updates to an entry don't leave stale data in the tries.
+	if old, ok := s.trie.Get(p.Text).(*Phrase); ok {
+		for _, cm := range old.CommonMistakes {
+			s.mistakeTrie.Delete(cm)
+		}
+
+		for form, correct := range old.Forms {
+			s.trie.Delete(correct)
+			s.hunspell.Remove(correct)
+			s.mistakeTrie.Delete(form)
+		}
+	}
+
 	s.trie.Put(p.Text, &p)
 	s.hunspell.Add(p.Text)
 

@@ -47,6 +47,18 @@ CREATE TABLE public.entry (
 
 
 --
+-- Name: job_lock; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.job_lock (
+    name text NOT NULL,
+    holder text NOT NULL,
+    touched timestamp with time zone NOT NULL,
+    iteration bigint NOT NULL
+);
+
+
+--
 -- Name: schema_version; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -61,6 +73,14 @@ CREATE TABLE public.schema_version (
 
 ALTER TABLE ONLY public.entry
     ADD CONSTRAINT entry_pkey PRIMARY KEY (language, entry);
+
+
+--
+-- Name: job_lock job_lock_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_lock
+    ADD CONSTRAINT job_lock_pkey PRIMARY KEY (name);
 
 
 --

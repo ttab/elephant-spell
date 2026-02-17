@@ -61,13 +61,16 @@ func (s *Spellcheck) AddPhrase(p Phrase) {
 	// so that updates to an entry don't leave stale data in the tries.
 	if old, ok := s.trie.Get(p.Text).(*Phrase); ok {
 		for _, cm := range old.CommonMistakes {
-			s.mistakeTrie.Delete(cm)
+			// Use Put(key, nil) instead of Delete(key) to work
+			// around a bug in dghubble/trie v0.1.0 where
+			// RuneTrie.Delete panics on multi-byte UTF-8 keys.
+			s.mistakeTrie.Put(cm, nil)
 		}
 
 		for form, correct := range old.Forms {
-			s.trie.Delete(correct)
+			s.trie.Put(correct, nil)
 			s.hunspell.Remove(correct)
-			s.mistakeTrie.Delete(form)
+			s.mistakeTrie.Put(form, nil)
 		}
 	}
 
@@ -113,16 +116,16 @@ func (s *Spellcheck) RemovePhrase(text string) {
 	}
 
 	s.hunspell.Remove(text)
-	s.trie.Delete(text)
+	s.trie.Put(text, nil)
 
 	for _, cm := range p.CommonMistakes {
-		s.mistakeTrie.Delete(cm)
+		s.mistakeTrie.Put(cm, nil)
 	}
 
 	for form, correct := range p.Forms {
-		s.trie.Delete(correct)
+		s.trie.Put(correct, nil)
 		s.hunspell.Remove(correct)
-		s.mistakeTrie.Delete(form)
+		s.mistakeTrie.Put(form, nil)
 	}
 }
 

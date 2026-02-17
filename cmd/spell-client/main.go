@@ -12,6 +12,7 @@ import (
 
 	"github.com/ttab/clitools"
 	"github.com/ttab/elephant-api/spell"
+	"github.com/ttab/elephantine"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/oauth2"
 )
@@ -63,7 +64,7 @@ func main() {
 	}
 }
 
-func uploadCSV(ctx context.Context, c *cli.Command) error {
+func uploadCSV(ctx context.Context, c *cli.Command) (outErr error) {
 	var (
 		env  = c.String("env")
 		file = c.String("file")
@@ -75,7 +76,7 @@ func uploadCSV(ctx context.Context, c *cli.Command) error {
 		return fmt.Errorf("open file: %w", err)
 	}
 
-	defer f.Close()
+	defer elephantine.Close("csv file", f, &outErr)
 
 	clients, err := getClients(ctx, env)
 	if err != nil {

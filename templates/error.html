@@ -1,0 +1,8 @@
+{{template "header" .}}
+<div class="error-page">
+  <div class="error-card">
+    <h1>{{.Contents.Code}}</h1>
+    <p>{{tl .Contents.Message}}</p>
+  </div>
+</div>
+{{template "footer" .}}

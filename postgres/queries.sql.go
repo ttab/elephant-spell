@@ -27,7 +27,8 @@ func (q *Queries) DeleteEntry(ctx context.Context, arg DeleteEntryParams) error 
 }
 
 const getEntry = `-- name: GetEntry :one
-SELECT language, entry, status, description, common_mistakes, level, data
+SELECT language, entry, status, description, common_mistakes, level, data,
+       updated, updated_by
 FROM entry
 WHERE language = $1 AND entry = $2
 `
@@ -48,6 +49,8 @@ func (q *Queries) GetEntry(ctx context.Context, arg GetEntryParams) (Entry, erro
 		&i.CommonMistakes,
 		&i.Level,
 		&i.Data,
+		&i.Updated,
+		&i.UpdatedBy,
 	)
 	return i, err
 }
@@ -84,7 +87,8 @@ func (q *Queries) ListDictionaries(ctx context.Context) ([]ListDictionariesRow, 
 }
 
 const listEntries = `-- name: ListEntries :many
-SELECT language, entry, status, description, common_mistakes, level, data
+SELECT language, entry, status, description, common_mistakes, level, data,
+       updated, updated_by
 FROM entry
 WHERE
         ($1::text IS NULL OR language = $1)
@@ -124,6 +128,8 @@ func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Ent
 			&i.CommonMistakes,
 			&i.Level,
 			&i.Data,
+			&i.Updated,
+			&i.UpdatedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -151,16 +157,20 @@ func (q *Queries) Notify(ctx context.Context, arg NotifyParams) error {
 
 const setEntry = `-- name: SetEntry :exec
 INSERT INTO entry(
-       language, entry, status, description, common_mistakes, level, data
+       language, entry, status, description, common_mistakes, level, data,
+       updated, updated_by
 ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7
+       $1, $2, $3, $4, $5, $6, $7,
+       $8, $9
 ) ON CONFLICT(language, entry) DO
   UPDATE SET
        status = excluded.status,
        description = excluded.description,
        common_mistakes = excluded.common_mistakes,
        level = excluded.level,
-       data = excluded.data
+       data = excluded.data,
+       updated = excluded.updated,
+       updated_by = excluded.updated_by
 `
 
 type SetEntryParams struct {
@@ -171,6 +181,8 @@ type SetEntryParams struct {
 	CommonMistakes []string
 	Level          EntryLevel
 	Data           *EntryData
+	Updated        pgtype.Timestamptz
+	UpdatedBy      string
 }
 
 func (q *Queries) SetEntry(ctx context.Context, arg SetEntryParams) error {
@@ -182,6 +194,8 @@ func (q *Queries) SetEntry(ctx context.Context, arg SetEntryParams) error {
 		arg.CommonMistakes,
 		arg.Level,
 		arg.Data,
+		arg.Updated,
+		arg.UpdatedBy,
 	)
 	return err
 }

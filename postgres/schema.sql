@@ -2,8 +2,9 @@
 -- PostgreSQL database dump
 --
 
--- Dumped from database version 17.4 (Debian 17.4-1.pgdg120+2)
--- Dumped by pg_dump version 17.4 (Debian 17.4-1.pgdg120+2)
+
+-- Dumped from database version 17.8 (Debian 17.8-1.pgdg12+1)
+-- Dumped by pg_dump version 17.8 (Debian 17.8-1.pgdg12+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -42,7 +43,9 @@ CREATE TABLE public.entry (
     description text NOT NULL,
     common_mistakes text[],
     level public.entry_level DEFAULT 'error'::public.entry_level NOT NULL,
-    data jsonb
+    data jsonb,
+    updated timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by text DEFAULT ''::text NOT NULL
 );
 
 
@@ -93,4 +96,5 @@ CREATE INDEX idx_entry_pattern_ops ON public.entry USING btree (entry varchar_pa
 --
 -- PostgreSQL database dump complete
 --
+
 

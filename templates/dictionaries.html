@@ -1,0 +1,82 @@
+{{template "header" .}}
+<div class="master-detail">
+  <div class="panel-left">
+    <div class="panel-left-header">
+      <select
+        name="language"
+        onchange="window.location.href='/dictionaries/' + this.value + '/'"
+      >
+        {{range .Contents.Languages}}
+        <option value="{{.}}" {{if eq . $.Contents.Language}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+      <div class="panel-left-actions">
+        <span class="entry-count">{{td "Entries" "{{.Count}} entries" .Contents}}</span>
+        {{if .Contents.CanWrite}}<a
+          class="btn btn-sm btn-primary"
+          href="/dictionaries/{{.Contents.Language}}/new"
+          hx-get="/dictionaries/{{.Contents.Language}}/new"
+          hx-target="#entry-detail"
+          hx-push-url="true"
+        >{{t "NewEntry" "New entry"}}</a>{{end}}
+      </div>
+    </div>
+    <div class="entry-filter">
+      <input
+        type="text"
+        id="entry-filter-input"
+        placeholder="{{t "FilterEntries" "Filter entries..."}}"
+        oninput="filterEntries(this.value)"
+        autocomplete="off"
+      >
+    </div>
+    <div id="entry-list" class="entry-list">
+      {{template "entry_list.html" .}}
+    </div>
+    <script>
+    function filterEntries(query) {
+      var items = document.querySelectorAll('#entry-list .entry-item');
+      var empty = document.querySelector('#entry-list .entry-empty');
+      var q = query.toLowerCase();
+      var visible = 0;
+      items.forEach(function(item) {
+        var text = item.querySelector('.entry-item-text').textContent.toLowerCase();
+        if (text.indexOf(q) !== -1) {
+          item.style.display = '';
+          visible++;
+        } else {
+          item.style.display = 'none';
+        }
+      });
+      if (empty) {
+        empty.style.display = items.length === 0 ? '' : 'none';
+      }
+      var noMatch = document.getElementById('entry-filter-no-match');
+      if (visible === 0 && items.length > 0) {
+        if (!noMatch) {
+          noMatch = document.createElement('div');
+          noMatch.id = 'entry-filter-no-match';
+          noMatch.className = 'entry-empty';
+          noMatch.textContent = '{{t "NoMatchingEntries" "No matching entries"}}';
+          document.getElementById('entry-list').appendChild(noMatch);
+        }
+        noMatch.style.display = '';
+      } else if (noMatch) {
+        noMatch.style.display = 'none';
+      }
+    }
+    </script>
+  </div>
+  <div class="panel-right">
+    <div id="entry-detail">
+      {{if .Contents.Entry}}
+        {{template "entry_form.html" .}}
+      {{else if .Contents.NewEntry}}
+        {{template "entry_form.html" .}}
+      {{else}}
+        <div class="panel-right-empty">{{t "SelectEntry" "Select an entry to edit"}}</div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{template "footer" .}}

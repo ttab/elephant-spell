@@ -1,0 +1,87 @@
+{{with .Contents}}
+{{if .Flash}}
+<div class="entry-form-wrapper">
+  <div class="flash-message {{.Flash.Type}}">{{.Flash.Message}}</div>
+</div>
+{{end}}
+{{if not .CanWrite}}
+<div class="entry-form-wrapper">
+  <div class="flash-message warning">{{t "MissingScope" "You need the 'spell_write' scope to make changes"}}</div>
+</div>
+{{end}}
+<div class="entry-form-wrapper">
+  <div class="entry-form-header">
+    <h2>{{if .NewEntry}}{{t "NewEntry" "New entry"}}{{else}}{{.Entry.Entry}}{{end}}</h2>
+  </div>
+  <form
+    class="entry-form"
+    hx-post="/dictionaries/{{.Language}}/{{if .NewEntry}}_new{{else}}{{pathEscape .Entry.Entry}}{{end}}"
+    hx-target="#entry-detail"
+  >
+    <div class="form-group">
+      <label for="text">{{t "Text" "Text"}}</label>
+      {{if .NewEntry}}
+      <input type="text" id="text" name="text" value="" required {{if not .CanWrite}}disabled{{end}}>
+      {{else}}
+      <input type="text" id="text" name="text" value="{{.Entry.Entry}}" readonly>
+      {{end}}
+    </div>
+
+    <div class="form-group">
+      <label for="status">{{t "Status" "Status"}}</label>
+      <select id="status" name="status" required {{if not .CanWrite}}disabled{{end}}>
+        <option value="accepted" {{if and .Entry (eq .Entry.Status "accepted")}}selected{{end}}>{{t "Accepted" "Accepted"}}</option>
+        <option value="pending" {{if and .Entry (eq .Entry.Status "pending")}}selected{{end}}>{{t "Pending" "Pending"}}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="description">{{t "Description" "Description"}}</label>
+      <input type="text" id="description" name="description" value="{{if .Entry}}{{.Entry.Description}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+    </div>
+
+    <div class="form-group">
+      <label for="level">{{t "CorrectionLevel" "Correction level"}}</label>
+      <select id="level" name="level" {{if not .CanWrite}}disabled{{end}}>
+        <option value="error" {{if and .Entry (eq (print .Entry.Level) "error")}}selected{{end}}>{{t "Error" "Error"}}</option>
+        <option value="suggestion" {{if and .Entry (eq (print .Entry.Level) "suggestion")}}selected{{end}}>{{t "Suggestion" "Suggestion"}}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="common_mistakes">{{t "CommonMistakes" "Common mistakes"}}</label>
+      <div class="help-text">{{t "CommonMistakesHelp" "One per line, supports {A|B} expansion"}}</div>
+      <textarea id="common_mistakes" name="common_mistakes" rows="4" {{if not .CanWrite}}disabled{{end}}>{{if .Entry}}{{range $i, $m := .Entry.CommonMistakes}}{{if $i}}
+{{end}}{{$m}}{{end}}{{end}}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label for="forms">{{t "Forms" "Forms"}}</label>
+      <div class="help-text">{{t "FormsHelp" "One per line: incorrect=correct"}}</div>
+      <textarea id="forms" name="forms" rows="4" {{if not .CanWrite}}disabled{{end}}>{{if .Entry}}{{range $k, $v := .Entry.Forms}}{{$k}}={{$v}}
+{{end}}{{end}}</textarea>
+    </div>
+
+    {{if .CanWrite}}
+    <div class="form-actions">
+      {{if not .NewEntry}}
+      <button
+        type="button"
+        class="btn btn-danger"
+        hx-post="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/delete"
+        hx-target="#entry-detail"
+        hx-confirm="{{t "ConfirmDelete" "Are you sure you want to delete this entry?"}}"
+      >{{t "Delete" "Delete"}}</button>
+      {{end}}
+      <div class="spacer"></div>
+      <button type="submit" class="btn btn-primary">{{t "Save" "Save"}}</button>
+    </div>
+    {{end}}
+  </form>
+  {{if and .Entry .Entry.Updated}}
+  <div class="entry-metadata">
+    <small>{{t "LastUpdated" "Last updated"}}: {{.Entry.Updated}}{{if .Entry.UpdatedBy}} {{t "By" "by"}} {{.Entry.UpdatedBy}}{{end}}</small>
+  </div>
+  {{end}}
+</div>
+{{end}}

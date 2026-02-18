@@ -1,0 +1,80 @@
+[Dictionaries]
+other = "Ordlister"
+
+[Language]
+other = "Språk"
+
+[NewEntry]
+other = "Nytt ord"
+
+[Save]
+other = "Lagre"
+
+[Delete]
+other = "Slett"
+
+[Cancel]
+other = "Avbryt"
+
+[Text]
+other = "Tekst"
+
+[Status]
+other = "Status"
+
+[Description]
+other = "Beskrivelse"
+
+[CommonMistakes]
+other = "Vanlige feil"
+
+[CorrectionLevel]
+other = "Korrigeringsnivå"
+
+[Forms]
+other = "Former"
+
+[FormsHelp]
+other = "En per linje: feil=riktig"
+
+[CommonMistakesHelp]
+other = "En per linje, støtter {A|B}-ekspansjon"
+
+[Error]
+other = "Feil"
+
+[Suggestion]
+other = "Forslag"
+
+[NoEntries]
+other = "Ingen ord funnet"
+
+[SelectLanguage]
+other = "Velg et språk"
+
+[SelectEntry]
+other = "Velg et ord å redigere"
+
+[EntryCreated]
+other = "Ord opprettet"
+
+[EntryUpdated]
+other = "Ord oppdatert"
+
+[EntryDeleted]
+other = "Ord slettet"
+
+[ConfirmDelete]
+other = "Er du sikker på at du vil slette dette ordet?"
+
+[Entries]
+other = "{{.Count}} ord"
+
+[LogIn]
+other = "Logg inn"
+
+[LogInDescription]
+other = "Logg inn for å administrere ordlister"
+
+[MissingScope]
+other = "Du trenger tilgangen 'spell_write' for å gjøre endringer"

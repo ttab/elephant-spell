@@ -1,0 +1,11 @@
+{{template "header" .}}
+<div class="login-page">
+  <div class="login-card">
+    <h1>Elephant Spell</h1>
+    <p>{{t "LogInDescription" "Log in to manage dictionaries"}}</p>
+    <form method="POST" action="/auth/login">
+      <button type="submit" class="btn btn-primary">{{t "LogIn" "Log in"}}</button>
+    </form>
+  </div>
+</div>
+{{template "footer" .}}

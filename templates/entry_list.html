@@ -1,0 +1,17 @@
+{{range .Contents.Entries}}
+<a
+  class="entry-item {{if eq .Entry $.Contents.ActiveEntry}}active{{end}}"
+  href="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Entry}}"
+  hx-get="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Entry}}"
+  hx-target="#entry-detail"
+  hx-push-url="true"
+>
+  <div class="entry-item-text">{{.Entry}}</div>
+  <div class="entry-item-meta">
+    <span class="entry-item-status">{{.Status}}</span>
+    {{if .Description}}<span>{{.Description}}</span>{{end}}
+  </div>
+</a>
+{{else}}
+<div class="entry-empty">{{t "NoEntries" "No entries found"}}</div>
+{{end}}

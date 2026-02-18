@@ -1,0 +1,80 @@
+[Dictionaries]
+other = "Dictionaries"
+
+[Language]
+other = "Language"
+
+[NewEntry]
+other = "New entry"
+
+[Save]
+other = "Save"
+
+[Delete]
+other = "Delete"
+
+[Cancel]
+other = "Cancel"
+
+[Text]
+other = "Text"
+
+[Status]
+other = "Status"
+
+[Description]
+other = "Description"
+
+[CommonMistakes]
+other = "Common mistakes"
+
+[CorrectionLevel]
+other = "Correction level"
+
+[Forms]
+other = "Forms"
+
+[FormsHelp]
+other = "One per line: incorrect=correct"
+
+[CommonMistakesHelp]
+other = "One per line, supports {A|B} expansion"
+
+[Error]
+other = "Error"
+
+[Suggestion]
+other = "Suggestion"
+
+[NoEntries]
+other = "No entries found"
+
+[SelectLanguage]
+other = "Select a language"
+
+[SelectEntry]
+other = "Select an entry to edit"
+
+[EntryCreated]
+other = "Entry created"
+
+[EntryUpdated]
+other = "Entry updated"
+
+[EntryDeleted]
+other = "Entry deleted"
+
+[ConfirmDelete]
+other = "Are you sure you want to delete this entry?"
+
+[Entries]
+other = "{{.Count}} entries"
+
+[LogIn]
+other = "Log in"
+
+[LogInDescription]
+other = "Log in to manage dictionaries"
+
+[MissingScope]
+other = "You need the 'spell_write' scope to make changes"

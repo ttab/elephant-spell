@@ -1,0 +1,30 @@
+{{define "header"}}
+<!DOCTYPE html>
+<html lang="{{lang}}">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{tl .Title}} – Elephant Spell</title>
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="app-header-inner">
+        <a href="/" class="app-title">Elephant Spell</a>
+        <nav class="app-nav">
+          {{range .Menu}}
+          <a href="{{.HREF}}" {{if .Active}}class="active"{{end}}>{{tl .Title}}</a>
+          {{end}}
+        </nav>
+      </div>
+    </header>
+    <main class="app-main">
+{{end}}
+
+{{define "footer"}}
+    </main>
+  </body>
+</html>
+{{end}}

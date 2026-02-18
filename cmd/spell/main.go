@@ -10,12 +10,15 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
+	spell "github.com/ttab/elephant-spell"
 	"github.com/ttab/elephant-spell/internal"
 	"github.com/ttab/elephantine"
 	"github.com/urfave/cli/v3"
+	"golang.org/x/oauth2"
 )
 
 func main() {
@@ -94,6 +97,30 @@ func main() {
 				Sources: cli.EnvVars("PING_GRACE"),
 				Value:   7 * time.Minute,
 			},
+			&cli.StringFlag{
+				Name:     "oidc-provider",
+				Sources:  cli.EnvVars("OIDC_PROVIDER"),
+				Usage:    "OIDC provider URL for the dictionary management UI",
+				Required: true,
+			},
+			&cli.StringFlag{
+				Name:    "oidc-issuer",
+				Sources: cli.EnvVars("OIDC_ISSUER"),
+				Usage:   "OIDC issuer URL (optional, for validating tokens from a different issuer)",
+			},
+			&cli.StringFlag{
+				Name:    "client-id",
+				Sources: cli.EnvVars("CLIENT_ID"),
+			},
+			&cli.StringFlag{
+				Name:    "client-secret",
+				Sources: cli.EnvVars("CLIENT_SECRET"),
+			},
+			&cli.StringFlag{
+				Name:    "callback-url",
+				Sources: cli.EnvVars("CALLBACK_URL"),
+				Value:   "http://localhost:1080/auth/callback",
+			},
 		},
 	}
 
@@ -127,6 +154,11 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		bouncerConnString = c.String("db-bouncer")
 		pingInterval      = c.Duration("ping-interval")
 		pingGrace         = c.Duration("ping-grace")
+		oidcProviderURL   = c.String("oidc-provider")
+		oidcIssuer        = c.String("oidc-issuer")
+		clientID          = c.String("client-id")
+		clientSecret      = c.String("client-secret")
+		callbackURL       = c.String("callback-url")
 	)
 
 	logger := elephantine.SetUpLogger(logLevel, os.Stdout)
@@ -181,7 +213,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		return fmt.Errorf("set up authentication: %w", err)
 	}
 
-	app, err := internal.NewApplication(ctx, internal.Parameters{
+	params := internal.Parameters{
 		Addr:           addr,
 		ProfileAddr:    profileAddr,
 		TLSAddr:        tlsAddr,
@@ -195,7 +227,36 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		CORSHosts:      corsHosts,
 		PingInterval:   pingInterval,
 		PingGrace:      pingGrace,
-	})
+	}
+
+	provider, err := oidc.NewProvider(ctx, oidcProviderURL)
+	if err != nil {
+		return fmt.Errorf("create OIDC provider: %w", err)
+	}
+
+	verifierConfig := &oidc.Config{ClientID: clientID}
+
+	if oidcIssuer != "" {
+		verifierConfig.SkipIssuerCheck = true
+	}
+
+	verifier := provider.Verifier(verifierConfig)
+
+	params.OIDCProvider = provider
+	params.OIDCVerifier = verifier
+	params.OIDCConfig = &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Endpoint:     provider.Endpoint(),
+		RedirectURL:  callbackURL,
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email", internal.ScopeSpellcheckWrite},
+	}
+
+	params.Templates = mustSubFS(spell.TemplateFS, "templates")
+	params.Locales = mustSubFS(spell.LocaleFS, "locales")
+	params.Assets = mustSubFS(spell.AssetFS, "assets")
+
+	app, err := internal.NewApplication(ctx, params)
 	if err != nil {
 		return fmt.Errorf("create application: %w", err)
 	}
@@ -206,4 +267,14 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	}
 
 	return nil
+}
+
+func mustSubFS(f fs.FS, directory string) fs.FS {
+	s, err := fs.Sub(f, directory)
+	if err != nil {
+		panic(fmt.Errorf("create %q sub FS from embedded fs: %w",
+			directory, err))
+	}
+
+	return s
 }

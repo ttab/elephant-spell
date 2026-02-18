@@ -1,0 +1,80 @@
+[Dictionaries]
+other = "Ordlistor"
+
+[Language]
+other = "Språk"
+
+[NewEntry]
+other = "Nytt ord"
+
+[Save]
+other = "Spara"
+
+[Delete]
+other = "Ta bort"
+
+[Cancel]
+other = "Avbryt"
+
+[Text]
+other = "Text"
+
+[Status]
+other = "Status"
+
+[Description]
+other = "Beskrivning"
+
+[CommonMistakes]
+other = "Vanliga misstag"
+
+[CorrectionLevel]
+other = "Korrigeringsnivå"
+
+[Forms]
+other = "Former"
+
+[FormsHelp]
+other = "En per rad: felaktig=korrekt"
+
+[CommonMistakesHelp]
+other = "En per rad, stödjer {A|B}-expansion"
+
+[Error]
+other = "Fel"
+
+[Suggestion]
+other = "Förslag"
+
+[NoEntries]
+other = "Inga ord hittades"
+
+[SelectLanguage]
+other = "Välj ett språk"
+
+[SelectEntry]
+other = "Välj ett ord att redigera"
+
+[EntryCreated]
+other = "Ord skapat"
+
+[EntryUpdated]
+other = "Ord uppdaterat"
+
+[EntryDeleted]
+other = "Ord borttaget"
+
+[ConfirmDelete]
+other = "Är du säker på att du vill ta bort det här ordet?"
+
+[Entries]
+other = "{{.Count}} ord"
+
+[LogIn]
+other = "Logga in"
+
+[LogInDescription]
+other = "Logga in för att hantera ordlistor"
+
+[MissingScope]
+other = "Du behöver behörigheten 'spell_write' för att göra ändringar"

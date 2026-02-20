@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ttab/elephant-api/spell"
@@ -45,12 +46,15 @@ func NewDictionariesUI(
 func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"pathEscape": url.PathEscape,
+		"add":        func(a, b int64) int64 { return a + b },
+		"subtract":   func(a, b int64) int64 { return a - b },
 	}
 }
 
 func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("GET /{$}", d.listPage)
 	mux.HandleFunc("GET /dictionaries/{language}/{$}", d.languagePage)
+	mux.HandleFunc("GET /dictionaries/{language}/entries", d.entriesPage)
 	mux.HandleFunc("GET /dictionaries/{language}/new", d.newEntryPage)
 	mux.HandleFunc("GET /dictionaries/{language}/{text}", d.entryPage)
 	mux.HandleFunc("POST /dictionaries/{language}/_new", d.saveNewEntry)
@@ -119,6 +123,9 @@ type dictionariesContents struct {
 	Count       int
 	Flash       *flashMessage
 	CanWrite    bool
+	Prefix      string
+	Page        int64
+	HasMore     bool
 }
 
 func (d *DictionariesUI) hasWriteScope(ctx context.Context) bool {
@@ -207,10 +214,10 @@ func (d *DictionariesUI) languagePage(
 	canWrite := d.hasWriteScope(ctx)
 
 	if isHtmx(r) {
-		return d.entryListPage(ctx, lang, "")
+		return d.entryListPage(ctx, lang, "", "", 0)
 	}
 
-	entries, err := d.listEntries(ctx, lang)
+	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -224,6 +231,7 @@ func (d *DictionariesUI) languagePage(
 			Entries:   entries,
 			Count:     len(entries),
 			CanWrite:  canWrite,
+			HasMore:   hasMore,
 		},
 	}, nil
 }
@@ -250,7 +258,7 @@ func (d *DictionariesUI) newEntryPage(
 		}, nil
 	}
 
-	entries, err := d.listEntries(ctx, lang)
+	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -265,6 +273,7 @@ func (d *DictionariesUI) newEntryPage(
 			Count:     len(entries),
 			NewEntry:  true,
 			CanWrite:  canWrite,
+			HasMore:   hasMore,
 		},
 	}, nil
 }
@@ -308,7 +317,7 @@ func (d *DictionariesUI) entryPage(
 		}, nil
 	}
 
-	entries, err := d.listEntries(ctx, lang)
+	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -324,6 +333,7 @@ func (d *DictionariesUI) entryPage(
 			Entry:       &entry,
 			ActiveEntry: text,
 			CanWrite:    canWrite,
+			HasMore:     hasMore,
 		},
 	}, nil
 }
@@ -568,41 +578,58 @@ func (d *DictionariesUI) setEntryFromForm(
 }
 
 func (d *DictionariesUI) listEntries(
-	ctx context.Context, lang string,
-) ([]uiEntry, error) {
+	ctx context.Context, lang, prefix string, page int64,
+) ([]uiEntry, bool, error) {
 	svcCtx, err := d.withServiceAuth(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("bridge auth for list entries: %w", err)
+		return nil, false, fmt.Errorf("bridge auth for list entries: %w", err)
 	}
 
-	var allEntries []*spell.CustomEntry
+	res, err := d.dicts.ListEntries(svcCtx, &spell.ListEntriesRequest{
+		Language: lang,
+		Prefix:   prefix,
+		Page:     page,
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("list entries for %q page %d: %w",
+			lang, page, err)
+	}
 
-	const maxPages = 5
+	hasMore := len(res.Entries) == 100
 
-	for page := range int64(maxPages) {
-		res, err := d.dicts.ListEntries(svcCtx, &spell.ListEntriesRequest{
-			Language: lang,
-			Page:     page,
-		})
+	return customEntriesToUI(res.Entries), hasMore, nil
+}
+
+func (d *DictionariesUI) entriesPage(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	ctx, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	lang := r.PathValue("language")
+	prefix := r.URL.Query().Get("prefix")
+
+	var page int64
+
+	if p := r.URL.Query().Get("page"); p != "" {
+		page, err = strconv.ParseInt(p, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("list entries for %q page %d: %w",
-				lang, page, err)
-		}
-
-		allEntries = append(allEntries, res.Entries...)
-
-		if len(res.Entries) < 100 {
-			break
+			return nil, howdah.NewHTTPError(
+				http.StatusBadRequest, "Error", "Invalid page number",
+				fmt.Errorf("parse page parameter: %w", err),
+			)
 		}
 	}
 
-	return customEntriesToUI(allEntries), nil
+	return d.entryListPage(ctx, lang, "", prefix, page)
 }
 
 func (d *DictionariesUI) entryListPage(
-	ctx context.Context, lang, activeEntry string,
+	ctx context.Context, lang, activeEntry, prefix string, page int64,
 ) (*howdah.Page, error) {
-	entries, err := d.listEntries(ctx, lang)
+	entries, hasMore, err := d.listEntries(ctx, lang, prefix, page)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -614,6 +641,9 @@ func (d *DictionariesUI) entryListPage(
 			Entries:     entries,
 			Count:       len(entries),
 			ActiveEntry: activeEntry,
+			Prefix:      prefix,
+			Page:        page,
+			HasMore:     hasMore,
 		},
 	}, nil
 }

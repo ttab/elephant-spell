@@ -15,3 +15,22 @@
 {{else}}
 <div class="entry-empty">{{t "NoEntries" "No entries found"}}</div>
 {{end}}
+{{if or (gt .Contents.Page 0) .Contents.HasMore}}
+<div class="entry-list-pagination">
+  {{if gt .Contents.Page 0}}
+  <a href="#" class="btn btn-sm"
+    hx-get="/dictionaries/{{.Contents.Language}}/entries?page={{subtract .Contents.Page 1}}{{if .Contents.Prefix}}&prefix={{.Contents.Prefix}}{{end}}"
+    hx-target="#entry-list"
+    hx-indicator="#entry-list-area"
+  >← {{t "Previous" "Previous"}}</a>
+  {{end}}
+  <span class="page-info">{{t "Page" "Page"}} {{add .Contents.Page 1}}</span>
+  {{if .Contents.HasMore}}
+  <a href="#" class="btn btn-sm"
+    hx-get="/dictionaries/{{.Contents.Language}}/entries?page={{add .Contents.Page 1}}{{if .Contents.Prefix}}&prefix={{.Contents.Prefix}}{{end}}"
+    hx-target="#entry-list"
+    hx-indicator="#entry-list-area"
+  >{{t "Next" "Next"}} →</a>
+  {{end}}
+</div>
+{{end}}

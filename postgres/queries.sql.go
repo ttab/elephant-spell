@@ -94,6 +94,7 @@ WHERE
         ($1::text IS NULL OR language = $1)
         AND ($2::text IS NULL OR entry LIKE $2)
         AND ($3::text IS NULL OR status = $3)
+ORDER BY language, entry
 LIMIT $5::bigint OFFSET $4::bigint
 `
 

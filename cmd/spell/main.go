@@ -109,17 +109,20 @@ func main() {
 				Usage:   "OIDC issuer URL (optional, for validating tokens from a different issuer)",
 			},
 			&cli.StringFlag{
-				Name:    "client-id",
-				Sources: cli.EnvVars("CLIENT_ID"),
+				Name:     "client-id",
+				Sources:  cli.EnvVars("CLIENT_ID"),
+				Required: true,
 			},
 			&cli.StringFlag{
-				Name:    "client-secret",
-				Sources: cli.EnvVars("CLIENT_SECRET"),
+				Name:     "client-secret",
+				Sources:  cli.EnvVars("CLIENT_SECRET"),
+				Required: true,
 			},
 			&cli.StringFlag{
-				Name:    "callback-url",
-				Sources: cli.EnvVars("CALLBACK_URL"),
-				Value:   "http://localhost:1080/auth/callback",
+				Name:     "callback-url",
+				Sources:  cli.EnvVars("CALLBACK_URL"),
+				Value:    "http://localhost:1080/auth/callback",
+				Required: true,
 			},
 		},
 	}

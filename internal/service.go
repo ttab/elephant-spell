@@ -757,6 +757,12 @@ func (a *Application) runListener(ctx context.Context) (outErr error) {
 				continue
 			}
 
+			a.logger.Debug("dictionary entry update",
+				"language", n.Language,
+				"text", n.Text,
+				"deleted", n.Deleted,
+			)
+
 			select {
 			case a.entryUpdates <- n:
 			default:

@@ -33,6 +33,7 @@ WHERE
         (sqlc.narg('language')::text IS NULL OR language = @language)
         AND (sqlc.narg('pattern')::text IS NULL OR entry LIKE @pattern)
         AND (sqlc.narg('status')::text IS NULL OR status = @status)
+ORDER BY language, entry
 LIMIT sqlc.arg('limit')::bigint OFFSET sqlc.arg('offset')::bigint;
 
 -- name: ListDictionaries :many

@@ -25,47 +25,28 @@
       <input
         type="text"
         id="entry-filter-input"
+        name="prefix"
         placeholder="{{t "FilterEntries" "Filter entries..."}}"
-        oninput="filterEntries(this.value)"
+        hx-get="/dictionaries/{{.Contents.Language}}/entries"
+        hx-trigger="input changed delay:300ms, search"
+        hx-target="#entry-list"
+        hx-indicator="#entry-list-area"
+        hx-include="this"
         autocomplete="off"
       >
     </div>
-    <div id="entry-list" class="entry-list">
-      {{template "entry_list.html" .}}
+    <div id="entry-list-area" class="entry-list">
+      <div class="entry-list-skeleton">
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:60%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:45%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:70%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:55%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:50%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+      </div>
+      <div id="entry-list">
+        {{template "entry_list.html" .}}
+      </div>
     </div>
-    <script>
-    function filterEntries(query) {
-      var items = document.querySelectorAll('#entry-list .entry-item');
-      var empty = document.querySelector('#entry-list .entry-empty');
-      var q = query.toLowerCase();
-      var visible = 0;
-      items.forEach(function(item) {
-        var text = item.querySelector('.entry-item-text').textContent.toLowerCase();
-        if (text.indexOf(q) !== -1) {
-          item.style.display = '';
-          visible++;
-        } else {
-          item.style.display = 'none';
-        }
-      });
-      if (empty) {
-        empty.style.display = items.length === 0 ? '' : 'none';
-      }
-      var noMatch = document.getElementById('entry-filter-no-match');
-      if (visible === 0 && items.length > 0) {
-        if (!noMatch) {
-          noMatch = document.createElement('div');
-          noMatch.id = 'entry-filter-no-match';
-          noMatch.className = 'entry-empty';
-          noMatch.textContent = '{{t "NoMatchingEntries" "No matching entries"}}';
-          document.getElementById('entry-list').appendChild(noMatch);
-        }
-        noMatch.style.display = '';
-      } else if (noMatch) {
-        noMatch.style.display = 'none';
-      }
-    }
-    </script>
   </div>
   <div class="panel-right">
     <div id="entry-detail">

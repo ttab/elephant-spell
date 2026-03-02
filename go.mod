@@ -14,7 +14,7 @@ require (
 	github.com/ttab/elephantine v0.23.7
 	github.com/ttab/mage v0.8.4
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/urfave/cli/v3 v3.6.2
+	github.com/urfave/cli/v3 v3.7.0
 	golang.org/x/oauth2 v0.35.0
 )
 

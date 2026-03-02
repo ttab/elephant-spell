@@ -117,8 +117,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/ttab/clitools v0.5.2 h1:0S9PpIZhV2jOsoZsTY5TIsNJ3iCIGe6xJsp6Tx60mHk=
 github.com/ttab/clitools v0.5.2/go.mod h1:XNz00wGKdNIgBnGqqt8SFpySe/GxrFWdHNsNdoKH0Hg=
-github.com/ttab/elephant-api v0.20.0 h1:smQ9FuyAWzK9yn0NLEH4vlh9nJrrQqWNEp69AYLJ6PY=
-github.com/ttab/elephant-api v0.20.0/go.mod h1:2sd48dqSKazXhiPEpZyw648PWah0CUjDaQZ6MT48S4A=
+github.com/ttab/elephant-api v0.21.2 h1:d1z1UTF7LXLTF8XY5Mr3HCBib/pDmH+a+4qXqW2c6GA=
+github.com/ttab/elephant-api v0.21.2/go.mod h1:2sd48dqSKazXhiPEpZyw648PWah0CUjDaQZ6MT48S4A=
 github.com/ttab/elephantine v0.23.7 h1:ujP1pHHLkJk+93Da1gXj74bVAXQHJo7vlp21aihLZtY=
 github.com/ttab/elephantine v0.23.7/go.mod h1:qN4ircUAfyve/qV2blbZKvCBfjIDAPChnBxixFRzZGQ=
 github.com/ttab/mage v0.8.4 h1:n0Sd0r6Kh/ZKEA2dmNHGnl4+JujmAhulLZQwayaeUh0=

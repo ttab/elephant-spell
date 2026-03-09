@@ -2,8 +2,6 @@ module github.com/ttab/elephant-spell
 
 go 1.25.7
 
-replace github.com/ttab/elephant-api => ../elephant-api
-
 require (
 	github.com/blevesearch/segment v0.9.1
 	github.com/coreos/go-oidc/v3 v3.17.0
@@ -12,17 +10,17 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.2
-	github.com/ttab/elephant-api v0.20.0
-	github.com/ttab/elephantine v0.23.7
-	github.com/ttab/howdah v0.0.4
-	github.com/ttab/mage v0.8.4
+	github.com/ttab/elephant-api v0.21.4-0.20260309193215-f1640f1eade8
+	github.com/ttab/elephantine v0.25.0
+	github.com/ttab/howdah v0.0.6
+	github.com/ttab/mage v0.9.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/urfave/cli/v3 v3.6.2
-	golang.org/x/oauth2 v0.35.0
+	github.com/urfave/cli/v3 v3.7.0
+	golang.org/x/oauth2 v0.36.0
 )
 
 require (
-	github.com/BurntSushi/toml v1.5.0 // indirect
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/MicahParks/jwkset v0.11.0 // indirect
 	github.com/MicahParks/keyfunc/v3 v3.8.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -51,16 +49,16 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/nicksnyder/go-i18n/v2 v2.6.0 // indirect
+	github.com/nicksnyder/go-i18n/v2 v2.6.1 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.5 // indirect
-	github.com/prometheus/procfs v0.19.2 // indirect
+	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.3 // indirect
-	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.4 // indirect
+	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )

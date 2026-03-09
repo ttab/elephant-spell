@@ -53,6 +53,7 @@ func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
 
 func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("GET /{$}", d.listPage)
+	mux.HandleFunc("GET /api/keepalive", d.keepalivePage)
 	mux.HandleFunc("GET /dictionaries/{language}/{$}", d.languagePage)
 	mux.HandleFunc("GET /dictionaries/{language}/entries", d.entriesPage)
 	mux.HandleFunc("GET /dictionaries/{language}/new", d.newEntryPage)
@@ -178,6 +179,19 @@ func twirpErrorToHTTP(err error) error {
 	status := twirp.ServerHTTPStatusFromErrorCode(tErr.Code())
 
 	return howdah.NewHTTPError(status, "Error", tErr.Msg(), tErr)
+}
+
+func (d *DictionariesUI) keepalivePage(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	_, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
+	return nil, howdah.ErrSkipRender
 }
 
 func (d *DictionariesUI) listPage(

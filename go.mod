@@ -12,7 +12,7 @@ require (
 	github.com/ttab/clitools v0.5.2
 	github.com/ttab/elephant-api v0.20.0
 	github.com/ttab/elephantine v0.23.7
-	github.com/ttab/mage v0.8.4
+	github.com/ttab/mage v0.9.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v3 v3.6.2
 	golang.org/x/oauth2 v0.35.0

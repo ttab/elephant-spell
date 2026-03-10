@@ -7,6 +7,8 @@ package postgres
 import (
 	"database/sql/driver"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type EntryLevel string
@@ -59,6 +61,15 @@ type Entry struct {
 	CommonMistakes []string
 	Level          EntryLevel
 	Data           *EntryData
+	Updated        pgtype.Timestamptz
+	UpdatedBy      string
+}
+
+type JobLock struct {
+	Name      string
+	Holder    string
+	Touched   pgtype.Timestamptz
+	Iteration int64
 }
 
 type SchemaVersion struct {

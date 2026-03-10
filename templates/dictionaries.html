@@ -1,0 +1,63 @@
+{{template "header" .}}
+<div class="master-detail">
+  <div class="panel-left">
+    <div class="panel-left-header">
+      <select
+        name="language"
+        onchange="window.location.href='/dictionaries/' + this.value + '/'"
+      >
+        {{range .Contents.Languages}}
+        <option value="{{.}}" {{if eq . $.Contents.Language}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+      <div class="panel-left-actions">
+        <span class="entry-count">{{td "Entries" "{{.Count}} entries" .Contents}}</span>
+        {{if .Contents.CanWrite}}<a
+          class="btn btn-sm btn-primary"
+          href="/dictionaries/{{.Contents.Language}}/new"
+          hx-get="/dictionaries/{{.Contents.Language}}/new"
+          hx-target="#entry-detail"
+          hx-push-url="true"
+        >{{t "NewEntry" "New entry"}}</a>{{end}}
+      </div>
+    </div>
+    <div class="entry-filter">
+      <input
+        type="text"
+        id="entry-filter-input"
+        name="prefix"
+        placeholder="{{t "FilterEntries" "Filter entries..."}}"
+        hx-get="/dictionaries/{{.Contents.Language}}/entries"
+        hx-trigger="input changed delay:300ms, search"
+        hx-target="#entry-list"
+        hx-indicator="#entry-list-area"
+        hx-include="this"
+        autocomplete="off"
+      >
+    </div>
+    <div id="entry-list-area" class="entry-list">
+      <div class="entry-list-skeleton">
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:60%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:45%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:70%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:55%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+        <div class="skeleton-item"><div class="skeleton-bar" style="width:50%"></div><div class="skeleton-bar skeleton-bar-short"></div></div>
+      </div>
+      <div id="entry-list">
+        {{template "entry_list.html" .}}
+      </div>
+    </div>
+  </div>
+  <div class="panel-right">
+    <div id="entry-detail">
+      {{if .Contents.Entry}}
+        {{template "entry_form.html" .}}
+      {{else if .Contents.NewEntry}}
+        {{template "entry_form.html" .}}
+      {{else}}
+        <div class="panel-right-empty">{{t "SelectEntry" "Select an entry to edit"}}</div>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{template "footer" .}}

@@ -78,3 +78,33 @@ other = "Log in to manage dictionaries"
 
 [MissingScope]
 other = "You need the 'spell_write' scope to make changes"
+
+[FilterEntries]
+other = "Filter entries..."
+
+[Previous]
+other = "Previous"
+
+[Next]
+other = "Next"
+
+[Page]
+other = "Page"
+
+[Accepted]
+other = "Accepted"
+
+[Pending]
+other = "Pending"
+
+[LastUpdated]
+other = "Last updated"
+
+[By]
+other = "by"
+
+[TextRequired]
+other = "Text is required"
+
+[LogOut]
+other = "Log out"

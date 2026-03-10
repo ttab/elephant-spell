@@ -9,6 +9,9 @@
     <link rel="stylesheet" href="/assets/css/style.css">
     <script src="/assets/js/htmx.min.js"></script>
     <script src="/assets/js/keepalive.js"></script>
+    <script>
+      (function(){var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)})();
+    </script>
   </head>
   <body>
     <header class="app-header">
@@ -19,6 +22,27 @@
           <a href="{{.HREF}}" {{if .Active}}class="active"{{end}}>{{tl .Title}}</a>
           {{end}}
         </nav>
+        <div class="app-header-actions">
+          <details class="dropdown lang-dropdown">
+            <summary class="header-action-btn" title="{{t "Language" "Language"}}">
+              <img src="/assets/flags/{{lang}}.svg" width="18" height="18" alt="" />
+            </summary>
+            <ul class="dropdown-menu">
+              {{range languages}}
+              <li><a href="/set-language?lang={{.Code}}&redirect={{page_url}}"><img src="/assets/flags/{{.Flag}}.svg" width="16" height="16" /> {{.Name}}</a></li>
+              {{end}}
+            </ul>
+          </details>
+          <button class="header-action-btn theme-toggle" onclick="cycleTheme()" aria-label="Toggle theme">
+            <span class="icon icon-sun"></span>
+            <span class="icon icon-moon"></span>
+          </button>
+          <div class="header-user" id="header-user">
+            <div class="user-avatar" id="user-avatar"></div>
+            <span class="user-name" id="user-name"></span>
+            <a class="btn btn-sm" href="/auth/logout">{{ t "LogOut" "Log out" }}</a>
+          </div>
+        </div>
       </div>
     </header>
     <main class="app-main">
@@ -26,6 +50,47 @@
 
 {{define "footer"}}
     </main>
+    <script>
+      function cycleTheme() {
+        var current = document.documentElement.getAttribute('data-theme');
+        var next;
+        if (!current) {
+          next = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark';
+        } else if (current === 'dark') {
+          next = 'light';
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+          localStorage.removeItem('theme');
+          return;
+        }
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+      }
+      function applyUserInfo(data) {
+        var el = document.getElementById('header-user');
+        if (!el) return;
+        document.getElementById('user-avatar').textContent = data.initials || '?';
+        document.getElementById('user-name').textContent = data.name || data.email || '';
+        el.classList.add('loaded');
+      }
+      function loadUserInfo() {
+        var cached = sessionStorage.getItem('userinfo');
+        if (cached) {
+          applyUserInfo(JSON.parse(cached));
+          return;
+        }
+        fetch('/api/me', {credentials: 'same-origin'})
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(data) {
+            if (!data) return;
+            sessionStorage.setItem('userinfo', JSON.stringify(data));
+            applyUserInfo(data);
+          })
+          .catch(function() {});
+      }
+      loadUserInfo();
+      document.body.addEventListener('htmx:afterSettle', loadUserInfo);
+    </script>
   </body>
 </html>
 {{end}}

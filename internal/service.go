@@ -266,10 +266,17 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 		supportedLanguages, a.p.DefaultLanguage,
 	)
 
-	_, err := howdah.NewApplication(
+	cLangs, err := NewLanguages(a.p.Locales)
+	if err != nil {
+		return fmt.Errorf("load languages: %w", err)
+	}
+
+	cUserInfo := NewUserInfo(a.logger, cAuth)
+
+	_, err = howdah.NewApplication(
 		a.logger, mux,
 		a.p.Templates, a.p.Locales, a.p.Assets,
-		[]howdah.Component{cAuth, cDicts},
+		[]howdah.Component{cAuth, cLangs, cUserInfo, cDicts},
 	)
 	if err != nil {
 		return fmt.Errorf("create howdah application: %w", err)

@@ -136,6 +136,26 @@ type dictionariesContents struct {
 	HasMore     bool
 }
 
+func (d *DictionariesUI) entryCount(ctx context.Context, lang string) (int, error) {
+	svcCtx, err := d.withServiceAuth(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("bridge auth for entry count: %w", err)
+	}
+
+	res, err := d.dicts.ListDictionaries(svcCtx, &spell.ListDictionariesRequest{})
+	if err != nil {
+		return 0, fmt.Errorf("list dictionaries: %w", err)
+	}
+
+	for _, dict := range res.Dictionaries {
+		if dict.Language == lang {
+			return int(dict.EntryCount), nil
+		}
+	}
+
+	return 0, nil
+}
+
 func (d *DictionariesUI) hasWriteScope(ctx context.Context) bool {
 	accessToken, ok := howdah.AccessToken(ctx)
 	if !ok {
@@ -153,7 +173,7 @@ func (d *DictionariesUI) hasWriteScope(ctx context.Context) bool {
 
 type flashMessage struct {
 	Type    string
-	Message string
+	Message howdah.TextLabel
 }
 
 // withServiceAuth bridges howdah's OIDC auth context to elephantine's auth
@@ -209,9 +229,38 @@ func (d *DictionariesUI) listPage(
 		return nil, err
 	}
 
-	http.Redirect(w, r, "/dictionaries/"+d.defaultLanguage+"/", http.StatusFound)
+	lang := d.defaultLanguage
+
+	if c, err := r.Cookie("lang"); err == nil && c.Value != "" {
+		if match := d.matchLanguage(c.Value); match != "" {
+			lang = match
+		}
+	}
+
+	http.Redirect(w, r, "/dictionaries/"+lang+"/", http.StatusFound)
 
 	return nil, howdah.ErrSkipRender
+}
+
+// matchLanguage finds a dictionary language matching the given UI locale code.
+// It first tries an exact match, then falls back to prefix matching (e.g. "sv"
+// matches "sv-se").
+func (d *DictionariesUI) matchLanguage(code string) string {
+	code = strings.ToLower(code)
+
+	for _, lang := range d.languages {
+		if lang == code {
+			return lang
+		}
+	}
+
+	for _, lang := range d.languages {
+		if strings.HasPrefix(lang, code+"-") || strings.HasPrefix(code, lang+"-") {
+			return lang
+		}
+	}
+
+	return ""
 }
 
 func (d *DictionariesUI) languagePage(
@@ -243,6 +292,11 @@ func (d *DictionariesUI) languagePage(
 		return nil, twirpErrorToHTTP(err)
 	}
 
+	count, err := d.entryCount(ctx, lang)
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
 	return &howdah.Page{
 		Template: "dictionaries.html",
 		Title:    howdah.TL("Dictionaries", "Dictionaries"),
@@ -250,7 +304,7 @@ func (d *DictionariesUI) languagePage(
 			Languages: d.languages,
 			Language:  lang,
 			Entries:   entries,
-			Count:     len(entries),
+			Count:     count,
 			CanWrite:  canWrite,
 			HasMore:   hasMore,
 		},
@@ -284,6 +338,11 @@ func (d *DictionariesUI) newEntryPage(
 		return nil, twirpErrorToHTTP(err)
 	}
 
+	count, err := d.entryCount(ctx, lang)
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
 	return &howdah.Page{
 		Template: "dictionaries.html",
 		Title:    howdah.TL("Dictionaries", "Dictionaries"),
@@ -291,7 +350,7 @@ func (d *DictionariesUI) newEntryPage(
 			Languages: d.languages,
 			Language:  lang,
 			Entries:   entries,
-			Count:     len(entries),
+			Count:     count,
 			NewEntry:  true,
 			CanWrite:  canWrite,
 			HasMore:   hasMore,
@@ -343,6 +402,11 @@ func (d *DictionariesUI) entryPage(
 		return nil, twirpErrorToHTTP(err)
 	}
 
+	count, err := d.entryCount(ctx, lang)
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
 	return &howdah.Page{
 		Template: "dictionaries.html",
 		Title:    howdah.TLiteral(text + " – Dictionaries"),
@@ -350,7 +414,7 @@ func (d *DictionariesUI) entryPage(
 			Languages:   d.languages,
 			Language:    lang,
 			Entries:     entries,
-			Count:       len(entries),
+			Count:       count,
 			Entry:       &entry,
 			ActiveEntry: text,
 			CanWrite:    canWrite,
@@ -395,7 +459,7 @@ func (d *DictionariesUI) saveNewEntry(
 				CanWrite: true,
 				Flash: &flashMessage{
 					Type:    "error",
-					Message: "Text is required",
+					Message: howdah.TL("TextRequired", "Text is required"),
 				},
 			},
 		}, nil
@@ -432,7 +496,7 @@ func (d *DictionariesUI) saveNewEntry(
 			CanWrite:    true,
 			Flash: &flashMessage{
 				Type:    "success",
-				Message: "Entry created",
+				Message: howdah.TL("EntryCreated", "Entry created"),
 			},
 		},
 	}, nil
@@ -494,7 +558,7 @@ func (d *DictionariesUI) saveEntry(
 			CanWrite:    true,
 			Flash: &flashMessage{
 				Type:    "success",
-				Message: "Entry updated",
+				Message: howdah.TL("EntryUpdated", "Entry updated"),
 			},
 		},
 	}, nil

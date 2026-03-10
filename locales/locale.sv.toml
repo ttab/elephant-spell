@@ -78,3 +78,33 @@ other = "Logga in för att hantera ordlistor"
 
 [MissingScope]
 other = "Du behöver behörigheten 'spell_write' för att göra ändringar"
+
+[FilterEntries]
+other = "Filtrera ord..."
+
+[Previous]
+other = "Föregående"
+
+[Next]
+other = "Nästa"
+
+[Page]
+other = "Sida"
+
+[Accepted]
+other = "Godkänd"
+
+[Pending]
+other = "Väntande"
+
+[LastUpdated]
+other = "Senast uppdaterad"
+
+[By]
+other = "av"
+
+[TextRequired]
+other = "Text krävs"
+
+[LogOut]
+other = "Logga ut"

@@ -78,3 +78,33 @@ other = "Logg inn for å administrere ordlister"
 
 [MissingScope]
 other = "Du trenger tilgangen 'spell_write' for å gjøre endringer"
+
+[FilterEntries]
+other = "Filtrer ord..."
+
+[Previous]
+other = "Forrige"
+
+[Next]
+other = "Neste"
+
+[Page]
+other = "Side"
+
+[Accepted]
+other = "Godkjent"
+
+[Pending]
+other = "Ventende"
+
+[LastUpdated]
+other = "Sist oppdatert"
+
+[By]
+other = "av"
+
+[TextRequired]
+other = "Tekst er påkrevd"
+
+[LogOut]
+other = "Logg ut"

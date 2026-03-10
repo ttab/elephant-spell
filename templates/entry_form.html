@@ -1,7 +1,7 @@
 {{with .Contents}}
 {{if .Flash}}
 <div class="entry-form-wrapper">
-  <div class="flash-message {{.Flash.Type}}">{{.Flash.Message}}</div>
+  <div class="flash-message {{.Flash.Type}}">{{tl .Flash.Message}}</div>
 </div>
 {{end}}
 {{if not .CanWrite}}

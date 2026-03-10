@@ -9,6 +9,7 @@
       // If the session has expired, howdah redirects to the login page.
       // With redirect: "manual" this shows up as an opaque redirect.
       if (resp.type === "opaqueredirect") {
+        sessionStorage.removeItem("userinfo");
         window.location.reload();
       }
     }).catch(function() {

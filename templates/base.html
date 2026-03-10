@@ -40,7 +40,7 @@
           <div class="header-user" id="header-user">
             <div class="user-avatar" id="user-avatar"></div>
             <span class="user-name" id="user-name"></span>
-            <a class="btn btn-sm" href="/auth/logout">{{ t "LogOut" "Log out" }}</a>
+            <a class="btn btn-sm" href="/auth/logout" onclick="sessionStorage.removeItem('userinfo')">{{ t "LogOut" "Log out" }}</a>
           </div>
         </div>
       </div>
@@ -73,23 +73,31 @@
         document.getElementById('user-name').textContent = data.name || data.email || '';
         el.classList.add('loaded');
       }
-      function loadUserInfo() {
-        var cached = sessionStorage.getItem('userinfo');
-        if (cached) {
-          applyUserInfo(JSON.parse(cached));
-          return;
-        }
-        fetch('/api/me', {credentials: 'same-origin'})
-          .then(function(r) { return r.ok ? r.json() : null; })
+      function clearUserInfo() {
+        sessionStorage.removeItem('userinfo');
+        var el = document.getElementById('header-user');
+        if (el) el.classList.remove('loaded');
+      }
+      function fetchUserInfo() {
+        fetch('/api/me', {credentials: 'same-origin', redirect: 'manual'})
+          .then(function(r) {
+            if (r.type === 'opaqueredirect' || !r.ok) {
+              clearUserInfo();
+              return null;
+            }
+            return r.json();
+          })
           .then(function(data) {
             if (!data) return;
             sessionStorage.setItem('userinfo', JSON.stringify(data));
             applyUserInfo(data);
           })
-          .catch(function() {});
+          .catch(function() { clearUserInfo(); });
       }
-      loadUserInfo();
-      document.body.addEventListener('htmx:afterSettle', loadUserInfo);
+      // Show cached info immediately to avoid flicker, then validate.
+      var cached = sessionStorage.getItem('userinfo');
+      if (cached) applyUserInfo(JSON.parse(cached));
+      fetchUserInfo();
     </script>
   </body>
 </html>

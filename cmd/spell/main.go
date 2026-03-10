@@ -15,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
 	spell "github.com/ttab/elephant-spell"
+	"github.com/ttab/elephant-spell/docs"
 	"github.com/ttab/elephant-spell/internal"
 	"github.com/ttab/elephantine"
 	"github.com/urfave/cli/v3"
@@ -266,6 +267,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	params.Templates = mustSubFS(spell.TemplateFS, "templates")
 	params.Locales = mustSubFS(spell.LocaleFS, "locales")
 	params.Assets = mustSubFS(spell.AssetFS, "assets")
+	params.Docs = docs.FS
 
 	app, err := internal.NewApplication(ctx, params)
 	if err != nil {

@@ -73,6 +73,7 @@ type Parameters struct {
 	Templates fs.FS
 	Locales   fs.FS
 	Assets    fs.FS
+	Docs      fs.FS
 }
 
 func NewApplication(
@@ -273,10 +274,15 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 
 	cUserInfo := NewUserInfo(a.logger, cAuth)
 
+	cDocs, err := NewDocsUI(cAuth, a.p.Docs, "dictionary-entries.md")
+	if err != nil {
+		return fmt.Errorf("create docs component: %w", err)
+	}
+
 	_, err = howdah.NewApplication(
 		a.logger, mux,
 		a.p.Templates, a.p.Locales, a.p.Assets,
-		[]howdah.Component{cAuth, cLangs, cUserInfo, cDicts},
+		[]howdah.Component{cAuth, cLangs, cUserInfo, cDicts, cDocs},
 	)
 	if err != nil {
 		return fmt.Errorf("create howdah application: %w", err)

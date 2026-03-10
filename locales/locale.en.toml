@@ -106,5 +106,8 @@ other = "by"
 [TextRequired]
 other = "Text is required"
 
+[Documentation]
+other = "Documentation"
+
 [LogOut]
 other = "Log out"

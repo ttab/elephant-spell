@@ -106,5 +106,8 @@ other = "av"
 [TextRequired]
 other = "Text krävs"
 
+[Documentation]
+other = "Dokumentation"
+
 [LogOut]
 other = "Logga ut"

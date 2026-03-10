@@ -59,8 +59,9 @@ type Parameters struct {
 	AuthInfoParser elephantine.AuthInfoParser
 	Registerer     prometheus.Registerer
 	CORSHosts      []string
-	PingInterval   time.Duration
-	PingGrace      time.Duration
+	PingInterval    time.Duration
+	PingGrace       time.Duration
+	DefaultLanguage string
 
 	// OIDC configuration for the web UI. When OIDCProvider is nil the
 	// web UI is not served.
@@ -261,7 +262,8 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 	}
 
 	cDicts := NewDictionariesUI(
-		a.logger, cAuth, a.p.AuthInfoParser, a, supportedLanguages,
+		a.logger, cAuth, a.p.AuthInfoParser, a,
+		supportedLanguages, a.p.DefaultLanguage,
 	)
 
 	_, err := howdah.NewApplication(

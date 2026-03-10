@@ -124,6 +124,12 @@ func main() {
 				Value:    "http://localhost:1080/auth/callback",
 				Required: true,
 			},
+			&cli.StringFlag{
+				Name:    "default-language",
+				Sources: cli.EnvVars("DEFAULT_LANGUAGE"),
+				Usage:   "Language to redirect to from the root page",
+				Value:   "sv-se",
+			},
 		},
 	}
 
@@ -162,6 +168,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		clientID          = c.String("client-id")
 		clientSecret      = c.String("client-secret")
 		callbackURL       = c.String("callback-url")
+		defaultLanguage   = c.String("default-language")
 	)
 
 	logger := elephantine.SetUpLogger(logLevel, os.Stdout)
@@ -228,8 +235,9 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		AuthInfoParser: auth.AuthParser,
 		Registerer:     prometheus.DefaultRegisterer,
 		CORSHosts:      corsHosts,
-		PingInterval:   pingInterval,
-		PingGrace:      pingGrace,
+		PingInterval:    pingInterval,
+		PingGrace:       pingGrace,
+		DefaultLanguage: defaultLanguage,
 	}
 
 	provider, err := oidc.NewProvider(ctx, oidcProviderURL)

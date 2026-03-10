@@ -18,11 +18,12 @@ import (
 )
 
 type DictionariesUI struct {
-	log        *slog.Logger
-	auth       howdah.Authenticator
-	authParser elephantine.AuthInfoParser
-	dicts      spell.Dictionaries
-	languages  []string
+	log             *slog.Logger
+	auth            howdah.Authenticator
+	authParser      elephantine.AuthInfoParser
+	dicts           spell.Dictionaries
+	languages       []string
+	defaultLanguage string
 }
 
 func NewDictionariesUI(
@@ -31,15 +32,21 @@ func NewDictionariesUI(
 	authParser elephantine.AuthInfoParser,
 	dicts spell.Dictionaries,
 	languages []string,
+	defaultLanguage string,
 ) *DictionariesUI {
 	slices.Sort(languages)
 
+	if defaultLanguage == "" {
+		defaultLanguage = languages[0]
+	}
+
 	return &DictionariesUI{
-		log:        logger,
-		auth:       auth,
-		authParser: authParser,
-		dicts:      dicts,
-		languages:  languages,
+		log:             logger,
+		auth:            auth,
+		authParser:      authParser,
+		dicts:           dicts,
+		languages:       languages,
+		defaultLanguage: defaultLanguage,
 	}
 }
 
@@ -202,7 +209,7 @@ func (d *DictionariesUI) listPage(
 		return nil, err
 	}
 
-	http.Redirect(w, r, "/dictionaries/"+d.languages[0]+"/", http.StatusFound)
+	http.Redirect(w, r, "/dictionaries/"+d.defaultLanguage+"/", http.StatusFound)
 
 	return nil, howdah.ErrSkipRender
 }

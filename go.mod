@@ -4,21 +4,22 @@ go 1.25.7
 
 require (
 	github.com/blevesearch/segment v0.9.1
-	github.com/coreos/go-oidc/v3 v3.17.0
+	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/dghubble/trie v0.1.0
-	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jackc/pgx/v5 v5.9.1
 	github.com/jackc/puddle/v2 v2.2.2
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.2
-	github.com/ttab/clitools v0.6.0
-	github.com/ttab/elephant-api v0.21.4-0.20260309193215-f1640f1eade8
+	github.com/ttab/clitools v1.0.1
+	github.com/ttab/elephant-api v0.22.1
 	github.com/ttab/elephantine v0.25.0
-	github.com/ttab/howdah v0.0.6
+	github.com/ttab/howdah v0.0.7
 	github.com/ttab/mage v0.9.0
 	github.com/twitchtv/twirp v8.1.3+incompatible
-	github.com/urfave/cli/v3 v3.7.0
-	github.com/yuin/goldmark v1.7.16
+	github.com/urfave/cli/v3 v3.8.0
+	github.com/yuin/goldmark v1.8.2
 	golang.org/x/oauth2 v0.36.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -29,7 +30,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/danjacques/gofslock v0.0.0-20240212154529-d899e02bfe22 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -42,8 +43,8 @@ require (
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
-	github.com/hashicorp/vault/api v1.22.0 // indirect
-	github.com/hashicorp/vault/api/auth/kubernetes v0.10.0 // indirect
+	github.com/hashicorp/vault/api v1.23.0 // indirect
+	github.com/hashicorp/vault/api/auth/kubernetes v0.12.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.0 // indirect
@@ -59,10 +60,9 @@ require (
 	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 )

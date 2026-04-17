@@ -241,6 +241,48 @@ Example entries showing these features:
 }
 ```
 
+## spell-client CLI
+
+A command-line tool for managing custom dictionaries. Requires the `spell-client` environment to be configured with a `spell` endpoint and OIDC credentials (via `clitools`).
+
+```bash
+go build ./cmd/spell-client
+```
+
+### download
+
+Download all entries for a language as newline-delimited JSON (one JSON object per line):
+
+```bash
+spell-client download --language sv-se > dict.ndjson
+```
+
+Each line is a protobuf-JSON serialised `CustomEntry`. Output goes to stdout so it can be piped or redirected.
+
+### upload
+
+Upload entries from a newline-delimited JSON file:
+
+```bash
+spell-client upload --file dict.ndjson
+```
+
+The language and all other fields are taken from each JSON object, so a single file can contain entries for multiple languages. Unknown fields are silently ignored, making it forward-compatible with newer entry schemas.
+
+### upload-csv
+
+Upload entries from a CSV file (columns: correct, mistakes, comment):
+
+```bash
+spell-client upload-csv --file entries.csv --language sv-se
+```
+
+### Global flags
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--env` | `ENV` | `stage` | Environment (local/stage/prod) |
+
 ## Web UI
 
 The service includes a web UI for managing custom dictionary entries, available at the API server address (default `:1080`). It requires OIDC authentication and the `spell_write` scope for making changes.

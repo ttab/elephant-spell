@@ -1,18 +1,18 @@
 module github.com/ttab/elephant-spell
 
-go 1.25.7
+go 1.26.2
 
 require (
 	github.com/blevesearch/segment v0.9.1
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/dghubble/trie v0.1.0
-	github.com/jackc/pgx/v5 v5.9.1
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/jackc/puddle/v2 v2.2.2
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/ttab/clitools v1.0.1
 	github.com/ttab/elephant-api v0.22.1
-	github.com/ttab/elephantine v0.25.0
+	github.com/ttab/elephantine v0.26.1
 	github.com/ttab/howdah v0.0.7
 	github.com/ttab/mage v0.9.0
 	github.com/twitchtv/twirp v8.1.3+incompatible

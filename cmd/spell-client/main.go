@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/csv"
 	"errors"
@@ -15,6 +17,7 @@ import (
 	"github.com/ttab/elephantine"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/oauth2"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func main() {
@@ -42,11 +45,40 @@ func main() {
 		},
 	}
 
+	downloadCmd := cli.Command{
+		Name:   "download",
+		Usage:  "Download a dictionary as newline-delimited JSON",
+		Action: downloadDictionary,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:     "language",
+				Usage:    "Language code (e.g. sv-se)",
+				Required: true,
+			},
+		},
+	}
+
+	uploadCmd := cli.Command{
+		Name:   "upload",
+		Usage:  "Upload a dictionary from newline-delimited JSON",
+		Action: uploadDictionary,
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:      "file",
+				Usage:     "Newline-delimited JSON file",
+				Required:  true,
+				TakesFile: true,
+			},
+		},
+	}
+
 	app := cli.Command{
 		Name:  "spell-client",
 		Usage: "The spell client",
 		Commands: []*cli.Command{
 			&uploadCSVCmd,
+			&downloadCmd,
+			&uploadCmd,
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -134,6 +166,123 @@ func uploadCSV(ctx context.Context, c *cli.Command) (outErr error) {
 			return fmt.Errorf("save entry %q: %w", correct, err)
 		}
 	}
+
+	return nil
+}
+
+func downloadDictionary(ctx context.Context, c *cli.Command) error {
+	var (
+		env  = c.String("env")
+		lang = c.String("language")
+	)
+
+	clients, err := getClients(ctx, env)
+	if err != nil {
+		return err
+	}
+
+	marshaler := protojson.MarshalOptions{}
+
+	var n int
+
+	for page := int64(0); ; page++ {
+		res, err := clients.Dictionaries.ListEntries(ctx,
+			&spell.ListEntriesRequest{
+				Language: lang,
+				Page:     page,
+			})
+		if err != nil {
+			return fmt.Errorf("list entries page %d: %w", page, err)
+		}
+
+		if len(res.Entries) == 0 {
+			break
+		}
+
+		for _, entry := range res.Entries {
+			data, err := marshaler.Marshal(entry)
+			if err != nil {
+				return fmt.Errorf("marshal entry %q: %w",
+					entry.Text, err)
+			}
+
+			_, err = fmt.Fprintf(os.Stdout, "%s\n", data)
+			if err != nil {
+				return fmt.Errorf("write entry %q: %w",
+					entry.Text, err)
+			}
+
+			n++
+		}
+	}
+
+	slog.Info("download complete",
+		"language", lang,
+		"entries", n,
+	)
+
+	return nil
+}
+
+func uploadDictionary(ctx context.Context, c *cli.Command) (outErr error) {
+	var (
+		env  = c.String("env")
+		file = c.String("file")
+	)
+
+	f, err := os.Open(file)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+
+	defer elephantine.Close("dictionary file", f, &outErr)
+
+	clients, err := getClients(ctx, env)
+	if err != nil {
+		return err
+	}
+
+	scanner := bufio.NewScanner(f)
+	unmarshaler := protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+
+	var n int
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+
+		var entry spell.CustomEntry
+
+		err := unmarshaler.Unmarshal(line, &entry)
+		if err != nil {
+			return fmt.Errorf("unmarshal line %d: %w", n+1, err)
+		}
+
+		slog.Info("setting entry",
+			"text", entry.Text,
+			"language", entry.Language,
+		)
+
+		_, err = clients.Dictionaries.SetEntry(ctx,
+			&spell.SetEntryRequest{
+				Entry: &entry,
+			})
+		if err != nil {
+			return fmt.Errorf("set entry %q: %w", entry.Text, err)
+		}
+
+		n++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read file: %w", err)
+	}
+
+	slog.Info("upload complete", "entries", n)
 
 	return nil
 }

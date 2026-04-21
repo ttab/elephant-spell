@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/ttab/elephant-api/spell"
@@ -21,7 +24,9 @@ import (
 	"github.com/ttab/elephant-spell/postgres"
 	"github.com/ttab/elephantine"
 	"github.com/ttab/elephantine/pg"
+	"github.com/ttab/howdah"
 	"github.com/twitchtv/twirp"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -54,8 +59,21 @@ type Parameters struct {
 	AuthInfoParser elephantine.AuthInfoParser
 	Registerer     prometheus.Registerer
 	CORSHosts      []string
-	PingInterval   time.Duration
-	PingGrace      time.Duration
+	PingInterval    time.Duration
+	PingGrace       time.Duration
+	DefaultLanguage string
+
+	// OIDC configuration for the web UI. When OIDCProvider is nil the
+	// web UI is not served.
+	OIDCProvider *oidc.Provider
+	OIDCVerifier *oidc.IDTokenVerifier
+	OIDCConfig   *oauth2.Config
+
+	// Embedded filesystems for the web UI.
+	Templates fs.FS
+	Locales   fs.FS
+	Assets    fs.FS
+	Docs      fs.FS
 }
 
 func NewApplication(
@@ -132,11 +150,11 @@ func NewApplication(
 	}
 
 	app := Application{
-		p:        p,
-		logger:   p.Logger,
-		db:       p.Database,
-		pubsubDB: p.PubsubDatabase,
-		q:        postgres.New(p.Database),
+		p:         p,
+		logger:    p.Logger,
+		db:        p.Database,
+		pubsubDB:  p.PubsubDatabase,
+		q:         postgres.New(p.Database),
 		languages: languages,
 	}
 
@@ -175,6 +193,11 @@ func (a *Application) Run(ctx context.Context) error {
 
 	server.RegisterAPI(checkServer, opts)
 	server.RegisterAPI(dictServer, opts)
+
+	err = a.setupUI(server.Mux)
+	if err != nil {
+		return fmt.Errorf("set up web UI: %w", err)
+	}
 
 	grp := elephantine.NewErrGroup(ctx, a.logger)
 
@@ -227,6 +250,45 @@ func (a *Application) Run(ctx context.Context) error {
 	})
 
 	return grp.Wait()
+}
+
+func (a *Application) setupUI(mux *http.ServeMux) error {
+	cAuth := howdah.NewOIDCAuth(
+		a.p.OIDCProvider, a.p.OIDCVerifier, *a.p.OIDCConfig,
+	)
+
+	supportedLanguages := make([]string, 0, len(a.languages))
+	for code := range a.languages {
+		supportedLanguages = append(supportedLanguages, code)
+	}
+
+	cDicts := NewDictionariesUI(
+		a.logger, cAuth, a.p.AuthInfoParser, a,
+		supportedLanguages, a.p.DefaultLanguage,
+	)
+
+	cLangs, err := NewLanguages(a.p.Locales)
+	if err != nil {
+		return fmt.Errorf("load languages: %w", err)
+	}
+
+	cUserInfo := NewUserInfo(a.logger, cAuth)
+
+	cDocs, err := NewDocsUI(cAuth, a.p.Docs, "dictionary-entries.md")
+	if err != nil {
+		return fmt.Errorf("create docs component: %w", err)
+	}
+
+	_, err = howdah.NewApplication(
+		a.logger, mux,
+		a.p.Templates, a.p.Locales, a.p.Assets,
+		[]howdah.Component{cAuth, cLangs, cUserInfo, cDicts, cDocs},
+	)
+	if err != nil {
+		return fmt.Errorf("create howdah application: %w", err)
+	}
+
+	return nil
 }
 
 // SupportedLanguages implements spell.Dictionaries.
@@ -331,6 +393,11 @@ func (a *Application) GetEntry(
 		forms = row.Data.Forms
 	}
 
+	var updated string
+	if row.Updated.Valid {
+		updated = row.Updated.Time.Format(time.RFC3339)
+	}
+
 	res := spell.GetEntryResponse{
 		Entry: &spell.CustomEntry{
 			Language:       row.Language,
@@ -340,6 +407,8 @@ func (a *Application) GetEntry(
 			CommonMistakes: row.CommonMistakes,
 			Level:          level,
 			Forms:          forms,
+			Updated:        updated,
+			UpdatedBy:      row.UpdatedBy,
 		},
 	}
 
@@ -424,6 +493,11 @@ func (a *Application) ListEntries(
 			forms = row.Data.Forms
 		}
 
+		var updated string
+		if row.Updated.Valid {
+			updated = row.Updated.Time.Format(time.RFC3339)
+		}
+
 		res.Entries[i] = &spell.CustomEntry{
 			Language:       row.Language,
 			Text:           row.Entry,
@@ -432,6 +506,8 @@ func (a *Application) ListEntries(
 			CommonMistakes: row.CommonMistakes,
 			Level:          level,
 			Forms:          forms,
+			Updated:        updated,
+			UpdatedBy:      row.UpdatedBy,
 		}
 	}
 
@@ -442,7 +518,7 @@ func (a *Application) ListEntries(
 func (a *Application) SetEntry(
 	ctx context.Context, req *spell.SetEntryRequest,
 ) (_ *spell.SetEntryResponse, outErr error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
 	if err != nil {
 		return nil, err //nolint: wrapcheck
 	}
@@ -493,6 +569,8 @@ func (a *Application) SetEntry(
 		Data: &postgres.EntryData{
 			Forms: req.Entry.Forms,
 		},
+		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedBy: auth.Claims.Subject,
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorf("write to database: %w", err)
@@ -693,6 +771,12 @@ func (a *Application) runListener(ctx context.Context) (outErr error) {
 
 				continue
 			}
+
+			a.logger.Debug("dictionary entry update",
+				"language", n.Language,
+				"text", n.Text,
+				"deleted", n.Deleted,
+			)
 
 			select {
 			case a.entryUpdates <- n:

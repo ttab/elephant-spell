@@ -642,7 +642,7 @@ func (a *Application) Text(
 	}
 
 	for i := range req.Text {
-		m, err := lang.Check(ctx, req.Text[i], req.Suggestions)
+		m, err := lang.Check(ctx, req.Text[i], req.Suggestions, req.CustomOnly)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"spellcheck text %d: %v", i+1, err)
@@ -676,7 +676,7 @@ func (a *Application) Suggestions(
 			"unsupported language %q", req.Language)
 	}
 
-	sugg, err := lang.Suggestions(req.Text)
+	sugg, err := lang.Suggestions(req.Text, req.CustomOnly)
 	if err != nil {
 		return nil, twirp.InternalErrorf(
 			"generate suggestions: %v", err)

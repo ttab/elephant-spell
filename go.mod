@@ -11,10 +11,10 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.2
 	github.com/ttab/clitools v1.0.1
-	github.com/ttab/elephant-api v0.22.1
+	github.com/ttab/elephant-api v0.22.4-0.20260511122913-7cdc74bcb1d8
 	github.com/ttab/elephantine v0.26.1
 	github.com/ttab/howdah v0.0.7
-	github.com/ttab/mage v0.9.0
+	github.com/ttab/mage v0.9.1
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v3 v3.8.0
 	github.com/yuin/goldmark v1.8.2
@@ -49,7 +49,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jellydator/ttlcache/v3 v3.4.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/magefile/mage v1.15.0 // indirect
+	github.com/magefile/mage v1.17.2 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect

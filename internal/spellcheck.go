@@ -133,6 +133,7 @@ func (s *Spellcheck) Check(
 	ctx context.Context,
 	text string,
 	withSuggestions bool,
+	customOnly bool,
 ) (*spell.Misspelled, error) {
 	var res spell.Misspelled
 
@@ -206,6 +207,10 @@ func (s *Spellcheck) Check(
 	}
 
 	s.m.RUnlock()
+
+	if customOnly {
+		return &res, nil
+	}
 
 	var textReader io.Reader
 
@@ -285,7 +290,9 @@ func (s *Spellcheck) Check(
 	return &res, nil
 }
 
-func (s *Spellcheck) Suggestions(text string) ([]*spell.Suggestion, error) {
+func (s *Spellcheck) Suggestions(
+	text string, customOnly bool,
+) ([]*spell.Suggestion, error) {
 	var suggestions []*spell.Suggestion
 
 	s.m.RLock()
@@ -317,6 +324,10 @@ func (s *Spellcheck) Suggestions(text string) ([]*spell.Suggestion, error) {
 	}
 
 	s.m.RUnlock()
+
+	if customOnly {
+		return suggestions, nil
+	}
 
 	// Don't bother running hunspell for phrases, single words only.
 	if !strings.Contains(text, " ") && !s.hunspell.Spell(text) {

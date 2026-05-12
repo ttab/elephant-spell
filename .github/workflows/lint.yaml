@@ -15,11 +15,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: false # Let golangcilint handle caching
       - name: Install hunspell
         run: sudo apt-get install -y libhunspell-dev
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.11.1
+          version: v2.11.4
           args: --timeout=4m

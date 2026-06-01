@@ -117,8 +117,8 @@ github.com/ttab/elephant-api v0.23.0 h1:tuZ47+3gqqKOGVaFsWFo2JsEiwjFZgypEvE5s7a9
 github.com/ttab/elephant-api v0.23.0/go.mod h1:4yLd0PwZRjsRj0Lb7QSQPaoYvz0zYZ7fALe1ANaYOhg=
 github.com/ttab/elephantine v0.26.3 h1:XYwKX/dGTEg7+NUPnRw0x5FlmVIDneHfkAos51Tz0Rk=
 github.com/ttab/elephantine v0.26.3/go.mod h1:YUoQI2qAbGEju/StMzKNM+c2VvPYsSG782JnjT3mRMI=
-github.com/ttab/howdah v0.0.8 h1:NOsKnXPs8s1c2tf0tqg2oKVI5pPDYBoKTQXzCjM/KMY=
-github.com/ttab/howdah v0.0.8/go.mod h1:MFfIWJsMBvkIyMswmLFy1KI6WIWwnYNVVQxZ+HYzIgI=
+github.com/ttab/howdah v0.1.0 h1:+Pq0BwbNz+q8szlkg/DAobmeg9Fuuo59PTM1jBIK+Xo=
+github.com/ttab/howdah v0.1.0/go.mod h1:MFfIWJsMBvkIyMswmLFy1KI6WIWwnYNVVQxZ+HYzIgI=
 github.com/ttab/mage v0.9.1 h1:0X1AR5G/nevuLYtJW5BgN03glBicJZxb5z7jIUHN5ro=
 github.com/ttab/mage v0.9.1/go.mod h1:nemmtRhMVzb/DRo+stFa6BaQwLatMFmmZ9d8XmGgd6U=
 github.com/twitchtv/twirp v8.1.3+incompatible h1:+F4TdErPgSUbMZMwp13Q/KgDVuI7HJXP61mNV3/7iuU=

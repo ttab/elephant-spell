@@ -13,7 +13,7 @@ require (
 	github.com/ttab/clitools v1.0.3
 	github.com/ttab/elephant-api v0.23.0
 	github.com/ttab/elephantine v0.26.3
-	github.com/ttab/howdah v0.0.8
+	github.com/ttab/howdah v0.1.0
 	github.com/ttab/mage v0.9.1
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/urfave/cli/v3 v3.9.0

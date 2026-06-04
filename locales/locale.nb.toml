@@ -294,3 +294,6 @@ other = "hunspell"
 
 [NoSuggestions]
 other = "Ingen forslag"
+
+[SuggestionsLabel]
+other = "Forslag:"

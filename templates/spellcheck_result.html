@@ -17,14 +17,10 @@
         {{if .Status}}<span class="entry-item-status">{{.Status}}</span>{{else}}<span class="entry-item-status">{{t "FromHunspell" "hunspell"}}</span>{{end}}
       </div>
       {{if .Suggestions}}
-      <ul class="spellcheck-suggestions">
-        {{range .Suggestions}}
-        <li>
-          <span class="spellcheck-suggestion-text">{{.Text}}</span>
-          {{if .Description}}<span class="spellcheck-suggestion-desc">{{.Description}}</span>{{end}}
-        </li>
-        {{end}}
-      </ul>
+      <div class="spellcheck-suggest-row">
+        <span class="spellcheck-suggest-label">{{t "SuggestionsLabel" "Suggestions:"}}</span>
+        {{range .Suggestions}}<span class="suggestion-pill"{{if .Description}} title="{{.Description}}"{{end}}>{{.Text}}</span>{{end}}
+      </div>
       {{else}}
       <div class="spellcheck-no-suggestion">{{t "NoSuggestions" "No suggestions"}}</div>
       {{end}}

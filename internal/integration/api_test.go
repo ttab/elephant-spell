@@ -473,7 +473,7 @@ func TestAPI(t *testing.T) {
 				Name:        "kronor-rule",
 				Status:      "accepted",
 				Level:       spellapi.CorrectionLevel_LEVEL_SUGGESTION,
-				Pattern:     ":digit kr",
+				Pattern:     "{digit} kr",
 				Replacement: "{1} kronor",
 			},
 		})
@@ -527,7 +527,7 @@ func TestAPI(t *testing.T) {
 			t.Fatalf("get rule: %v", err)
 		}
 
-		if got.Rule == nil || got.Rule.Pattern != ":digit kr" ||
+		if got.Rule == nil || got.Rule.Pattern != "{digit} kr" ||
 			got.Rule.Name != "kronor-rule" {
 			t.Errorf("rule did not round-trip: %+v", got.Rule)
 		}
@@ -553,7 +553,7 @@ func TestAPI(t *testing.T) {
 				Language: "sv-se",
 				Name:     "bad-rule",
 				Status:   "accepted",
-				Pattern:  ":gap(x)",
+				Pattern:  "{gap(x)}",
 			},
 		})
 
@@ -564,7 +564,7 @@ func TestAPI(t *testing.T) {
 		created, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
 			Rule: &spellapi.Rule{
 				Language: "sv-se", Name: "pending-rule", Status: "pending",
-				Pattern: ":digit %", Replacement: "{1} procent",
+				Pattern: "{digit} %", Replacement: "{1} procent",
 			},
 		})
 		if err != nil {
@@ -575,7 +575,7 @@ func TestAPI(t *testing.T) {
 		updated, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
 			Rule: &spellapi.Rule{
 				Id: created.Id, Language: "sv-se", Name: "renamed-rule",
-				Status: "pending", Pattern: ":digit %", Replacement: "{1} procent",
+				Status: "pending", Pattern: "{digit} %", Replacement: "{1} procent",
 			},
 		})
 		if err != nil {

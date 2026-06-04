@@ -1,0 +1,94 @@
+{{with .Contents}}
+{{if .Flash}}
+<div class="entry-form-wrapper">
+  <div class="flash-message {{.Flash.Type}}">{{tl .Flash.Message}}</div>
+</div>
+{{end}}
+{{if not .CanWrite}}
+<div class="entry-form-wrapper">
+  <div class="flash-message warning">{{t "MissingScope" "You need the 'spell_write' scope to make changes"}}</div>
+</div>
+{{end}}
+<div class="entry-form-wrapper">
+  <div class="entry-form-header">
+    <a class="btn btn-sm mobile-back" href="/rules/{{.Language}}/">← {{t "Back" "Back"}}</a>
+    <h2>{{if .NewRule}}{{t "NewRule" "New rule"}}{{else}}{{.Rule.Name}}{{end}}</h2>
+  </div>
+  <form
+    class="entry-form"
+    hx-post="/rules/{{.Language}}/{{if .NewRule}}_new{{else}}{{pathEscape .Rule.Name}}{{end}}"
+    hx-target="#entry-detail"
+  >
+    <div class="form-group">
+      <label for="name">{{t "Name" "Name"}}</label>
+      {{if .NewRule}}
+      <input type="text" id="name" name="name" value="" required {{if not .CanWrite}}disabled{{end}}>
+      {{else}}
+      <input type="text" id="name" name="name" value="{{.Rule.Name}}" readonly>
+      {{end}}
+    </div>
+
+    <div class="form-group">
+      <label for="status">{{t "Status" "Status"}}</label>
+      <select id="status" name="status" required {{if not .CanWrite}}disabled{{end}}>
+        <option value="accepted" {{if and .Rule (eq .Rule.Status "accepted")}}selected{{end}}>{{t "Accepted" "Accepted"}}</option>
+        <option value="pending" {{if and .Rule (eq .Rule.Status "pending")}}selected{{end}}>{{t "Pending" "Pending"}}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="description">{{t "Description" "Description"}}</label>
+      <input type="text" id="description" name="description" value="{{if .Rule}}{{.Rule.Description}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+    </div>
+
+    <div class="form-group">
+      <label for="level">{{t "CorrectionLevel" "Correction level"}}</label>
+      <select id="level" name="level" {{if not .CanWrite}}disabled{{end}}>
+        <option value="error" {{if and .Rule (eq .Rule.Level "error")}}selected{{end}}>{{t "Error" "Error"}}</option>
+        <option value="suggestion" {{if and .Rule (eq .Rule.Level "suggestion")}}selected{{end}}>{{t "Suggestion" "Suggestion"}}</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="pattern">{{t "RulePattern" "Pattern"}}</label>
+      <div class="help-text">{{t "RuleHelp" "Match a token pattern. Use literals, :digit, :word and :gap(N); reference captured tokens in the replacement as {1}, {2}."}}</div>
+      <input type="text" id="pattern" name="pattern" value="{{if .Rule}}{{.Rule.Pattern}}{{end}}" placeholder=":digit - :digit" required {{if not .CanWrite}}disabled{{end}}>
+    </div>
+
+    <div class="form-group">
+      <label for="replacement">{{t "RuleReplacement" "Replacement"}}</label>
+      <input type="text" id="replacement" name="replacement" value="{{if .Rule}}{{.Rule.Replacement}}{{end}}" placeholder="{1}–{2}" {{if not .CanWrite}}disabled{{end}}>
+    </div>
+
+    <div class="form-group">
+      <label>{{t "RuleGuards" "Context guards"}}</label>
+      <div class="help-text">{{t "RuleGuardsHelp" "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."}}</div>
+      <input type="text" name="not_before" value="{{if .Rule}}{{.Rule.NotBefore}}{{end}}" placeholder="{{t "RuleNotBefore" "skip if preceded by..."}}" {{if not .CanWrite}}disabled{{end}}>
+      <input type="text" name="not_after" value="{{if .Rule}}{{.Rule.NotAfter}}{{end}}" placeholder="{{t "RuleNotAfter" "skip if followed by..."}}" {{if not .CanWrite}}disabled{{end}}>
+      <input type="text" name="before" value="{{if .Rule}}{{.Rule.Before}}{{end}}" placeholder="{{t "RuleBefore" "only if preceded by..."}}" {{if not .CanWrite}}disabled{{end}}>
+      <input type="text" name="after" value="{{if .Rule}}{{.Rule.After}}{{end}}" placeholder="{{t "RuleAfter" "only if followed by..."}}" {{if not .CanWrite}}disabled{{end}}>
+    </div>
+
+    {{if .CanWrite}}
+    <div class="form-actions">
+      {{if not .NewRule}}
+      <button
+        type="button"
+        class="btn btn-danger"
+        hx-post="/rules/{{.Language}}/{{pathEscape .Rule.Name}}/delete"
+        hx-target="#entry-detail"
+        hx-confirm="{{t "ConfirmDeleteRule" "Are you sure you want to delete this rule?"}}"
+      >{{t "Delete" "Delete"}}</button>
+      {{end}}
+      <div class="spacer"></div>
+      <button type="submit" class="btn btn-primary">{{t "Save" "Save"}}</button>
+    </div>
+    {{end}}
+  </form>
+  {{if and .Rule .Rule.Updated}}
+  <div class="entry-metadata">
+    <small>{{t "LastUpdated" "Last updated"}}: {{.Rule.Updated}}{{if .Rule.UpdatedBy}} {{t "By" "by"}} {{.Rule.UpdatedBy}}{{end}}</small>
+  </div>
+  {{end}}
+</div>
+{{end}}

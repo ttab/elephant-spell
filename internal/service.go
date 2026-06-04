@@ -381,6 +381,11 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 		supportedLanguages, a.p.DefaultLanguage,
 	)
 
+	cRules := NewRulesUI(
+		a.logger, cAuth, a.p.AuthInfoParser, a, a,
+		supportedLanguages, a.p.DefaultLanguage,
+	)
+
 	cLangs, err := NewLanguages(a.p.Locales)
 	if err != nil {
 		return fmt.Errorf("load languages: %w", err)
@@ -396,7 +401,7 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 	_, err = howdah.NewApplication(
 		a.logger, mux,
 		a.p.Templates, a.p.Locales, a.p.Assets,
-		[]howdah.Component{cAuth, cLangs, cUserInfo, cDicts, cDocs},
+		[]howdah.Component{cAuth, cLangs, cUserInfo, cDicts, cRules, cDocs},
 	)
 	if err != nil {
 		return fmt.Errorf("create howdah application: %w", err)

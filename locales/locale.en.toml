@@ -94,6 +94,39 @@ other = "Nothing to expand yet."
 [Close]
 other = "Close"
 
+[Rules]
+other = "Rules"
+
+[RulesLower]
+other = "rules"
+
+[NewRule]
+other = "New rule"
+
+[FilterRules]
+other = "Search name, pattern, description..."
+
+[SelectRule]
+other = "Select a rule to edit"
+
+[NoRules]
+other = "No rules found"
+
+[Name]
+other = "Name"
+
+[NameRequired]
+other = "Name is required"
+
+[RuleCreated]
+other = "Rule created"
+
+[RuleUpdated]
+other = "Rule updated"
+
+[ConfirmDeleteRule]
+other = "Are you sure you want to delete this rule?"
+
 [Language]
 other = "Language"
 

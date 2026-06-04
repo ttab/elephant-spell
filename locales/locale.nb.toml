@@ -1,6 +1,27 @@
 [Dictionaries]
 other = "Ordlister"
 
+[Moderation]
+other = "Moderering"
+
+[ModerationIntro]
+other = "Gå gjennom oppføringer som venter på moderering. Godkjente oppføringer beholdes, avviste fjernes."
+
+[NoPending]
+other = "Ingen oppføringer venter på moderering"
+
+[Accept]
+other = "Godkjenn"
+
+[Reject]
+other = "Avvis"
+
+[ConfirmReject]
+other = "Avvis og slett denne oppføringen?"
+
+[Edit]
+other = "Rediger"
+
 [Language]
 other = "Språk"
 

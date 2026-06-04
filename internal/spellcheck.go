@@ -23,6 +23,10 @@ type Phrase struct {
 	CommonMistakes []string
 	Level          postgres.EntryLevel
 	Forms          map[string]string
+	// Status mirrors the custom entry's moderation status (e.g. "accepted" or
+	// "pending"). It is surfaced on corrections so clients can flag matches
+	// based on unreviewed entries.
+	Status string
 }
 
 func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) {
@@ -174,8 +178,9 @@ func (s *Spellcheck) Check(
 		level, _ := entryLevelToRPC(p.Level)
 
 		entry := spell.MisspelledEntry{
-			Text:  text,
-			Level: level,
+			Text:   text,
+			Level:  level,
+			Status: p.Status,
 		}
 
 		inCommonMistakes := slices.Contains(p.CommonMistakes, text)

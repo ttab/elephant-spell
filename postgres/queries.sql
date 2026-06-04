@@ -21,6 +21,14 @@ SELECT language, entry, status, description, common_mistakes, level, data,
 FROM entry
 WHERE language = @language AND entry = @entry;
 
+-- SetEntryStatus updates only the moderation status of an entry, used by the
+-- accept/reject workflow. It reports the number of rows affected so the caller
+-- can tell whether the entry existed.
+-- name: SetEntryStatus :execrows
+UPDATE entry
+SET status = @status, updated = @updated, updated_by = @updated_by
+WHERE language = @language AND entry = @entry;
+
 -- name: DeleteEntry :exec
 DELETE FROM entry
 WHERE language = @language AND entry = @entry;
@@ -37,7 +45,8 @@ ORDER BY language, entry
 LIMIT sqlc.arg('limit')::bigint OFFSET sqlc.arg('offset')::bigint;
 
 -- name: ListDictionaries :many
-SELECT language, COUNT(*) AS entries
+SELECT language, COUNT(*) AS entries,
+       COUNT(*) FILTER (WHERE status = 'pending') AS pending
 FROM entry
 GROUP BY language;
 

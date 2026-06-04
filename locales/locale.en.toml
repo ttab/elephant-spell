@@ -1,6 +1,27 @@
 [Dictionaries]
 other = "Dictionaries"
 
+[Moderation]
+other = "Moderation"
+
+[ModerationIntro]
+other = "Review entries awaiting moderation. Accepted entries are kept; rejected entries are removed."
+
+[NoPending]
+other = "No entries awaiting moderation"
+
+[Accept]
+other = "Accept"
+
+[Reject]
+other = "Reject"
+
+[ConfirmReject]
+other = "Reject and delete this entry?"
+
+[Edit]
+other = "Edit"
+
 [Language]
 other = "Language"
 

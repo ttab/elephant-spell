@@ -140,5 +140,6 @@ func entryAsPhrase(e postgres.Entry) Phrase {
 		CommonMistakes: e.CommonMistakes,
 		Level:          e.Level,
 		Forms:          forms,
+		Status:         e.Status,
 	}
 }

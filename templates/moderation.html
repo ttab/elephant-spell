@@ -1,0 +1,11 @@
+{{template "header" .}}
+<div class="moderation">
+  <div class="moderation-header">
+    <h1>{{t "Moderation" "Moderation"}}</h1>
+    <p class="moderation-intro">{{t "ModerationIntro" "Review entries awaiting moderation. Accepted entries are kept; rejected entries are removed."}}</p>
+  </div>
+  <div id="moderation-main">
+    {{template "moderation_main.html" .}}
+  </div>
+</div>
+{{template "footer" .}}

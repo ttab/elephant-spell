@@ -291,6 +291,101 @@ func TestAPI(t *testing.T) {
 
 		assertTwirpCode(t, err, twirp.PermissionDenied)
 	})
+
+	t.Run("moderation_status_flow", func(t *testing.T) {
+		const (
+			entry   = "Pyongyang"
+			mistake = "Pjongjang"
+		)
+
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language:       "sv-se",
+				Text:           entry,
+				Status:         "pending",
+				CommonMistakes: []string{mistake},
+				Level:          spellapi.CorrectionLevel_LEVEL_ERROR,
+			},
+		})
+		if err != nil {
+			t.Fatalf("set pending entry: %v", err)
+		}
+
+		// statusFor returns the status the spellchecker reports for the
+		// mistake, or "" if it isn't flagged yet.
+		statusFor := func() string {
+			res, err := stack.Check.Text(ctx, &spellapi.TextRequest{
+				Language:   "sv-se",
+				Text:       []string{mistake},
+				CustomOnly: true,
+			})
+			if err != nil {
+				t.Fatalf("spellcheck: %v", err)
+			}
+
+			if len(res.Misspelled) == 1 && len(res.Misspelled[0].Entries) > 0 {
+				return res.Misspelled[0].Entries[0].Status
+			}
+
+			return ""
+		}
+
+		integration.WaitFor(t, "pending entry to propagate", func() bool {
+			return statusFor() == "pending"
+		})
+
+		// The pending entry should show up in the per-language pending count.
+		dicts, err := stack.Dictionaries.ListDictionaries(ctx,
+			&spellapi.ListDictionariesRequest{})
+		if err != nil {
+			t.Fatalf("list dictionaries: %v", err)
+		}
+
+		if !slices.ContainsFunc(dicts.Dictionaries,
+			func(d *spellapi.CustomDictionary) bool {
+				return d.Language == "sv-se" && d.PendingCount > 0
+			}) {
+			t.Fatalf("expected a pending entry for sv-se, got %+v",
+				dicts.Dictionaries)
+		}
+
+		// Filtering by status returns only pending entries, and page_size
+		// bounds the page.
+		pending, err := stack.Dictionaries.ListEntries(ctx,
+			&spellapi.ListEntriesRequest{
+				Language: "sv-se", Status: "pending", PageSize: 1,
+			})
+		if err != nil {
+			t.Fatalf("list pending entries: %v", err)
+		}
+
+		if len(pending.Entries) != 1 {
+			t.Fatalf("page_size=1 should bound to one entry, got %d",
+				len(pending.Entries))
+		}
+
+		// Accepting flips the status, and it propagates back to the checker.
+		_, err = stack.Dictionaries.SetEntryStatus(ctx,
+			&spellapi.SetEntryStatusRequest{
+				Language: "sv-se", Text: entry, Status: "accepted",
+			})
+		if err != nil {
+			t.Fatalf("set entry status: %v", err)
+		}
+
+		integration.WaitFor(t, "accepted status to propagate", func() bool {
+			return statusFor() == "accepted"
+		})
+	})
+
+	t.Run("set_entry_status_missing", func(t *testing.T) {
+		_, err := stack.Dictionaries.SetEntryStatus(ctx,
+			&spellapi.SetEntryStatusRequest{
+				Language: "sv-se", Text: "does-not-exist", Status: "accepted",
+			})
+
+		assertTwirpCode(t, err, twirp.NotFound)
+	})
 }
 
 // assertTwirpCode fails unless err is a twirp error with the wanted code.

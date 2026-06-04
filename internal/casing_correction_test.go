@@ -1,8 +1,11 @@
 package internal
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/hunspell"
 	"github.com/ttab/elephant-spell/postgres"
 )
@@ -117,6 +120,71 @@ func TestLeadingCaseCorrection(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestMatchSpans covers that each correction reports the byte spans of exactly
+// the occurrences it applies to — so when a word appears several times with
+// different outcomes, the client can target the right one.
+func TestMatchSpans(t *testing.T) {
+	check := newCasingCheck(t)
+
+	check.AddPhrase(Phrase{
+		Text:          "Mexico City",
+		Status:        "accepted",
+		Level:         postgres.EntryLevelError,
+		CaseSensitive: true,
+	})
+
+	err := check.AddRule(RuleDef{
+		ID:          1,
+		Name:        "mexico",
+		Pattern:     "Mexico",
+		Replacement: "Mexiko",
+		Level:       postgres.EntryLevelError,
+		Status:      "accepted",
+	})
+	if err != nil {
+		t.Fatalf("add rule: %v", err)
+	}
+
+	// "Mexico city" → phrase casing fix; "Mexico City" → valid, untouched;
+	// standalone "Mexico" → the rule.
+	input := "Mexico city är fint, Mexico City är stort. Mexico är ett land."
+
+	res, err := check.Check(t.Context(), input, true, true)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+
+	byText := make(map[string]*spell.MisspelledEntry)
+	for _, e := range res.Entries {
+		byText[e.Text] = e
+	}
+
+	phrase := byText["Mexico city"]
+	if phrase == nil {
+		t.Fatal("missing 'Mexico city' correction")
+	}
+
+	if len(phrase.Spans) != 1 || phrase.Spans[0].Start != 0 {
+		t.Errorf("phrase spans = %+v, want one span at 0", phrase.Spans)
+	}
+
+	mexiko := byText["Mexico"]
+	if mexiko == nil {
+		t.Fatal("missing standalone 'Mexico'→'Mexiko' correction")
+	}
+
+	// Only the last, standalone "Mexico" should be flagged by the rule — the
+	// other two are inside the phrase fix and the valid proper noun. Spans are
+	// rune offsets, so count characters up to the byte index.
+	wantStart := int64(utf8.RuneCountInString(
+		input[:strings.LastIndex(input, "Mexico")]))
+
+	if len(mexiko.Spans) != 1 || mexiko.Spans[0].Start != wantStart {
+		t.Errorf("'Mexico' spans = %+v, want one span at %d",
+			mexiko.Spans, wantStart)
 	}
 }
 

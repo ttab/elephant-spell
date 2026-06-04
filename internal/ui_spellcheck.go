@@ -80,6 +80,7 @@ type spellResultEntry struct {
 	Text        string
 	Level       string
 	Status      string
+	Spans       string
 	Suggestions []spellSuggestion
 }
 
@@ -197,6 +198,7 @@ func spellChunks(
 					Text:        e.Text,
 					Level:       correctionLevelLabel(e.Level),
 					Status:      e.Status,
+					Spans:       formatSpans(e.Spans),
 					Suggestions: spellSuggestions(e.Suggestions),
 				})
 			}
@@ -217,6 +219,16 @@ func spellSuggestions(in []*spell.Suggestion) []spellSuggestion {
 	}
 
 	return out
+}
+
+// formatSpans renders the character ranges as "start–end" pairs for display.
+func formatSpans(spans []*spell.TextSpan) string {
+	parts := make([]string, len(spans))
+	for i, s := range spans {
+		parts[i] = fmt.Sprintf("%d–%d", s.Start, s.End)
+	}
+
+	return strings.Join(parts, ", ")
 }
 
 func correctionLevelLabel(level spell.CorrectionLevel) string {

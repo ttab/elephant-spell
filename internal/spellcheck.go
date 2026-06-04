@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/blevesearch/segment"
 	"github.com/dghubble/trie"
@@ -525,29 +526,40 @@ func (s *Spellcheck) Check(
 	entryStart := len(validCands)
 	ruleStart := entryStart + len(entryCands)
 
-	seenEntry := make(map[string]bool)
+	// Emit survivors in reading order, one entry per distinct text within each
+	// group, collecting the span of every occurrence so the client can act on
+	// the exact positions rather than searching for the text.
+	emit := func(lo, hi int) {
+		byText := make(map[string]*spell.MisspelledEntry)
 
-	for i := entryStart; i < ruleStart; i++ {
-		e := combined[i].entry
-		if !keep[i] || seenEntry[e.Text] {
-			continue
+		for i := lo; i < hi; i++ {
+			if !keep[i] {
+				continue
+			}
+
+			c := combined[i]
+
+			// Report spans in character (rune) offsets, not bytes, so clients
+			// can map them onto their own string model.
+			span := &spell.TextSpan{
+				Start: int64(utf8.RuneCountInString(source[:c.start])),
+				End:   int64(utf8.RuneCountInString(source[:c.end])),
+			}
+
+			if e, ok := byText[c.entry.Text]; ok {
+				e.Spans = append(e.Spans, span)
+
+				continue
+			}
+
+			c.entry.Spans = append(c.entry.Spans, span)
+			byText[c.entry.Text] = c.entry
+			res.Entries = append(res.Entries, c.entry)
 		}
-
-		seenEntry[e.Text] = true
-		res.Entries = append(res.Entries, e)
 	}
 
-	seenRule := make(map[string]bool)
-
-	for i := ruleStart; i < len(combined); i++ {
-		e := combined[i].entry
-		if !keep[i] || seenRule[e.Text] {
-			continue
-		}
-
-		seenRule[e.Text] = true
-		res.Entries = append(res.Entries, e)
-	}
+	emit(entryStart, ruleStart)
+	emit(ruleStart, len(combined))
 
 	if customOnly {
 		return &res, nil

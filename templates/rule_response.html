@@ -1,0 +1,8 @@
+<div id="entry-list" hx-swap-oob="true">
+{{template "rule_list.html" .}}
+</div>
+{{if .Contents.Rule}}
+{{template "rule_form.html" .}}
+{{else}}
+<div class="panel-right-empty">{{t "SelectRule" "Select a rule to edit"}}</div>
+{{end}}

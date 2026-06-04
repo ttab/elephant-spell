@@ -161,6 +161,19 @@
   }
 
   document.addEventListener("click", function (e) {
+    // Move the active highlight in the list immediately on click; the detail
+    // pane is swapped by htmx but the list itself isn't re-rendered until a
+    // full page load, so the server-rendered active state would otherwise lag.
+    var item = e.target.closest(".entry-item");
+    if (item) {
+      var list = item.closest("#entry-list") || document;
+      list.querySelectorAll(".entry-item.active").forEach(function (el) {
+        el.classList.remove("active");
+      });
+      item.classList.add("active");
+      // fall through — htmx still handles the navigation.
+    }
+
     var open = e.target.closest("[data-open-expansions]");
     if (open) {
       e.preventDefault();

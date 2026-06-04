@@ -373,8 +373,10 @@ func (d *RulesUI) saveNewRule(
 
 	w.Header().Set("HX-Push-Url", "/rules/"+lang+"/"+idStr)
 
-	return d.ruleFormResponse(svcCtx, lang, id,
-		howdah.TL("RuleCreated", "Rule created"))
+	return d.ruleDetailResponse(ctx, svcCtx, lang, id, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("RuleCreated", "Rule created"),
+	})
 }
 
 func (d *RulesUI) saveRule(
@@ -413,8 +415,10 @@ func (d *RulesUI) saveRule(
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	return d.ruleFormResponse(svcCtx, lang, id,
-		howdah.TL("RuleUpdated", "Rule updated"))
+	return d.ruleDetailResponse(ctx, svcCtx, lang, id, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("RuleUpdated", "Rule updated"),
+	})
 }
 
 func (d *RulesUI) deleteRule(
@@ -446,31 +450,44 @@ func (d *RulesUI) deleteRule(
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	w.Header().Set("HX-Redirect", "/rules/"+lang+"/")
+	w.Header().Set("HX-Push-Url", "/rules/"+lang+"/")
 
-	return nil, howdah.ErrSkipRender
+	return d.ruleDetailResponse(ctx, svcCtx, lang, 0, nil)
 }
 
-// ruleFormResponse re-reads a rule and renders the form with a flash message.
-func (d *RulesUI) ruleFormResponse(
-	svcCtx context.Context, lang string, id int64, flash howdah.TextLabel,
+// ruleDetailResponse renders the rule detail (a form, or the empty placeholder
+// when id is zero) together with an out-of-band refresh of the sidebar list, so
+// the list reflects creates, edits and deletes immediately.
+func (d *RulesUI) ruleDetailResponse(
+	ctx, svcCtx context.Context, lang string, id int64, flash *flashMessage,
 ) (*howdah.Page, error) {
-	res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{Id: id})
+	rules, hasMore, err := d.listRules(ctx, lang, "", 0)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	rule := ruleToUI(res.Rule)
+	contents := rulesContents{
+		Language: lang,
+		Rules:    rules,
+		HasMore:  hasMore,
+		CanWrite: true,
+		Flash:    flash,
+	}
+
+	if id != 0 {
+		res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{Id: id})
+		if err != nil {
+			return nil, twirpErrorToHTTP(err)
+		}
+
+		rule := ruleToUI(res.Rule)
+		contents.Rule = &rule
+		contents.ActiveRule = id
+	}
 
 	return &howdah.Page{
-		Template: "rule_form.html",
-		Contents: rulesContents{
-			Language:   lang,
-			Rule:       &rule,
-			ActiveRule: id,
-			CanWrite:   true,
-			Flash:      &flashMessage{Type: "success", Message: flash},
-		},
+		Template: "rule_response.html",
+		Contents: contents,
 	}, nil
 }
 

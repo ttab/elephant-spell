@@ -495,28 +495,48 @@ func (d *DictionariesUI) saveNewEntry(
 
 	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(text))
 
-	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
-		Language: lang,
-		Text:     text,
+	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("EntryCreated", "Entry created"),
 	})
+}
+
+// entryDetailResponse renders the entry detail (a form, or the empty
+// placeholder when text is empty) together with an out-of-band refresh of the
+// sidebar list, so the list reflects creates, edits and deletes immediately.
+func (d *DictionariesUI) entryDetailResponse(
+	ctx, svcCtx context.Context, lang, text string, flash *flashMessage,
+) (*howdah.Page, error) {
+	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	entry := customEntryToUI(res.Entry)
+	contents := dictionariesContents{
+		Language: lang,
+		Entries:  entries,
+		HasMore:  hasMore,
+		CanWrite: true,
+		Flash:    flash,
+	}
+
+	if text != "" {
+		res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
+			Language: lang,
+			Text:     text,
+		})
+		if err != nil {
+			return nil, twirpErrorToHTTP(err)
+		}
+
+		entry := customEntryToUI(res.Entry)
+		contents.Entry = &entry
+		contents.ActiveEntry = text
+	}
 
 	return &howdah.Page{
-		Template: "entry_form.html",
-		Contents: dictionariesContents{
-			Language:    lang,
-			Entry:       &entry,
-			ActiveEntry: text,
-			CanWrite:    true,
-			Flash: &flashMessage{
-				Type:    "success",
-				Message: howdah.TL("EntryCreated", "Entry created"),
-			},
-		},
+		Template: "entry_response.html",
+		Contents: contents,
 	}, nil
 }
 
@@ -557,29 +577,10 @@ func (d *DictionariesUI) saveEntry(
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
-		Language: lang,
-		Text:     text,
+	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("EntryUpdated", "Entry updated"),
 	})
-	if err != nil {
-		return nil, twirpErrorToHTTP(err)
-	}
-
-	entry := customEntryToUI(res.Entry)
-
-	return &howdah.Page{
-		Template: "entry_form.html",
-		Contents: dictionariesContents{
-			Language:    lang,
-			Entry:       &entry,
-			ActiveEntry: text,
-			CanWrite:    true,
-			Flash: &flashMessage{
-				Type:    "success",
-				Message: howdah.TL("EntryUpdated", "Entry updated"),
-			},
-		},
-	}, nil
 }
 
 func (d *DictionariesUI) deleteEntry(
@@ -614,9 +615,9 @@ func (d *DictionariesUI) deleteEntry(
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	w.Header().Set("HX-Redirect", "/dictionaries/"+lang+"/")
+	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/")
 
-	return nil, howdah.ErrSkipRender
+	return d.entryDetailResponse(ctx, svcCtx, lang, "", nil)
 }
 
 func (d *DictionariesUI) setEntryFromForm(

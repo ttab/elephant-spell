@@ -1282,3 +1282,24 @@ code-input {
   width: auto;
   margin: 0;
 }
+
+.form-rule {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+
+.form-rule summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.form-rule[open] summary {
+  margin-bottom: 8px;
+}
+
+.form-rule .form-group + .form-group {
+  margin-top: 8px;
+}

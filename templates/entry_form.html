@@ -101,6 +101,33 @@
       {{end}}
     </div>
 
+    <details class="form-rule" {{if and .Entry .Entry.Rule}}open{{end}}>
+      <summary>{{t "RuleSection" "Pattern rule (advanced)"}}</summary>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" name="is_rule" {{if and .Entry .Entry.Rule}}checked{{end}} {{if not .CanWrite}}disabled{{end}}>
+          {{t "IsRule" "Treat this entry as a pattern rule"}}
+        </label>
+        <div class="help-text">{{t "RuleHelp" "Match a token pattern instead of literal text. Use literals, :digit, :word and :gap(N); reference captured tokens in the replacement as {1}, {2}."}}</div>
+      </div>
+      <div class="form-group">
+        <label for="rule_pattern">{{t "RulePattern" "Pattern"}}</label>
+        <input type="text" id="rule_pattern" name="rule_pattern" value="{{if and .Entry .Entry.Rule}}{{.Entry.Rule.Pattern}}{{end}}" placeholder=":digit - :digit" {{if not .CanWrite}}disabled{{end}}>
+      </div>
+      <div class="form-group">
+        <label for="rule_replacement">{{t "RuleReplacement" "Replacement"}}</label>
+        <input type="text" id="rule_replacement" name="rule_replacement" value="{{if and .Entry .Entry.Rule}}{{.Entry.Rule.Replacement}}{{end}}" placeholder="{1}–{2}" {{if not .CanWrite}}disabled{{end}}>
+      </div>
+      <div class="form-group">
+        <label>{{t "RuleGuards" "Context guards"}}</label>
+        <div class="help-text">{{t "RuleGuardsHelp" "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."}}</div>
+        <input type="text" name="rule_not_before" value="{{if and .Entry .Entry.Rule}}{{.Entry.Rule.NotBefore}}{{end}}" placeholder="{{t "RuleNotBefore" "skip if preceded by..."}}" {{if not .CanWrite}}disabled{{end}}>
+        <input type="text" name="rule_not_after" value="{{if and .Entry .Entry.Rule}}{{.Entry.Rule.NotAfter}}{{end}}" placeholder="{{t "RuleNotAfter" "skip if followed by..."}}" {{if not .CanWrite}}disabled{{end}}>
+        <input type="text" name="rule_before" value="{{if and .Entry .Entry.Rule}}{{.Entry.Rule.Before}}{{end}}" placeholder="{{t "RuleBefore" "only if preceded by..."}}" {{if not .CanWrite}}disabled{{end}}>
+        <input type="text" name="rule_after" value="{{if and .Entry .Entry.Rule}}{{.Entry.Rule.After}}{{end}}" placeholder="{{t "RuleAfter" "only if followed by..."}}" {{if not .CanWrite}}disabled{{end}}>
+      </div>
+    </details>
+
     {{if .CanWrite}}
     <div class="form-actions">
       {{if not .NewEntry}}

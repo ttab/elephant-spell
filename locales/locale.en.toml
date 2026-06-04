@@ -261,3 +261,36 @@ other = "Log out"
 
 [Back]
 other = "Back"
+
+[Spellcheck]
+other = "Spellcheck"
+
+[SpellcheckIntro]
+other = "Test text against the active dictionary and rules. Each line is checked as a separate paragraph or headline."
+
+[SpellcheckText]
+other = "Text"
+
+[SpellcheckPlaceholder]
+other = "Mellan 12-15 personer deltog."
+
+[SpellcheckSuggestions]
+other = "Include suggestions"
+
+[SpellcheckCustomOnly]
+other = "Custom dictionary and rules only (skip hunspell)"
+
+[SpellcheckNoIssues]
+other = "No issues found."
+
+[SpellcheckIssues]
+other = "issue(s) found"
+
+[Check]
+other = "Check"
+
+[FromHunspell]
+other = "hunspell"
+
+[NoSuggestions]
+other = "No suggestions"

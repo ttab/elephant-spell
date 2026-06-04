@@ -3,8 +3,8 @@
 --
 
 
--- Dumped from database version 17.8 (Debian 17.8-1.pgdg12+1)
--- Dumped by pg_dump version 17.8 (Debian 17.8-1.pgdg12+1)
+-- Dumped from database version 17.9 (Debian 17.9-1.pgdg12+1)
+-- Dumped by pg_dump version 17.9 (Debian 17.9-1.pgdg12+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -50,6 +50,33 @@ CREATE TABLE public.entry (
 
 
 --
+-- Name: eventlog; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eventlog (
+    id bigint NOT NULL,
+    language text NOT NULL,
+    entry text NOT NULL,
+    deleted boolean DEFAULT false NOT NULL,
+    created timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: eventlog_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.eventlog ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.eventlog_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: job_lock; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -76,6 +103,14 @@ CREATE TABLE public.schema_version (
 
 ALTER TABLE ONLY public.entry
     ADD CONSTRAINT entry_pkey PRIMARY KEY (language, entry);
+
+
+--
+-- Name: eventlog eventlog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eventlog
+    ADD CONSTRAINT eventlog_pkey PRIMARY KEY (id);
 
 
 --

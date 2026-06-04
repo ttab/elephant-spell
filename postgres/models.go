@@ -65,6 +65,14 @@ type Entry struct {
 	UpdatedBy      string
 }
 
+type Eventlog struct {
+	ID       int64
+	Language string
+	Entry    string
+	Deleted  bool
+	Created  pgtype.Timestamptz
+}
+
 type JobLock struct {
 	Name      string
 	Holder    string

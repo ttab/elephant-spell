@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,34 +29,46 @@ import (
 
 const (
 	ScopeSpellcheckWrite = "spell_write"
-)
 
-type NotifyChannel string
+	// EventlogChannel is the PostgreSQL NOTIFY channel used to signal that a
+	// new eventlog entry is available. The payload is the new event id, but
+	// it only serves as a wake-up: the consumer reads all events after its
+	// own cursor.
+	EventlogChannel = "eventlog"
 
-const (
-	NotifyEntryUpdate  NotifyChannel = "entry_update"
-	NotifyListenerPing NotifyChannel = "listener_ping"
+	// eventPollInterval is the fallback period for draining the eventlog when
+	// no notification arrives — the recovery backstop for a silently broken
+	// LISTEN connection.
+	eventPollInterval = time.Minute
+
+	// eventlogRetention is how long events are kept before pruning. The window
+	// only needs to comfortably exceed consumer lag (the fallback poll
+	// interval plus listener reconnect/bounce recovery time); a restarting
+	// replica reloads full state and resumes from the latest id, so older
+	// events are never needed.
+	eventlogRetention = time.Hour
+
+	// eventlogPruneInterval is how often the prune job runs.
+	eventlogPruneInterval = 15 * time.Minute
 )
 
 var (
-	errPingTimeout = errors.New("listener ping timeout")
-
 	_ spell.Check        = &Application{}
 	_ spell.Dictionaries = &Application{}
 )
 
 type Parameters struct {
-	Addr           string
-	ProfileAddr    string
-	TLSAddr        string
-	CertFile       string
-	KeyFile        string
-	Logger         *slog.Logger
-	Database       *pgxpool.Pool
-	PubsubDatabase *pgxpool.Pool
-	AuthInfoParser elephantine.AuthInfoParser
-	Registerer     prometheus.Registerer
-	CORSHosts      []string
+	Addr            string
+	ProfileAddr     string
+	TLSAddr         string
+	CertFile        string
+	KeyFile         string
+	Logger          *slog.Logger
+	Database        *pgxpool.Pool
+	PubsubDatabase  *pgxpool.Pool
+	AuthInfoParser  elephantine.AuthInfoParser
+	Registerer      prometheus.Registerer
+	CORSHosts       []string
 	PingInterval    time.Duration
 	PingGrace       time.Duration
 	DefaultLanguage string
@@ -149,25 +159,50 @@ func NewApplication(
 		languages[code] = spell
 	}
 
+	// FanOut signals the in-process consumer that the eventlog has advanced;
+	// the Subscriber owns the single LISTEN connection (on the direct pool,
+	// as LISTEN cannot go through PgBouncer) and provides built-in ping-based
+	// health checking.
+	updates := pg.NewFanOut[int64](EventlogChannel)
+
+	subscriber := pg.NewSubscriber(
+		p.Logger, p.PubsubDatabase,
+		[]pg.ChannelSubscription{updates},
+		pg.WithPingInterval(p.PingInterval),
+		pg.WithPingGrace(p.PingGrace),
+	)
+
+	// Wire the fallback-poll recovery: when consecutive polls keep finding
+	// work without an intervening notification the Subscriber is bounced to
+	// rebuild a silently-broken LISTEN connection.
+	err = updates.EnableRecovery(
+		elephantine.NewMetricsHelper(p.Registerer),
+		subscriber.Bounce,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("enable eventlog recovery: %w", err)
+	}
+
 	app := Application{
-		p:         p,
-		logger:    p.Logger,
-		db:        p.Database,
-		pubsubDB:  p.PubsubDatabase,
-		q:         postgres.New(p.Database),
-		languages: languages,
+		p:          p,
+		logger:     p.Logger,
+		db:         p.Database,
+		q:          postgres.New(p.Database),
+		languages:  languages,
+		updates:    updates,
+		subscriber: subscriber,
 	}
 
 	return &app, nil
 }
 
 type Application struct {
-	p            Parameters
-	logger       *slog.Logger
-	db           *pgxpool.Pool
-	pubsubDB     *pgxpool.Pool
-	q            *postgres.Queries
-	entryUpdates chan EntryUpdateNotification
+	p          Parameters
+	logger     *slog.Logger
+	db         *pgxpool.Pool
+	q          *postgres.Queries
+	updates    *pg.FanOut[int64]
+	subscriber *pg.Subscriber
 
 	languages map[string]*Spellcheck
 }
@@ -201,55 +236,126 @@ func (a *Application) Run(ctx context.Context) error {
 
 	grp := elephantine.NewErrGroup(ctx, a.logger)
 
-	grp.Go("server", func(ctx context.Context) error {
+	grp.Required("server", func(ctx context.Context) error {
 		return server.ListenAndServe(grace.CancelOnQuit(ctx))
 	})
 
-	a.entryUpdates = make(chan EntryUpdateNotification, 16)
-
-	grp.Go("notification_listener", func(ctx context.Context) error {
-		ctx = grace.CancelOnStop(ctx)
-
-		for {
-			err := a.preloadEntries(ctx)
-			if err != nil {
-				return fmt.Errorf("preload entries: %w", err)
-			}
-
-			err = a.runListener(ctx)
-			if !errors.Is(err, errPingTimeout) {
-				return err
-			}
-
-			a.logger.InfoContext(ctx,
-				"listener ping timeout, reconnecting")
-		}
+	grp.Required("subscriber", func(ctx context.Context) error {
+		return a.subscriber.Run(grace.CancelOnStop(ctx))
 	})
 
-	grp.Go("ping_sender", func(ctx context.Context) error {
+	grp.Required("entry_updater", func(ctx context.Context) error {
+		return a.runEntryUpdater(grace.CancelOnStop(ctx))
+	})
+
+	grp.Required("eventlog_pruner", func(ctx context.Context) error {
 		return pg.RunInJobLock(
-			ctx, a.db, a.logger,
-			"ping-sender", "notification-ping",
+			grace.CancelOnStop(ctx), a.db, a.logger,
+			"eventlog-pruner", "eventlog-prune",
 			pg.JobLockOptions{},
-			a.runPingSender)
-	})
-
-	grp.Go("entry_updater", func(ctx context.Context) error {
-		for {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case n := <-a.entryUpdates:
-				err := a.handleEntryUpdate(ctx, n)
-				if err != nil {
-					return fmt.Errorf("handle %s update of %q: %w",
-						n.Language, n.Text, err)
-				}
-			}
-		}
+			a.runEventlogPruner)
 	})
 
 	return grp.Wait()
+}
+
+// runEventlogPruner periodically deletes events past the retention window. It
+// runs under a job lock so only one replica prunes at a time. A failed prune
+// is logged but not fatal — the lock is kept and the next tick retries.
+func (a *Application) runEventlogPruner(ctx context.Context) error {
+	ticker := time.NewTicker(eventlogPruneInterval)
+	defer ticker.Stop()
+
+	for {
+		before := pgtype.Timestamptz{
+			Time:  time.Now().Add(-eventlogRetention),
+			Valid: true,
+		}
+
+		removed, err := a.q.PruneEventlog(ctx, before)
+		switch {
+		case err != nil:
+			a.logger.ErrorContext(ctx, "prune eventlog",
+				elephantine.LogKeyError, err)
+		case removed > 0:
+			a.logger.InfoContext(ctx, "pruned eventlog",
+				"removed", removed)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+// runEntryUpdater keeps the spellcheckers in sync with the custom dictionary
+// by following the eventlog. It preloads the current entries as a baseline,
+// then drains the log on every notification ("wake up and drain") and on a
+// periodic fallback tick. The fallback drain's result is reported to the
+// FanOut so it can bounce the Subscriber when polling is the only thing
+// keeping the consumer afloat.
+func (a *Application) runEntryUpdater(ctx context.Context) error {
+	// The notification payload is just a kick — the consumer always drains
+	// every event past its cursor — so a buffer of one pending wake-up is
+	// all the listener channel needs.
+	events := make(chan int64, 1)
+
+	go a.updates.ListenAll(ctx, events)
+
+	// Read the cursor before preloading: preload then sees a database state
+	// at least as new as the cursor, so every event up to the cursor is
+	// already reflected and only later events need replaying. Events that
+	// land between the two reads are simply replayed idempotently.
+	cursor, err := a.q.GetLastEventID(ctx)
+	if err != nil {
+		return fmt.Errorf("read last event id: %w", err)
+	}
+
+	err = a.preloadEntries(ctx)
+	if err != nil {
+		return fmt.Errorf("preload entries: %w", err)
+	}
+
+	// Catch up on anything written during startup before settling into the
+	// notify/poll loop.
+	_, cursor, err = a.drainEventlog(ctx, cursor)
+	if err != nil {
+		return fmt.Errorf("initial eventlog drain: %w", err)
+	}
+
+	ticker := time.NewTicker(eventPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-events:
+			// Wire-side wake-up: the FanOut has already reset the
+			// recovery streak, so we just drain. A transient failure is
+			// not fatal — the next tick (or kick) retries from the same
+			// cursor.
+			_, cursor, err = a.drainEventlog(ctx, cursor)
+			if err != nil {
+				a.logger.ErrorContext(ctx, "drain eventlog on notification",
+					elephantine.LogKeyError, err)
+			}
+		case <-ticker.C:
+			var applied int
+
+			applied, cursor, err = a.drainEventlog(ctx, cursor)
+			if err != nil {
+				a.logger.ErrorContext(ctx, "poll eventlog",
+					elephantine.LogKeyError, err)
+
+				continue
+			}
+
+			a.updates.Polled(applied)
+		}
+	}
 }
 
 func (a *Application) setupUI(mux *http.ServeMux) error {
@@ -332,7 +438,7 @@ func (a *Application) DeleteEntry(
 
 	q := a.q.WithTx(tx)
 
-	err = a.q.DeleteEntry(ctx, postgres.DeleteEntryParams{
+	err = q.DeleteEntry(ctx, postgres.DeleteEntryParams{
 		Language: req.Language,
 		Entry:    req.Text,
 	})
@@ -340,13 +446,9 @@ func (a *Application) DeleteEntry(
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	err = notifyEntryUpdated(ctx, q, EntryUpdateNotification{
-		Language: req.Language,
-		Text:     req.Text,
-		Deleted:  true,
-	})
+	err = a.recordEntryChange(ctx, q, tx, req.Language, req.Text, true)
 	if err != nil {
-		return nil, twirp.InternalErrorf("send notification: %w", err)
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
@@ -576,12 +678,9 @@ func (a *Application) SetEntry(
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	err = notifyEntryUpdated(ctx, q, EntryUpdateNotification{
-		Language: req.Entry.Language,
-		Text:     req.Entry.Text,
-	})
+	err = a.recordEntryChange(ctx, q, tx, req.Entry.Language, req.Entry.Text, false)
 	if err != nil {
-		return nil, twirp.InternalErrorf("send notification: %w", err)
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
@@ -687,151 +786,36 @@ func (a *Application) Suggestions(
 	}, nil
 }
 
-type EntryUpdateNotification struct {
-	Language string
-	Text     string
-	Deleted  bool
-}
-
-func (a *Application) runListener(ctx context.Context) (outErr error) {
-	conn, err := a.pubsubDB.Acquire(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to acquire connection from pool: %w", err)
-	}
-
-	pConn := conn.Hijack()
-
-	defer func() {
-		err := pConn.Close(ctx)
-		if err != nil {
-			outErr = errors.Join(outErr, fmt.Errorf(
-				"failed to close PG listen connection: %w", err))
-		}
-	}()
-
-	channels := []NotifyChannel{
-		NotifyEntryUpdate,
-		NotifyListenerPing,
-	}
-
-	for _, channel := range channels {
-		ident := pgx.Identifier{string(channel)}
-
-		_, err := pConn.Exec(ctx, "LISTEN "+ident.Sanitize())
-		if err != nil {
-			return fmt.Errorf("start listening to %q: %w",
-				channel, err)
-		}
-	}
-
-	// A separate goroutine periodically sends pings on the
-	// NotifyListenerPing channel. If we don't receive a ping
-	// within PingGrace, the connection is presumed broken and we
-	// return errPingTimeout so that the caller can reconnect.
-	lastPing := time.Now()
-
-	for {
-		deadline := lastPing.Add(a.p.PingGrace)
-
-		waitCtx, cancel := context.WithDeadline(ctx, deadline)
-		notification, err := pConn.WaitForNotification(waitCtx)
-		cancel()
-
-		if err != nil {
-			// Parent context cancelled: shutting down.
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-
-			// Ping deadline expired without a notification.
-			if waitCtx.Err() != nil {
-				return fmt.Errorf(
-					"wait for notification: %w", errPingTimeout)
-			}
-
-			// Unexpected error (e.g. connection dropped).
-			return fmt.Errorf(
-				"wait for notification: %w", err)
-		}
-
-		switch NotifyChannel(notification.Channel) {
-		case NotifyListenerPing:
-			lastPing = time.Now()
-		case NotifyEntryUpdate:
-			var n EntryUpdateNotification
-
-			err := json.Unmarshal(
-				[]byte(notification.Payload), &n)
-			if err != nil {
-				a.logger.ErrorContext(ctx,
-					"unmarshal entry update notification",
-					elephantine.LogKeyError, err,
-					"payload", notification.Payload,
-				)
-
-				continue
-			}
-
-			a.logger.Debug("dictionary entry update",
-				"language", n.Language,
-				"text", n.Text,
-				"deleted", n.Deleted,
-			)
-
-			select {
-			case a.entryUpdates <- n:
-			default:
-				return errors.New(
-					"entry update channel full")
-			}
-		}
-	}
-}
-
-func (a *Application) runPingSender(ctx context.Context) error {
-	ticker := time.NewTicker(a.p.PingInterval)
-	defer ticker.Stop()
-
-	err := pgNotify(ctx, a.q, NotifyListenerPing, struct{}{})
-	if err != nil {
-		return fmt.Errorf("send listener ping: %w", err)
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			err := pgNotify(ctx, a.q, NotifyListenerPing, struct{}{})
-			if err != nil {
-				return fmt.Errorf("send listener ping: %w", err)
-			}
-		}
-	}
-}
-
-func notifyEntryUpdated(
-	ctx context.Context, q *postgres.Queries,
-	payload EntryUpdateNotification,
+// recordEntryChange appends an entry change to the eventlog and wakes the
+// consumer. It must run inside the same transaction as the entry write so the
+// change and its event commit atomically.
+//
+// The exclusive table lock serialises eventlog writers: a writer holds it
+// until commit, so the next writer cannot draw its event id until this event
+// is committed and visible. That keeps commit order equal to id order, which
+// the log poller relies on to never skip an event. The published id is only a
+// wake-up — the consumer reads all events after its own cursor.
+func (a *Application) recordEntryChange(
+	ctx context.Context, q *postgres.Queries, db pg.DBExec,
+	language, entry string, deleted bool,
 ) error {
-	return pgNotify(ctx, q, NotifyEntryUpdate, payload)
-}
-
-func pgNotify[T any](
-	ctx context.Context, q *postgres.Queries,
-	channel NotifyChannel, payload T,
-) error {
-	message, err := json.Marshal(payload)
+	err := q.LockEventlog(ctx)
 	if err != nil {
-		return fmt.Errorf("marshal payload for notification: %w", err)
+		return fmt.Errorf("lock eventlog: %w", err)
 	}
 
-	err = q.Notify(ctx, postgres.NotifyParams{
-		Channel: string(channel),
-		Message: string(message),
+	id, err := q.InsertEvent(ctx, postgres.InsertEventParams{
+		Language: language,
+		Entry:    entry,
+		Deleted:  deleted,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to publish notification payload to channel: %w", err)
+		return fmt.Errorf("append eventlog entry: %w", err)
+	}
+
+	err = a.updates.Publish(ctx, db, id)
+	if err != nil {
+		return fmt.Errorf("publish eventlog notification: %w", err)
 	}
 
 	return nil

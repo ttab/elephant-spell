@@ -70,9 +70,11 @@
     popup.dataset.from = m.index;
     popup.dataset.to = end;
     popup.innerHTML = matches
-      .map(function (t) {
+      .map(function (t, i) {
         return (
-          '<button type="button" class="ac-item" data-token="' +
+          '<button type="button" class="ac-item' +
+          (i === 0 ? " ac-active" : "") +
+          '" data-token="' +
           t +
           '">{' +
           t +
@@ -80,6 +82,33 @@
         );
       })
       .join("");
+  }
+
+  // insertToken applies the chosen completion, replacing the partial "{…" before
+  // the caret with the full {token}.
+  function insertToken(popup, ci, ta, item) {
+    var from = parseInt(popup.dataset.from, 10);
+    var to = parseInt(popup.dataset.to, 10);
+    var token = "{" + item.getAttribute("data-token") + "}";
+
+    ta.value = ta.value.slice(0, from) + token + ta.value.slice(to);
+
+    var pos = from + token.length;
+    ta.focus();
+    ta.setSelectionRange(pos, pos);
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+
+    popup.innerHTML = "";
+  }
+
+  function setActiveItem(items, idx) {
+    items.forEach(function (it, i) {
+      it.classList.toggle("ac-active", i === idx);
+    });
+
+    if (items[idx]) {
+      items[idx].scrollIntoView({ block: "nearest" });
+    }
   }
 
   if (window.codeInput) {
@@ -119,8 +148,8 @@
     });
   }
 
-  // Insert the chosen token completion, replacing the partial "{…" before the
-  // caret. Use mousedown + preventDefault so the textarea keeps focus/caret.
+  // Insert on click. Use mousedown + preventDefault so the textarea keeps
+  // focus and caret position.
   document.addEventListener("mousedown", function (e) {
     var item = e.target.closest(".ac-item");
     if (!item) {
@@ -132,22 +161,54 @@
     var popup = item.closest(".code-input_autocomplete_popup");
     var ci = item.closest("code-input");
     var ta = ci && ci.querySelector("textarea");
-    if (!popup || !ta) {
+    if (popup && ta) {
+      insertToken(popup, ci, ta, item);
+    }
+  });
+
+  // Keyboard navigation of the autocomplete popup: up/down to move, Enter to
+  // accept, Escape to dismiss.
+  document.addEventListener("keydown", function (e) {
+    var ta = e.target;
+    if (!ta || ta.tagName !== "TEXTAREA") {
       return;
     }
 
-    var from = parseInt(popup.dataset.from, 10);
-    var to = parseInt(popup.dataset.to, 10);
-    var token = "{" + item.getAttribute("data-token") + "}";
+    var ci = ta.closest && ta.closest("code-input");
+    if (!ci) {
+      return;
+    }
 
-    ta.value = ta.value.slice(0, from) + token + ta.value.slice(to);
+    var popup = ci.querySelector(".code-input_autocomplete_popup");
+    if (!popup) {
+      return;
+    }
 
-    var pos = from + token.length;
-    ta.focus();
-    ta.setSelectionRange(pos, pos);
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    var items = popup.querySelectorAll(".ac-item");
+    if (!items.length) {
+      return;
+    }
 
-    popup.innerHTML = "";
+    var active = -1;
+    items.forEach(function (it, i) {
+      if (it.classList.contains("ac-active")) {
+        active = i;
+      }
+    });
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveItem(items, (active + 1) % items.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveItem(items, (active - 1 + items.length) % items.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      insertToken(popup, ci, ta, items[active >= 0 ? active : 0]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      popup.innerHTML = "";
+    }
   });
 
   // --- forms rows ----------------------------------------------------------

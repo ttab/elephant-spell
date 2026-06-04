@@ -561,14 +561,14 @@ func (a *Application) ListEntries(
 		return nil, err //nolint: wrapcheck
 	}
 
-	if strings.Contains(req.Prefix, "%") {
-		return nil, twirp.InvalidArgumentError("prefix", "prefix cannot contain '%'")
+	if strings.Contains(req.Query, "%") {
+		return nil, twirp.InvalidArgumentError("query", "query cannot contain '%'")
 	}
 
 	var pattern string
 
-	if req.Prefix != "" {
-		pattern = req.Prefix + "%"
+	if req.Query != "" {
+		pattern = "%" + req.Query + "%"
 	}
 
 	limit := req.PageSize
@@ -580,7 +580,7 @@ func (a *Application) ListEntries(
 
 	rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
 		Language: pg.TextOrNull(req.Language),
-		Pattern:  pg.TextOrNull(pattern),
+		Query:    pg.TextOrNull(pattern),
 		Status:   pg.TextOrNull(req.Status),
 		Limit:    limit,
 		Offset:   offset,

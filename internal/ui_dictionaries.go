@@ -143,7 +143,7 @@ type dictionariesContents struct {
 	Count       int
 	Flash       *flashMessage
 	CanWrite    bool
-	Prefix      string
+	Query       string
 	Page        int64
 	HasMore     bool
 }
@@ -752,7 +752,7 @@ func parseForms(form url.Values) map[string]string {
 }
 
 func (d *DictionariesUI) listEntries(
-	ctx context.Context, lang, prefix string, page int64,
+	ctx context.Context, lang, query string, page int64,
 ) ([]uiEntry, bool, error) {
 	svcCtx, err := d.withServiceAuth(ctx)
 	if err != nil {
@@ -761,7 +761,7 @@ func (d *DictionariesUI) listEntries(
 
 	res, err := d.dicts.ListEntries(svcCtx, &spell.ListEntriesRequest{
 		Language: lang,
-		Prefix:   prefix,
+		Query:    query,
 		Page:     page,
 	})
 	if err != nil {
@@ -783,7 +783,7 @@ func (d *DictionariesUI) entriesPage(
 	}
 
 	lang := r.PathValue("language")
-	prefix := r.URL.Query().Get("prefix")
+	query := r.URL.Query().Get("query")
 
 	var page int64
 
@@ -797,13 +797,13 @@ func (d *DictionariesUI) entriesPage(
 		}
 	}
 
-	return d.entryListPage(ctx, lang, "", prefix, page)
+	return d.entryListPage(ctx, lang, "", query, page)
 }
 
 func (d *DictionariesUI) entryListPage(
-	ctx context.Context, lang, activeEntry, prefix string, page int64,
+	ctx context.Context, lang, activeEntry, query string, page int64,
 ) (*howdah.Page, error) {
-	entries, hasMore, err := d.listEntries(ctx, lang, prefix, page)
+	entries, hasMore, err := d.listEntries(ctx, lang, query, page)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -815,7 +815,7 @@ func (d *DictionariesUI) entryListPage(
 			Entries:     entries,
 			Count:       len(entries),
 			ActiveEntry: activeEntry,
-			Prefix:      prefix,
+			Query:       query,
 			Page:        page,
 			HasMore:     hasMore,
 		},

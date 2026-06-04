@@ -74,7 +74,7 @@ func TestAPI(t *testing.T) {
 		}
 
 		list, err := stack.Dictionaries.ListEntries(ctx,
-			&spellapi.ListEntriesRequest{Language: "sv-se", Prefix: "Liech"})
+			&spellapi.ListEntriesRequest{Language: "sv-se", Query: "Liech"})
 		if err != nil {
 			t.Fatalf("list entries: %v", err)
 		}
@@ -216,9 +216,9 @@ func TestAPI(t *testing.T) {
 					&spellapi.GetEntryRequest{Language: "sv-se"})
 				return err
 			}},
-			{"list entries bad prefix", func() error {
+			{"list entries bad query", func() error {
 				_, err := stack.Dictionaries.ListEntries(ctx,
-					&spellapi.ListEntriesRequest{Prefix: "a%b"})
+					&spellapi.ListEntriesRequest{Query: "a%b"})
 				return err
 			}},
 			{"check unsupported language", func() error {
@@ -390,6 +390,48 @@ func TestAPI(t *testing.T) {
 			})
 
 		assertTwirpCode(t, err, twirp.NotFound)
+	})
+
+	t.Run("search_matches_mistakes_and_description", func(t *testing.T) {
+		const text = "Zürich"
+
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language:       "sv-se",
+				Text:           text,
+				Status:         "accepted",
+				Description:    "kanton i Schweiz",
+				CommonMistakes: []string{"Zurich"},
+				Level:          spellapi.CorrectionLevel_LEVEL_ERROR,
+			},
+		})
+		if err != nil {
+			t.Fatalf("set entry: %v", err)
+		}
+
+		finds := func(query string) bool {
+			list, err := stack.Dictionaries.ListEntries(ctx,
+				&spellapi.ListEntriesRequest{Language: "sv-se", Query: query})
+			if err != nil {
+				t.Fatalf("list entries: %v", err)
+			}
+
+			return slices.ContainsFunc(list.Entries,
+				func(e *spellapi.CustomEntry) bool {
+					return e.Text == text
+				})
+		}
+
+		// Substring of the common mistake, the description, and the entry text.
+		for _, q := range []string{"Zurich", "kanton", "ürich"} {
+			if !finds(q) {
+				t.Errorf("query %q did not find %q", q, text)
+			}
+		}
+
+		if finds("nonexistent-substring") {
+			t.Errorf("unrelated query unexpectedly matched %q", text)
+		}
 	})
 }
 

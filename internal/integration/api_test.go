@@ -134,6 +134,108 @@ func TestAPI(t *testing.T) {
 		})
 	})
 
+	t.Run("suggestion_level_round_trip", func(t *testing.T) {
+		const text = "Göteborg"
+
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language: "sv-se",
+				Text:     text,
+				Status:   "approved",
+				Level:    spellapi.CorrectionLevel_LEVEL_SUGGESTION,
+			},
+		})
+		if err != nil {
+			t.Fatalf("set entry: %v", err)
+		}
+
+		got, err := stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+			Language: "sv-se",
+			Text:     text,
+		})
+		if err != nil {
+			t.Fatalf("get entry: %v", err)
+		}
+
+		if got.Entry.Level != spellapi.CorrectionLevel_LEVEL_SUGGESTION {
+			t.Fatalf("level round-trip: got %v", got.Entry.Level)
+		}
+	})
+
+	t.Run("input_validation", func(t *testing.T) {
+		cases := []struct {
+			name string
+			call func() error
+		}{
+			{"set entry nil", func() error {
+				_, err := stack.Dictionaries.SetEntry(ctx,
+					&spellapi.SetEntryRequest{})
+				return err
+			}},
+			{"set unknown language", func() error {
+				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+					Entry: &spellapi.CustomEntry{
+						Language: "zz-zz", Text: "x", Status: "approved",
+					},
+				})
+				return err
+			}},
+			{"set missing text", func() error {
+				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+					Entry: &spellapi.CustomEntry{Language: "sv-se", Status: "approved"},
+				})
+				return err
+			}},
+			{"set missing status", func() error {
+				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+					Entry: &spellapi.CustomEntry{Language: "sv-se", Text: "x"},
+				})
+				return err
+			}},
+			{"set invalid level", func() error {
+				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+					Entry: &spellapi.CustomEntry{
+						Language: "sv-se", Text: "x", Status: "approved",
+						Level: spellapi.CorrectionLevel(99),
+					},
+				})
+				return err
+			}},
+			{"delete missing language", func() error {
+				_, err := stack.Dictionaries.DeleteEntry(ctx,
+					&spellapi.DeleteEntryRequest{Text: "x"})
+				return err
+			}},
+			{"get missing text", func() error {
+				_, err := stack.Dictionaries.GetEntry(ctx,
+					&spellapi.GetEntryRequest{Language: "sv-se"})
+				return err
+			}},
+			{"list entries bad prefix", func() error {
+				_, err := stack.Dictionaries.ListEntries(ctx,
+					&spellapi.ListEntriesRequest{Prefix: "a%b"})
+				return err
+			}},
+			{"check unsupported language", func() error {
+				_, err := stack.Check.Text(ctx, &spellapi.TextRequest{
+					Language: "zz-zz", Text: []string{"hej"},
+				})
+				return err
+			}},
+			{"suggestions missing text", func() error {
+				_, err := stack.Check.Suggestions(ctx,
+					&spellapi.SuggestionsRequest{Language: "sv-se"})
+				return err
+			}},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				assertTwirpCode(t, tc.call(), twirp.InvalidArgument)
+			})
+		}
+	})
+
 	t.Run("suggestions", func(t *testing.T) {
 		// Just exercise the handler end to end; the suggestion set itself
 		// depends on the bundled hunspell dictionary.

@@ -46,6 +46,11 @@ func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) 
 		return nil, fmt.Errorf("create spellcheck buffer pool: %w", err)
 	}
 
+	builtins, err := builtinRules()
+	if err != nil {
+		return nil, fmt.Errorf("compile built-in rules: %w", err)
+	}
+
 	return &Spellcheck{
 		lang:          lang,
 		trie:          trie.NewRuneTrie(),
@@ -54,6 +59,8 @@ func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) 
 		ciMistakeTrie: trie.NewRuneTrie(),
 		hunspell:      checker,
 		bufs:          bufs,
+		rules:         make(map[string]*compiledRule),
+		builtinRules:  builtins,
 	}, nil
 }
 
@@ -69,6 +76,134 @@ type Spellcheck struct {
 	ciMistakeTrie *trie.RuneTrie
 	hunspell      *hunspell.Checker
 	bufs          *puddle.Pool[*bytes.Buffer]
+	// rules holds user-defined pattern rules keyed by entry name; builtinRules
+	// are always-on rules for common writing errors.
+	rules        map[string]*compiledRule
+	builtinRules []*compiledRule
+}
+
+// builtinRules are the always-active pattern rules shipped with the service.
+func builtinRules() ([]*compiledRule, error) {
+	dash, err := compileRule(RuleDef{
+		Name:        "__builtin_number_dash",
+		Pattern:     ":digit - :digit",
+		Replacement: "{1}–{2}",
+		Description: "Use an en dash (–) for number ranges, " +
+			"not a hyphen (-).",
+		Level:  postgres.EntryLevelError,
+		Status: "accepted",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("number-dash rule: %w", err)
+	}
+
+	return []*compiledRule{dash}, nil
+}
+
+// AddRule compiles and registers a user-defined rule, replacing any existing
+// rule with the same name.
+func (s *Spellcheck) AddRule(def RuleDef) error {
+	r, err := compileRule(def)
+	if err != nil {
+		return fmt.Errorf("compile rule %q: %w", def.Name, err)
+	}
+
+	s.m.Lock()
+	s.rules[def.Name] = r
+	s.m.Unlock()
+
+	return nil
+}
+
+// RemoveRule drops a user-defined rule.
+func (s *Spellcheck) RemoveRule(name string) {
+	s.m.Lock()
+	delete(s.rules, name)
+	s.m.Unlock()
+}
+
+// matchAllRules runs the built-in and user rules over the text and returns the
+// resulting misspelled entries, deduplicated by matched span. The caller must
+// hold at least a read lock.
+func (s *Spellcheck) matchAllRules(
+	text string, withSuggestions bool,
+) []*spell.MisspelledEntry {
+	if len(s.rules) == 0 && len(s.builtinRules) == 0 {
+		return nil
+	}
+
+	sig := significant(tokenize(text))
+	seen := make(map[string]bool)
+
+	var entries []*spell.MisspelledEntry
+
+	emit := func(r *compiledRule) {
+		for _, m := range matchRule(text, sig, r) {
+			span := text[m.start:m.end]
+			if seen[span] {
+				continue
+			}
+
+			seen[span] = true
+
+			level, _ := entryLevelToRPC(r.level)
+
+			e := spell.MisspelledEntry{
+				Text:   span,
+				Level:  level,
+				Status: r.status,
+			}
+
+			if withSuggestions && m.suggestion != "" {
+				e.Suggestions = append(e.Suggestions, &spell.Suggestion{
+					Text:        m.suggestion,
+					Description: r.description,
+				})
+			}
+
+			entries = append(entries, &e)
+		}
+	}
+
+	for _, r := range s.builtinRules {
+		emit(r)
+	}
+
+	for _, r := range s.rules {
+		emit(r)
+	}
+
+	return entries
+}
+
+// ruleSuggestions returns the suggestions produced by matching the rules
+// against a phrase, used for on-demand suggestion lookups. The caller must hold
+// at least a read lock.
+func (s *Spellcheck) ruleSuggestions(text string) []*spell.Suggestion {
+	sig := significant(tokenize(text))
+
+	var out []*spell.Suggestion
+
+	add := func(r *compiledRule) {
+		for _, m := range matchRule(text, sig, r) {
+			if m.suggestion != "" {
+				out = append(out, &spell.Suggestion{
+					Text:        m.suggestion,
+					Description: r.description,
+				})
+			}
+		}
+	}
+
+	for _, r := range s.builtinRules {
+		add(r)
+	}
+
+	for _, r := range s.rules {
+		add(r)
+	}
+
+	return out
 }
 
 // foldKey normalises a key for case-insensitive matching.
@@ -256,7 +391,13 @@ func (s *Spellcheck) Check(
 		replacements = append(replacements, text, "")
 	}
 
+	// Pattern rules match over the token stream rather than the trie windows,
+	// so they run as a separate pass over the whole text.
+	ruleEntries := s.matchAllRules(text, withSuggestions)
+
 	s.m.RUnlock()
+
+	res.Entries = append(res.Entries, ruleEntries...)
 
 	if customOnly {
 		return &res, nil
@@ -373,6 +514,10 @@ func (s *Spellcheck) Suggestions(
 				})
 		}
 	}
+
+	// Pattern rules can also produce suggestions for the phrase, e.g. a number
+	// range typed with a hyphen.
+	suggestions = append(suggestions, s.ruleSuggestions(text)...)
 
 	s.m.RUnlock()
 

@@ -46,6 +46,39 @@ other = "Case sensitive"
 [CaseSensitiveHelp]
 other = "Only match the exact casing. Enable for proper nouns; leave off for ordinary words so they are caught at the start of a sentence too."
 
+[RuleSection]
+other = "Pattern rule (advanced)"
+
+[IsRule]
+other = "Treat this entry as a pattern rule"
+
+[RuleHelp]
+other = "Match a token pattern instead of literal text. Use literals, :digit, :word and :gap(N); reference captured tokens in the replacement as {1}, {2}."
+
+[RulePattern]
+other = "Pattern"
+
+[RuleReplacement]
+other = "Replacement"
+
+[RuleGuards]
+other = "Context guards"
+
+[RuleGuardsHelp]
+other = "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."
+
+[RuleNotBefore]
+other = "skip if preceded by..."
+
+[RuleNotAfter]
+other = "skip if followed by..."
+
+[RuleBefore]
+other = "only if preceded by..."
+
+[RuleAfter]
+other = "only if followed by..."
+
 [Language]
 other = "Language"
 

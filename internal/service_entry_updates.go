@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/ttab/elephant-spell/postgres"
+	"github.com/ttab/elephantine"
 )
 
 // eventBatchSize is how many events a single drain iteration reads per
@@ -42,7 +43,7 @@ func (a *Application) preloadEntries(ctx context.Context) error {
 				continue
 			}
 
-			spell.AddPhrase(entryAsPhrase(row))
+			a.applyEntry(ctx, spell, row)
 		}
 
 		offset += limit
@@ -106,6 +107,7 @@ func (a *Application) applyEvent(
 
 	if e.Deleted {
 		spell.RemovePhrase(e.Entry)
+		spell.RemoveRule(e.Entry)
 
 		return nil
 	}
@@ -116,15 +118,57 @@ func (a *Application) applyEvent(
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		spell.RemovePhrase(e.Entry)
+		spell.RemoveRule(e.Entry)
 
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("read entry from database: %w", err)
 	}
 
-	spell.AddPhrase(entryAsPhrase(entry))
+	a.applyEntry(ctx, spell, entry)
 
 	return nil
+}
+
+// applyEntry registers an entry with its spellchecker as either a pattern rule
+// or a plain word/phrase, clearing the other representation so a change of kind
+// doesn't leave stale data. A rule that fails to compile is logged and skipped
+// rather than stalling the eventlog.
+func (a *Application) applyEntry(
+	ctx context.Context, s *Spellcheck, e postgres.Entry,
+) {
+	if e.Data != nil && e.Data.Rule != nil {
+		s.RemovePhrase(e.Entry)
+
+		err := s.AddRule(ruleDefFromEntry(e))
+		if err != nil {
+			a.logger.ErrorContext(ctx, "skip invalid rule entry",
+				"entry", e.Entry, "language", e.Language,
+				elephantine.LogKeyError, err)
+		}
+
+		return
+	}
+
+	s.RemoveRule(e.Entry)
+	s.AddPhrase(entryAsPhrase(e))
+}
+
+func ruleDefFromEntry(e postgres.Entry) RuleDef {
+	r := e.Data.Rule
+
+	return RuleDef{
+		Name:        e.Entry,
+		Pattern:     r.Pattern,
+		Replacement: r.Replacement,
+		Description: e.Description,
+		Level:       e.Level,
+		Status:      e.Status,
+		Before:      r.Before,
+		After:       r.After,
+		NotBefore:   r.NotBefore,
+		NotAfter:    r.NotAfter,
+	}
 }
 
 func entryAsPhrase(e postgres.Entry) Phrase {

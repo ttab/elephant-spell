@@ -492,11 +492,13 @@ func (a *Application) GetEntry(
 	var (
 		forms         map[string]string
 		caseSensitive bool
+		rule          *spell.Rule
 	)
 
 	if row.Data != nil {
 		forms = row.Data.Forms
 		caseSensitive = row.Data.CaseSensitive
+		rule = ruleToRPC(row.Data.Rule)
 	}
 
 	var updated string
@@ -516,6 +518,7 @@ func (a *Application) GetEntry(
 			Updated:        updated,
 			UpdatedBy:      row.UpdatedBy,
 			CaseSensitive:  caseSensitive,
+			Rule:           rule,
 		},
 	}
 
@@ -602,11 +605,13 @@ func (a *Application) ListEntries(
 		var (
 			forms         map[string]string
 			caseSensitive bool
+			rule          *spell.Rule
 		)
 
 		if row.Data != nil {
 			forms = row.Data.Forms
 			caseSensitive = row.Data.CaseSensitive
+			rule = ruleToRPC(row.Data.Rule)
 		}
 
 		var updated string
@@ -625,6 +630,7 @@ func (a *Application) ListEntries(
 			Updated:        updated,
 			UpdatedBy:      row.UpdatedBy,
 			CaseSensitive:  caseSensitive,
+			Rule:           rule,
 		}
 	}
 
@@ -667,6 +673,15 @@ func (a *Application) SetEntry(
 		return nil, err
 	}
 
+	// Validate the rule pattern up front so a broken pattern can't be stored.
+	if req.Entry.Rule != nil {
+		_, err := compileRule(RuleDef{Pattern: req.Entry.Rule.Pattern})
+		if err != nil {
+			return nil, twirp.InvalidArgumentError(
+				"entry.rule.pattern", err.Error())
+		}
+	}
+
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return nil, twirp.InternalErrorf("start transaction: %w", err)
@@ -686,6 +701,7 @@ func (a *Application) SetEntry(
 		Data: &postgres.EntryData{
 			Forms:         req.Entry.Forms,
 			CaseSensitive: req.Entry.CaseSensitive,
+			Rule:          ruleFromRPC(req.Entry.Rule),
 		},
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedBy: auth.Claims.Subject,
@@ -765,6 +781,36 @@ func (a *Application) SetEntryStatus(
 	}
 
 	return &spell.SetEntryStatusResponse{}, nil
+}
+
+func ruleFromRPC(r *spell.Rule) *postgres.EntryRule {
+	if r == nil {
+		return nil
+	}
+
+	return &postgres.EntryRule{
+		Pattern:     r.Pattern,
+		Replacement: r.Replacement,
+		Before:      r.Before,
+		After:       r.After,
+		NotBefore:   r.NotBefore,
+		NotAfter:    r.NotAfter,
+	}
+}
+
+func ruleToRPC(r *postgres.EntryRule) *spell.Rule {
+	if r == nil {
+		return nil
+	}
+
+	return &spell.Rule{
+		Pattern:     r.Pattern,
+		Replacement: r.Replacement,
+		Before:      r.Before,
+		After:       r.After,
+		NotBefore:   r.NotBefore,
+		NotAfter:    r.NotAfter,
+	}
 }
 
 func entryLevelFromRPC(level spell.CorrectionLevel) (postgres.EntryLevel, error) {

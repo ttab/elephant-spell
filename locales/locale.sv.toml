@@ -46,6 +46,39 @@ other = "Skiftlägeskänslig"
 [CaseSensitiveHelp]
 other = "Matcha endast exakt skiftläge. Slå på för egennamn; lämna av för vanliga ord så att de även fångas i början av en mening."
 
+[RuleSection]
+other = "Mönsterregel (avancerat)"
+
+[IsRule]
+other = "Behandla posten som en mönsterregel"
+
+[RuleHelp]
+other = "Matcha ett teckenmönster i stället för exakt text. Använd literaler, :digit, :word och :gap(N); hänvisa till fångade token i ersättningen som {1}, {2}."
+
+[RulePattern]
+other = "Mönster"
+
+[RuleReplacement]
+other = "Ersättning"
+
+[RuleGuards]
+other = "Kontextvillkor"
+
+[RuleGuardsHelp]
+other = "Kommaseparerade ord. Valfritt: begränsa när regeln slår till utifrån grannordet."
+
+[RuleNotBefore]
+other = "hoppa över om föregås av..."
+
+[RuleNotAfter]
+other = "hoppa över om följs av..."
+
+[RuleBefore]
+other = "endast om föregås av..."
+
+[RuleAfter]
+other = "endast om följs av..."
+
 [Language]
 other = "Språk"
 

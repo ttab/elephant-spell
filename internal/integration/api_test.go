@@ -433,6 +433,116 @@ func TestAPI(t *testing.T) {
 			t.Errorf("unrelated query unexpectedly matched %q", text)
 		}
 	})
+
+	t.Run("builtin_dash_rule", func(t *testing.T) {
+		res, err := stack.Check.Text(ctx, &spellapi.TextRequest{
+			Language:    "sv-se",
+			Text:        []string{"Mellan 12-15 personer."},
+			CustomOnly:  true,
+			Suggestions: true,
+		})
+		if err != nil {
+			t.Fatalf("check: %v", err)
+		}
+
+		if len(res.Misspelled) != 1 {
+			t.Fatalf("expected one result, got %d", len(res.Misspelled))
+		}
+
+		var dash *spellapi.MisspelledEntry
+
+		for _, e := range res.Misspelled[0].Entries {
+			if e.Text == "12-15" {
+				dash = e
+			}
+		}
+
+		if dash == nil {
+			t.Fatalf("dash not flagged: %+v", res.Misspelled[0].Entries)
+		}
+
+		if len(dash.Suggestions) == 0 || dash.Suggestions[0].Text != "12–15" {
+			t.Errorf("dash suggestion = %+v, want 12–15", dash.Suggestions)
+		}
+	})
+
+	t.Run("custom_rule_flow", func(t *testing.T) {
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language: "sv-se",
+				Text:     "kronor-rule",
+				Status:   "accepted",
+				Level:    spellapi.CorrectionLevel_LEVEL_SUGGESTION,
+				Rule: &spellapi.Rule{
+					Pattern:     ":digit kr",
+					Replacement: "{1} kronor",
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("set rule: %v", err)
+		}
+
+		flagged := func() bool {
+			res, err := stack.Check.Text(ctx, &spellapi.TextRequest{
+				Language:   "sv-se",
+				Text:       []string{"Det kostar 5 kr."},
+				CustomOnly: true,
+			})
+			if err != nil {
+				t.Fatalf("check: %v", err)
+			}
+
+			return len(res.Misspelled) == 1 &&
+				slices.ContainsFunc(res.Misspelled[0].Entries,
+					func(e *spellapi.MisspelledEntry) bool {
+						return e.Text == "5 kr"
+					})
+		}
+
+		integration.WaitFor(t, "rule to propagate", flagged)
+
+		sug, err := stack.Check.Suggestions(ctx, &spellapi.SuggestionsRequest{
+			Language:   "sv-se",
+			Text:       "5 kr",
+			CustomOnly: true,
+		})
+		if err != nil {
+			t.Fatalf("suggestions: %v", err)
+		}
+
+		if !slices.ContainsFunc(sug.Suggestions,
+			func(s *spellapi.Suggestion) bool {
+				return s.Text == "5 kronor"
+			}) {
+			t.Errorf("expected '5 kronor' suggestion, got %+v", sug.Suggestions)
+		}
+
+		got, err := stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+			Language: "sv-se",
+			Text:     "kronor-rule",
+		})
+		if err != nil {
+			t.Fatalf("get rule: %v", err)
+		}
+
+		if got.Entry.Rule == nil || got.Entry.Rule.Pattern != ":digit kr" {
+			t.Errorf("rule did not round-trip: %+v", got.Entry.Rule)
+		}
+	})
+
+	t.Run("invalid_rule_rejected", func(t *testing.T) {
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language: "sv-se",
+				Text:     "bad-rule",
+				Status:   "accepted",
+				Rule:     &spellapi.Rule{Pattern: ":gap(x)"},
+			},
+		})
+
+		assertTwirpCode(t, err, twirp.InvalidArgument)
+	})
 }
 
 // assertTwirpCode fails unless err is a twirp error with the wanted code.

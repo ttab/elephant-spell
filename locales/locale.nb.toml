@@ -46,6 +46,39 @@ other = "Skill mellom store og små bokstaver"
 [CaseSensitiveHelp]
 other = "Treff bare nøyaktig skrivemåte. Slå på for egennavn; la stå av for vanlige ord så de også fanges først i en setning."
 
+[RuleSection]
+other = "Mønsterregel (avansert)"
+
+[IsRule]
+other = "Behandle oppføringen som en mønsterregel"
+
+[RuleHelp]
+other = "Treff et tokenmønster i stedet for ordrett tekst. Bruk literaler, :digit, :word og :gap(N); vis til fangede token i erstatningen som {1}, {2}."
+
+[RulePattern]
+other = "Mønster"
+
+[RuleReplacement]
+other = "Erstatning"
+
+[RuleGuards]
+other = "Kontekstvilkår"
+
+[RuleGuardsHelp]
+other = "Kommaseparerte ord. Valgfritt: begrens når regelen utløses ut fra naboordet."
+
+[RuleNotBefore]
+other = "hopp over hvis foran står..."
+
+[RuleNotAfter]
+other = "hopp over hvis etter står..."
+
+[RuleBefore]
+other = "bare hvis foran står..."
+
+[RuleAfter]
+other = "bare hvis etter står..."
+
 [Language]
 other = "Språk"
 

@@ -85,7 +85,7 @@ func BenchmarkMatchAllRules(b *testing.B) {
 			b.ResetTimer()
 
 			for i := 0; i < b.N; i++ {
-				_ = sc.matchAllRules(text, true)
+				_ = sc.ruleCandidates(text, true)
 			}
 		})
 	}

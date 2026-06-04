@@ -100,33 +100,31 @@ func (s *Spellcheck) RemoveRule(id int64) {
 	s.m.Unlock()
 }
 
-// matchAllRules runs the user rules over the text and returns the resulting
-// misspelled entries, deduplicated by matched span. The caller must hold at
-// least a read lock.
-func (s *Spellcheck) matchAllRules(
+// candidateMatch is a potential correction together with its byte span in the
+// source, so overlapping matches can be resolved before they are reported.
+type candidateMatch struct {
+	start int
+	end   int
+	entry *spell.MisspelledEntry
+}
+
+// ruleCandidates runs the user rules over the text and returns every match as a
+// candidate with its span. The caller must hold at least a read lock.
+func (s *Spellcheck) ruleCandidates(
 	text string, withSuggestions bool,
-) []*spell.MisspelledEntry {
+) []candidateMatch {
 	if len(s.rules) == 0 {
 		return nil
 	}
 
-	seen := make(map[string]bool)
+	var cands []candidateMatch
 
-	var entries []*spell.MisspelledEntry
-
-	emit := func(r *compiledRule) {
+	for _, r := range s.rules {
 		for _, m := range matchRule(text, r) {
-			span := text[m.start:m.end]
-			if seen[span] {
-				continue
-			}
-
-			seen[span] = true
-
 			level, _ := entryLevelToRPC(r.level)
 
 			e := spell.MisspelledEntry{
-				Text:   span,
+				Text:   text[m.start:m.end],
 				Level:  level,
 				Status: r.status,
 			}
@@ -138,15 +136,61 @@ func (s *Spellcheck) matchAllRules(
 				})
 			}
 
-			entries = append(entries, &e)
+			cands = append(cands, candidateMatch{
+				start: m.start, end: m.end, entry: &e,
+			})
 		}
 	}
 
-	for _, r := range s.rules {
-		emit(r)
+	return cands
+}
+
+// resolveLongest applies longest-match-wins: it returns a keep flag per
+// candidate, accepting matches from longest to shortest and dropping any that
+// overlap an already-accepted, strictly longer match. Equal-length overlaps are
+// both kept (e.g. a word that is valid yet also carries a softer suggestion).
+// Ties break towards the earlier candidate.
+func resolveLongest(cands []candidateMatch) []bool {
+	keep := make([]bool, len(cands))
+
+	order := make([]int, len(cands))
+	for i := range order {
+		order[i] = i
 	}
 
-	return entries
+	slices.SortStableFunc(order, func(a, b int) int {
+		la := cands[a].end - cands[a].start
+		lb := cands[b].end - cands[b].start
+		if la != lb {
+			return lb - la
+		}
+
+		return a - b
+	})
+
+	var accepted []candidateMatch
+
+	for _, idx := range order {
+		c := cands[idx]
+		clen := c.end - c.start
+		suppressed := false
+
+		for _, k := range accepted {
+			longer := (k.end - k.start) > clen
+			if longer && c.start < k.end && k.start < c.end {
+				suppressed = true
+
+				break
+			}
+		}
+
+		if !suppressed {
+			keep[idx] = true
+			accepted = append(accepted, c)
+		}
+	}
+
+	return keep
 }
 
 // ruleSuggestions returns the suggestions produced by matching the rules
@@ -168,6 +212,73 @@ func (s *Spellcheck) ruleSuggestions(text string) []*spell.Suggestion {
 
 	for _, r := range s.rules {
 		add(r)
+	}
+
+	return out
+}
+
+// leadingCaseVariants returns every miscasing of text formed by lowercasing the
+// leading letter of one or more capitalised words (excluding the original). For
+// "Mexico City" that is "mexico City", "Mexico city" and "mexico city".
+func leadingCaseVariants(text string) []string {
+	runes := []rune(text)
+
+	var starts []int // rune indices of upper-case word-leading letters
+
+	inWord := false
+
+	for i, r := range runes {
+		letter := unicode.IsLetter(r)
+
+		switch {
+		case letter && !inWord:
+			if unicode.IsUpper(r) {
+				starts = append(starts, i)
+			}
+
+			inWord = true
+		case !letter:
+			inWord = false
+		}
+	}
+
+	// Bound the combinatorial expansion; proper nouns are short.
+	if len(starts) == 0 || len(starts) > 6 {
+		return nil
+	}
+
+	var out []string
+
+	for mask := 1; mask < (1 << len(starts)); mask++ {
+		v := make([]rune, len(runes))
+		copy(v, runes)
+
+		for b := range starts {
+			if mask&(1<<b) != 0 {
+				v[starts[b]] = unicode.ToLower(v[starts[b]])
+			}
+		}
+
+		out = append(out, string(v))
+	}
+
+	return out
+}
+
+// dedupeStrings returns in-order unique values.
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+
+	var out []string
+
+	for _, s := range in {
+		if seen[s] {
+			continue
+		}
+
+		seen[s] = true
+
+		out = append(out, s)
 	}
 
 	return out
@@ -249,6 +360,27 @@ func (s *Spellcheck) AddPhrase(p Phrase) {
 		commonMistakes = append(commonMistakes, expanded...)
 	}
 
+	// A case-sensitive entry is a fixed-casing form (typically a proper noun).
+	// Treat the leading-letter miscasings as implicit common mistakes — both of
+	// the correct form and of each listed mistake, so the casing correction is
+	// symmetric — e.g. "mexico city"/"Mexico city" are corrected to
+	// "Mexico City".
+	if p.CaseSensitive {
+		var variants []string
+
+		for _, base := range append([]string{p.Text}, commonMistakes...) {
+			variants = append(variants, leadingCaseVariants(base)...)
+		}
+
+		commonMistakes = append(commonMistakes, variants...)
+	}
+
+	// Never register the correct form itself as a mistake.
+	commonMistakes = slices.DeleteFunc(dedupeStrings(commonMistakes),
+		func(m string) bool {
+			return m == p.Text
+		})
+
 	p.CommonMistakes = commonMistakes
 
 	valid, mistake, key := s.tries(p.CaseSensitive)
@@ -294,6 +426,11 @@ func (s *Spellcheck) Check(
 
 	s.m.RLock()
 
+	var (
+		entryCands []candidateMatch
+		validCands []candidateMatch
+	)
+
 	for m := range PhraseIterator(textData, 3) {
 		text := m.Text
 		folded := foldKey(text)
@@ -301,8 +438,13 @@ func (s *Spellcheck) Check(
 		// Check if the phrase has been marked as valid (case-sensitive exact
 		// or case-insensitive folded), make sure that it doesn't get sent to
 		// hunspell, but allow continued processing to get further suggestions.
+		// A valid phrase is also a (silent) candidate so that, as a known-good
+		// span, it suppresses shorter overlapping corrections — e.g. the valid
+		// "Mexico City" stops the "Mexico"→"Mexiko" rule from firing inside it.
 		if s.trie.Get(text) != nil || s.ciTrie.Get(folded) != nil {
 			replacements = append(replacements, text, "")
+			validCands = append(validCands,
+				candidateMatch{start: m.Start, end: m.End})
 		}
 
 		v := s.mistakeTrie.Get(text)
@@ -323,15 +465,6 @@ func (s *Spellcheck) Check(
 		// check per hit. A guarded-out occurrence is skipped; the same phrase
 		// elsewhere can still match.
 		if !p.Guards.pass(source, m.Start, m.End) {
-			continue
-		}
-
-		// Make sure that we only act once on a custom entry.
-		oldNews := slices.ContainsFunc(res.Entries,
-			func(m *spell.MisspelledEntry) bool {
-				return m.Text == text
-			})
-		if oldNews {
 			continue
 		}
 
@@ -361,7 +494,9 @@ func (s *Spellcheck) Check(
 			}
 		}
 
-		res.Entries = append(res.Entries, &entry)
+		entryCands = append(entryCands, candidateMatch{
+			start: m.Start, end: m.End, entry: &entry,
+		})
 
 		// Save away the replacements that should be performed before we
 		// send the word to spellcheck.
@@ -370,11 +505,49 @@ func (s *Spellcheck) Check(
 
 	// Pattern rules match over the token stream rather than the trie windows,
 	// so they run as a separate pass over the whole text.
-	ruleEntries := s.matchAllRules(text, withSuggestions)
+	ruleCands := s.ruleCandidates(text, withSuggestions)
 
 	s.m.RUnlock()
 
-	res.Entries = append(res.Entries, ruleEntries...)
+	// Longest-match-wins: a longer match suppresses any shorter one that
+	// overlaps it, so e.g. a "Mexico City" casing correction takes precedence
+	// over the "Mexico"→"Mexiko" rule on the same span. Survivors are reported
+	// in reading order — entries first, then rules — deduplicated by text
+	// within each group (the response carries no offsets).
+	combined := make([]candidateMatch, 0,
+		len(validCands)+len(entryCands)+len(ruleCands))
+	combined = append(combined, validCands...)
+	combined = append(combined, entryCands...)
+	combined = append(combined, ruleCands...)
+
+	keep := resolveLongest(combined)
+
+	entryStart := len(validCands)
+	ruleStart := entryStart + len(entryCands)
+
+	seenEntry := make(map[string]bool)
+
+	for i := entryStart; i < ruleStart; i++ {
+		e := combined[i].entry
+		if !keep[i] || seenEntry[e.Text] {
+			continue
+		}
+
+		seenEntry[e.Text] = true
+		res.Entries = append(res.Entries, e)
+	}
+
+	seenRule := make(map[string]bool)
+
+	for i := ruleStart; i < len(combined); i++ {
+		e := combined[i].entry
+		if !keep[i] || seenRule[e.Text] {
+			continue
+		}
+
+		seenRule[e.Text] = true
+		res.Entries = append(res.Entries, e)
+	}
 
 	if customOnly {
 		return &res, nil

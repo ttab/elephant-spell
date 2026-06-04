@@ -45,6 +45,80 @@ func renderEntryForm(t *testing.T, contents dictionariesContents) string {
 	return buf.String()
 }
 
+func renderRuleForm(t *testing.T, contents rulesContents) string {
+	t.Helper()
+
+	funcs := template.FuncMap{
+		"t": func(args ...string) string {
+			if len(args) > 0 {
+				return args[len(args)-1]
+			}
+
+			return ""
+		},
+		"tl":         func(_ ...any) string { return "" },
+		"td":         func(_ ...any) string { return "" },
+		"pathEscape": url.PathEscape,
+	}
+
+	tpl, err := template.New("rule_form.html").Funcs(funcs).
+		ParseFiles("../templates/rule_form.html")
+	if err != nil {
+		t.Fatalf("parse template: %v", err)
+	}
+
+	var buf bytes.Buffer
+
+	err = tpl.ExecuteTemplate(&buf, "rule_form.html", struct {
+		Contents rulesContents
+	}{Contents: contents})
+	if err != nil {
+		t.Fatalf("execute template: %v", err)
+	}
+
+	return buf.String()
+}
+
+func TestRuleFormRender(t *testing.T) {
+	t.Run("new rule", func(t *testing.T) {
+		out := renderRuleForm(t, rulesContents{
+			Language: "sv-se",
+			NewRule:  true,
+			CanWrite: true,
+		})
+
+		for _, want := range []string{`name="pattern"`, `name="replacement"`, `name="not_before"`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("new-rule form missing %q", want)
+			}
+		}
+	})
+
+	t.Run("existing rule", func(t *testing.T) {
+		out := renderRuleForm(t, rulesContents{
+			Language: "sv-se",
+			CanWrite: true,
+			Rule: &uiRule{
+				Name:        "dash",
+				Status:      "accepted",
+				Level:       "error",
+				Pattern:     ":digit - :digit",
+				Replacement: "{1}–{2}",
+				NotBefore:   "att",
+			},
+		})
+
+		for _, want := range []string{
+			`value=":digit - :digit"`,
+			`name="not_before" value="att"`,
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("rule form missing %q", want)
+			}
+		}
+	})
+}
+
 func TestEntryFormRender(t *testing.T) {
 	t.Run("new entry", func(t *testing.T) {
 		out := renderEntryForm(t, dictionariesContents{

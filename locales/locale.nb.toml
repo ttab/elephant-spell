@@ -94,6 +94,39 @@ other = "Ingenting å utvide ennå."
 [Close]
 other = "Lukk"
 
+[Rules]
+other = "Regler"
+
+[RulesLower]
+other = "regler"
+
+[NewRule]
+other = "Ny regel"
+
+[FilterRules]
+other = "Søk navn, mønster, beskrivelse..."
+
+[SelectRule]
+other = "Velg en regel å redigere"
+
+[NoRules]
+other = "Ingen regler funnet"
+
+[Name]
+other = "Navn"
+
+[NameRequired]
+other = "Navn kreves"
+
+[RuleCreated]
+other = "Regel opprettet"
+
+[RuleUpdated]
+other = "Regel oppdatert"
+
+[ConfirmDeleteRule]
+other = "Er du sikker på at du vil slette regelen?"
+
 [Language]
 other = "Språk"
 

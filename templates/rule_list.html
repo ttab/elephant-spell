@@ -1,0 +1,36 @@
+{{range .Contents.Rules}}
+<a
+  class="entry-item {{if eq .Name $.Contents.ActiveRule}}active{{end}}"
+  href="/rules/{{$.Contents.Language}}/{{pathEscape .Name}}"
+  hx-get="/rules/{{$.Contents.Language}}/{{pathEscape .Name}}"
+  hx-target="#entry-detail"
+  hx-push-url="true"
+>
+  <div class="entry-item-text">{{.Name}}</div>
+  <div class="entry-item-meta">
+    <span class="entry-item-status">{{.Status}}</span>
+    <span class="chip">{{.Pattern}}</span>
+  </div>
+</a>
+{{else}}
+<div class="entry-empty">{{t "NoRules" "No rules found"}}</div>
+{{end}}
+{{if or (gt .Contents.Page 0) .Contents.HasMore}}
+<div class="entry-list-pagination">
+  {{if gt .Contents.Page 0}}
+  <a href="#" class="btn btn-sm"
+    hx-get="/rules/{{.Contents.Language}}/list?page={{subtract .Contents.Page 1}}{{if .Contents.Query}}&query={{.Contents.Query}}{{end}}"
+    hx-target="#entry-list"
+    hx-indicator="#entry-list-area"
+  >← {{t "Previous" "Previous"}}</a>
+  {{end}}
+  <span class="page-info">{{t "Page" "Page"}} {{add .Contents.Page 1}}</span>
+  {{if .Contents.HasMore}}
+  <a href="#" class="btn btn-sm"
+    hx-get="/rules/{{.Contents.Language}}/list?page={{add .Contents.Page 1}}{{if .Contents.Query}}&query={{.Contents.Query}}{{end}}"
+    hx-target="#entry-list"
+    hx-indicator="#entry-list-area"
+  >{{t "Next" "Next"}} →</a>
+  {{end}}
+</div>
+{{end}}

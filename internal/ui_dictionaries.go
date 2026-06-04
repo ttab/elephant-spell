@@ -150,7 +150,7 @@ type dictionariesContents struct {
 }
 
 func (d *DictionariesUI) entryCount(ctx context.Context, lang string) (int, error) {
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return 0, fmt.Errorf("bridge auth for entry count: %w", err)
 	}
@@ -169,7 +169,7 @@ func (d *DictionariesUI) entryCount(ctx context.Context, lang string) (int, erro
 	return 0, nil
 }
 
-func (d *DictionariesUI) hasWriteScope(ctx context.Context) bool {
+func hasWriteScope(ctx context.Context) bool {
 	accessToken, ok := howdah.AccessToken(ctx)
 	if !ok {
 		return false
@@ -189,9 +189,11 @@ type flashMessage struct {
 	Message howdah.TextLabel
 }
 
-// withServiceAuth bridges howdah's OIDC auth context to elephantine's auth
-// context so that the spell.Dictionaries service methods can verify scopes.
-func (d *DictionariesUI) withServiceAuth(ctx context.Context) (context.Context, error) {
+// bridgeServiceAuth bridges howdah's OIDC auth context to elephantine's auth
+// context so that the spell service methods can verify scopes.
+func bridgeServiceAuth(
+	ctx context.Context, authParser elephantine.AuthInfoParser,
+) (context.Context, error) {
 	headers, ok := twirp.HTTPRequestHeaders(ctx)
 	if !ok {
 		return ctx, nil
@@ -202,7 +204,7 @@ func (d *DictionariesUI) withServiceAuth(ctx context.Context) (context.Context, 
 		return ctx, nil
 	}
 
-	info, err := d.authParser.AuthInfoFromHeader(authHeader)
+	info, err := authParser.AuthInfoFromHeader(authHeader)
 	if err != nil {
 		return nil, fmt.Errorf("parse auth header: %w", err)
 	}
@@ -245,7 +247,7 @@ func (d *DictionariesUI) listPage(
 	lang := d.defaultLanguage
 
 	if c, err := r.Cookie("lang"); err == nil && c.Value != "" {
-		if match := d.matchLanguage(c.Value); match != "" {
+		if match := matchLanguage(d.languages, c.Value); match != "" {
 			lang = match
 		}
 	}
@@ -258,16 +260,16 @@ func (d *DictionariesUI) listPage(
 // matchLanguage finds a dictionary language matching the given UI locale code.
 // It first tries an exact match, then falls back to prefix matching (e.g. "sv"
 // matches "sv-se").
-func (d *DictionariesUI) matchLanguage(code string) string {
+func matchLanguage(languages []string, code string) string {
 	code = strings.ToLower(code)
 
-	for _, lang := range d.languages {
+	for _, lang := range languages {
 		if lang == code {
 			return lang
 		}
 	}
 
-	for _, lang := range d.languages {
+	for _, lang := range languages {
 		if strings.HasPrefix(lang, code+"-") || strings.HasPrefix(code, lang+"-") {
 			return lang
 		}
@@ -294,7 +296,7 @@ func (d *DictionariesUI) languagePage(
 		)
 	}
 
-	canWrite := d.hasWriteScope(ctx)
+	canWrite := hasWriteScope(ctx)
 
 	if isHtmx(r) {
 		return d.entryListPage(ctx, lang, "", "", 0)
@@ -333,7 +335,7 @@ func (d *DictionariesUI) newEntryPage(
 	}
 
 	lang := r.PathValue("language")
-	canWrite := d.hasWriteScope(ctx)
+	canWrite := hasWriteScope(ctx)
 
 	if isHtmx(r) {
 		return &howdah.Page{
@@ -381,9 +383,9 @@ func (d *DictionariesUI) entryPage(
 
 	lang := r.PathValue("language")
 	text := r.PathValue("text")
-	canWrite := d.hasWriteScope(ctx)
+	canWrite := hasWriteScope(ctx)
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -444,7 +446,7 @@ func (d *DictionariesUI) saveNewEntry(
 		return nil, err
 	}
 
-	if !d.hasWriteScope(ctx) {
+	if !hasWriteScope(ctx) {
 		return nil, howdah.NewHTTPError(
 			http.StatusForbidden,
 			"MissingScope", "You need the 'spell_write' scope to make changes",
@@ -478,7 +480,7 @@ func (d *DictionariesUI) saveNewEntry(
 		}, nil
 	}
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -523,7 +525,7 @@ func (d *DictionariesUI) saveEntry(
 		return nil, err
 	}
 
-	if !d.hasWriteScope(ctx) {
+	if !hasWriteScope(ctx) {
 		return nil, howdah.NewHTTPError(
 			http.StatusForbidden,
 			"MissingScope", "You need the 'spell_write' scope to make changes",
@@ -542,7 +544,7 @@ func (d *DictionariesUI) saveEntry(
 		)
 	}
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -585,7 +587,7 @@ func (d *DictionariesUI) deleteEntry(
 		return nil, err
 	}
 
-	if !d.hasWriteScope(ctx) {
+	if !hasWriteScope(ctx) {
 		return nil, howdah.NewHTTPError(
 			http.StatusForbidden,
 			"MissingScope", "You need the 'spell_write' scope to make changes",
@@ -596,7 +598,7 @@ func (d *DictionariesUI) deleteEntry(
 	lang := r.PathValue("language")
 	text := r.PathValue("text")
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -838,7 +840,7 @@ func (d *DictionariesUI) listExpansions(
 func (d *DictionariesUI) listEntries(
 	ctx context.Context, lang, query string, page int64,
 ) ([]uiEntry, bool, error) {
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, false, fmt.Errorf("bridge auth for list entries: %w", err)
 	}

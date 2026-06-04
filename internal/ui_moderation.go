@@ -39,7 +39,7 @@ type moderationContents struct {
 func (d *DictionariesUI) moderationData(
 	ctx context.Context, lang string, page int64,
 ) (moderationContents, error) {
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return moderationContents{}, fmt.Errorf("bridge auth: %w", err)
 	}
@@ -81,7 +81,7 @@ func (d *DictionariesUI) moderationData(
 		Page:      page,
 		HasMore:   int64(len(res.Entries)) == moderationPageSize,
 		Pending:   pendingByLang[lang],
-		CanWrite:  d.hasWriteScope(ctx),
+		CanWrite:  hasWriteScope(ctx),
 	}, nil
 }
 
@@ -98,7 +98,7 @@ func (d *DictionariesUI) moderationRedirect(
 	lang := d.defaultLanguage
 
 	if c, err := r.Cookie("lang"); err == nil && c.Value != "" {
-		if match := d.matchLanguage(c.Value); match != "" {
+		if match := matchLanguage(d.languages, c.Value); match != "" {
 			lang = match
 		}
 	}
@@ -194,7 +194,7 @@ func (d *DictionariesUI) moderate(
 		return nil, err
 	}
 
-	if !d.hasWriteScope(ctx) {
+	if !hasWriteScope(ctx) {
 		return nil, howdah.NewHTTPError(
 			http.StatusForbidden,
 			"MissingScope", "You need the 'spell_write' scope to make changes",
@@ -210,7 +210,7 @@ func (d *DictionariesUI) moderate(
 		return nil, err
 	}
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}

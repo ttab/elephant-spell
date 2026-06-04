@@ -94,6 +94,39 @@ other = "Inget att expandera ännu."
 [Close]
 other = "Stäng"
 
+[Rules]
+other = "Regler"
+
+[RulesLower]
+other = "regler"
+
+[NewRule]
+other = "Ny regel"
+
+[FilterRules]
+other = "Sök namn, mönster, beskrivning..."
+
+[SelectRule]
+other = "Välj en regel att redigera"
+
+[NoRules]
+other = "Inga regler hittades"
+
+[Name]
+other = "Namn"
+
+[NameRequired]
+other = "Namn krävs"
+
+[RuleCreated]
+other = "Regel skapad"
+
+[RuleUpdated]
+other = "Regel uppdaterad"
+
+[ConfirmDeleteRule]
+other = "Är du säker på att du vill ta bort regeln?"
+
 [Language]
 other = "Språk"
 

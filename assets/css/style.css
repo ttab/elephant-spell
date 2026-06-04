@@ -897,3 +897,90 @@ body {
   margin-bottom: 4px;
   line-height: 1.65;
 }
+
+/* Mobile back link – hidden on wide screens where the list stays visible */
+
+.mobile-back {
+  display: none;
+}
+
+/* Responsive – phones and small tablets */
+
+@media (max-width: 768px) {
+  /* Header: let the nav wrap to its own row and drop the user-name label so
+     the title and actions still fit on a narrow screen. */
+  .app-header-inner {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 48px;
+    padding: 8px 12px;
+    gap: 8px 12px;
+  }
+
+  .app-nav {
+    order: 3;
+    flex-basis: 100%;
+    overflow-x: auto;
+  }
+
+  .user-name {
+    display: none;
+  }
+
+  .header-user {
+    margin-left: 4px;
+    padding-left: 8px;
+  }
+
+  /* Master-detail collapses to a single column. The entry list fills the
+     screen; selecting an entry shows the detail pane full-width instead. */
+  .panel-left {
+    width: 100%;
+    min-width: 0;
+    border-right: none;
+  }
+
+  .panel-right {
+    display: none;
+  }
+
+  /* When an entry (or the new-entry form) is loaded into the detail pane it
+     contains an .entry-form-wrapper – swap to the detail view and hide the
+     list. The empty placeholder has no wrapper, so the list stays visible. */
+  .master-detail:has(#entry-detail .entry-form-wrapper) .panel-left {
+    display: none;
+  }
+
+  .master-detail:has(#entry-detail .entry-form-wrapper) .panel-right {
+    display: block;
+  }
+
+  .mobile-back {
+    display: inline-flex;
+  }
+
+  .entry-form-header {
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  /* Tighter padding on small screens */
+  .entry-form-wrapper {
+    padding: 16px;
+  }
+
+  .entry-form {
+    padding: 16px;
+  }
+
+  .docs-page {
+    padding: 20px 16px;
+  }
+
+  /* Let wide documentation tables scroll instead of overflowing the viewport */
+  .docs-content table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}

@@ -111,3 +111,6 @@ other = "Dokumentasjon"
 
 [LogOut]
 other = "Logg ut"
+
+[Back]
+other = "Tilbake"

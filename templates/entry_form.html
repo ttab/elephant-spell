@@ -11,6 +11,7 @@
 {{end}}
 <div class="entry-form-wrapper">
   <div class="entry-form-header">
+    <a class="btn btn-sm mobile-back" href="/dictionaries/{{.Language}}/">← {{t "Back" "Back"}}</a>
     <h2>{{if .NewEntry}}{{t "NewEntry" "New entry"}}{{else}}{{.Entry.Entry}}{{end}}</h2>
   </div>
   <form

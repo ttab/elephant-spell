@@ -517,22 +517,37 @@ func (a *Application) GetEntry(
 		updated = row.Updated.Time.Format(time.RFC3339)
 	}
 
-	res := spell.GetEntryResponse{
-		Entry: &spell.CustomEntry{
-			Language:       row.Language,
-			Text:           row.Entry,
-			Status:         row.Status,
-			Description:    row.Description,
-			CommonMistakes: row.CommonMistakes,
-			Level:          level,
-			Forms:          forms,
-			Updated:        updated,
-			UpdatedBy:      row.UpdatedBy,
-			CaseSensitive:  caseSensitive,
-		},
+	entry := &spell.CustomEntry{
+		Language:       row.Language,
+		Text:           row.Entry,
+		Status:         row.Status,
+		Description:    row.Description,
+		CommonMistakes: row.CommonMistakes,
+		Level:          level,
+		Forms:          forms,
+		Updated:        updated,
+		UpdatedBy:      row.UpdatedBy,
+		CaseSensitive:  caseSensitive,
 	}
 
+	applyEntryGuards(entry, row.Data)
+
+	res := spell.GetEntryResponse{Entry: entry}
+
 	return &res, nil
+}
+
+// applyEntryGuards copies an entry's stored context guards onto its RPC
+// representation.
+func applyEntryGuards(e *spell.CustomEntry, d *postgres.EntryData) {
+	if d == nil {
+		return
+	}
+
+	e.Before = d.Before
+	e.After = d.After
+	e.NotBefore = d.NotBefore
+	e.NotAfter = d.NotAfter
 }
 
 // ListDictionaries implements spell.Dictionaries.
@@ -663,6 +678,8 @@ func (a *Application) ListEntries(
 			UpdatedBy:      row.UpdatedBy,
 			CaseSensitive:  caseSensitive,
 		}
+
+		applyEntryGuards(res.Entries[i], row.Data)
 	}
 
 	return &res, nil
@@ -723,6 +740,10 @@ func (a *Application) SetEntry(
 		Data: &postgres.EntryData{
 			Forms:         req.Entry.Forms,
 			CaseSensitive: req.Entry.CaseSensitive,
+			Before:        req.Entry.Before,
+			After:         req.Entry.After,
+			NotBefore:     req.Entry.NotBefore,
+			NotAfter:      req.Entry.NotAfter,
 		},
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedBy: auth.Claims.Subject,

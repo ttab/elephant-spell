@@ -7,9 +7,17 @@ import (
 	"github.com/blevesearch/segment"
 )
 
+// PhraseMatch is a windowed phrase together with its byte span in the source
+// text, so callers can inspect the surrounding context (e.g. for guards).
+type PhraseMatch struct {
+	Text  string
+	Start int
+	End   int
+}
+
 // PhraseIterator runs a sliding window over a text and yeilds all the word
 // sequence combinations
-func PhraseIterator(text []byte, phraseLength int) func(yield func(v string) bool) {
+func PhraseIterator(text []byte, phraseLength int) func(yield func(v PhraseMatch) bool) {
 	// Circular buffer for the last N tokens.
 	window := make([]token, 0, phraseLength*4)
 	// The start of the circular buffer
@@ -21,12 +29,18 @@ func PhraseIterator(text []byte, phraseLength int) func(yield func(v string) boo
 
 	segmenter := segment.NewWordSegmenter(bytes.NewReader(text))
 
-	return func(yield func(v string) bool) {
+	// pos tracks the byte offset of the next token in the source text.
+	var pos int
+
+	return func(yield func(v PhraseMatch) bool) {
 		for segmenter.Segment() {
 			t := token{
-				Text: segmenter.Text(),
-				Type: segmenter.Type(),
+				Text:   segmenter.Text(),
+				Type:   segmenter.Type(),
+				Offset: pos,
 			}
+
+			pos += len(t.Text)
 
 			// Add the token to the circular buffer
 			if len(window) < cap(window) {
@@ -74,7 +88,14 @@ func PhraseIterator(text []byte, phraseLength int) func(yield func(v string) boo
 				}
 
 				sequence := buf.String()
-				if !yield(sequence) {
+
+				match := PhraseMatch{
+					Text:  sequence,
+					Start: window[si].Offset,
+					End:   window[si].Offset + len(sequence),
+				}
+
+				if !yield(match) {
 					return
 				}
 			}
@@ -83,6 +104,7 @@ func PhraseIterator(text []byte, phraseLength int) func(yield func(v string) boo
 }
 
 type token struct {
-	Text string
-	Type int
+	Text   string
+	Type   int
+	Offset int
 }

@@ -33,6 +33,10 @@ type Phrase struct {
 	// matched case-insensitively, and suggestions take on the leading-capital
 	// style of the matched input.
 	CaseSensitive bool
+	// Guards are optional context conditions: the entry is only flagged when the
+	// neighbouring words satisfy them. Cheap to evaluate since the trie has
+	// already located the match.
+	Guards guards
 }
 
 func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) {
@@ -284,12 +288,14 @@ func (s *Spellcheck) Check(
 		return &res, nil
 	}
 
+	source := text
 	textData := []byte(text)
 	replacements := []string{}
 
 	s.m.RLock()
 
-	for text := range PhraseIterator(textData, 3) {
+	for m := range PhraseIterator(textData, 3) {
+		text := m.Text
 		folded := foldKey(text)
 
 		// Check if the phrase has been marked as valid (case-sensitive exact
@@ -309,6 +315,14 @@ func (s *Spellcheck) Check(
 
 		p, ok := v.(*Phrase)
 		if !ok {
+			continue
+		}
+
+		// Honour the entry's context guards against this occurrence's
+		// neighbours. The trie already located the match, so this is an O(1)
+		// check per hit. A guarded-out occurrence is skipped; the same phrase
+		// elsewhere can still match.
+		if !p.Guards.pass(source, m.Start, m.End) {
 			continue
 		}
 

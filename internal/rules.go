@@ -57,11 +57,39 @@ type compiledRule struct {
 	description   string
 	level         postgres.EntryLevel
 	status        string
+	guards        guards
+	caseSensitive bool
+}
+
+// guards are context conditions on a match: the neighbouring word must (before/
+// after) or must not (notBefore/notAfter) be one of the listed words. Shared by
+// pattern rules and dictionary entries.
+type guards struct {
 	before        []string
 	after         []string
 	notBefore     []string
 	notAfter      []string
 	caseSensitive bool
+}
+
+// compileGuards normalises the guard word lists for comparison.
+func compileGuards(
+	before, after, notBefore, notAfter []string, caseSensitive bool,
+) guards {
+	return guards{
+		before:        guardKeys(before, caseSensitive),
+		after:         guardKeys(after, caseSensitive),
+		notBefore:     guardKeys(notBefore, caseSensitive),
+		notAfter:      guardKeys(notAfter, caseSensitive),
+		caseSensitive: caseSensitive,
+	}
+}
+
+// empty reports whether no guards are set, so callers can skip the neighbour
+// lookup entirely.
+func (g guards) empty() bool {
+	return len(g.before) == 0 && len(g.after) == 0 &&
+		len(g.notBefore) == 0 && len(g.notAfter) == 0
 }
 
 // compileRule parses a rule definition into a matchable form.
@@ -72,18 +100,17 @@ func compileRule(def RuleDef) (*compiledRule, error) {
 	}
 
 	return &compiledRule{
-		name:          def.Name,
-		re:            re,
-		startWord:     startWord,
-		endWord:       endWord,
-		replacement:   def.Replacement,
-		description:   def.Description,
-		level:         def.Level,
-		status:        def.Status,
-		before:        guardKeys(def.Before, def.CaseSensitive),
-		after:         guardKeys(def.After, def.CaseSensitive),
-		notBefore:     guardKeys(def.NotBefore, def.CaseSensitive),
-		notAfter:      guardKeys(def.NotAfter, def.CaseSensitive),
+		name:        def.Name,
+		re:          re,
+		startWord:   startWord,
+		endWord:     endWord,
+		replacement: def.Replacement,
+		description: def.Description,
+		level:       def.Level,
+		status:      def.Status,
+		guards: compileGuards(
+			def.Before, def.After, def.NotBefore, def.NotAfter,
+			def.CaseSensitive),
 		caseSensitive: def.CaseSensitive,
 	}, nil
 }
@@ -283,7 +310,7 @@ func matchRule(text string, r *compiledRule) []ruleMatch {
 			}
 		}
 
-		if !guardsPass(text, start, end, r) {
+		if !r.guards.pass(text, start, end) {
 			continue
 		}
 
@@ -323,28 +350,34 @@ var (
 	leadingWordRE  = regexp.MustCompile(`^\s*([\p{L}\d]+)`)
 )
 
-func guardsPass(text string, start, end int, r *compiledRule) bool {
+// pass reports whether the match at [start, end] in text satisfies the guards,
+// inspecting the immediately neighbouring words.
+func (g guards) pass(text string, start, end int) bool {
+	if g.empty() {
+		return true
+	}
+
 	prev := matchGroup(trailingWordRE, text[:start])
 	next := matchGroup(leadingWordRE, text[end:])
 
-	if !r.caseSensitive {
+	if !g.caseSensitive {
 		prev = foldKey(prev)
 		next = foldKey(next)
 	}
 
-	if len(r.before) > 0 && !sliceContains(r.before, prev) {
+	if len(g.before) > 0 && !sliceContains(g.before, prev) {
 		return false
 	}
 
-	if len(r.after) > 0 && !sliceContains(r.after, next) {
+	if len(g.after) > 0 && !sliceContains(g.after, next) {
 		return false
 	}
 
-	if sliceContains(r.notBefore, prev) {
+	if sliceContains(g.notBefore, prev) {
 		return false
 	}
 
-	if sliceContains(r.notAfter, next) {
+	if sliceContains(g.notAfter, next) {
 		return false
 	}
 

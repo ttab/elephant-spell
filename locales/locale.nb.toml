@@ -68,16 +68,16 @@ other = "Kontekstvilkår"
 other = "Kommaseparerte ord. Valgfritt: begrens når regelen utløses ut fra naboordet."
 
 [RuleNotBefore]
-other = "hopp over hvis foran står..."
+other = "Hopp over hvis foran står"
 
 [RuleNotAfter]
-other = "hopp over hvis etter står..."
+other = "Hopp over hvis etter står"
 
 [RuleBefore]
-other = "bare hvis foran står..."
+other = "Bare hvis foran står"
 
 [RuleAfter]
-other = "bare hvis etter står..."
+other = "Bare hvis etter står"
 
 [SampleInput]
 other = "Eksempeltekst"

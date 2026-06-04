@@ -9,6 +9,13 @@
     <link rel="stylesheet" href="/assets/css/code-input.min.css">
     <link rel="stylesheet" href="/assets/css/style.css">
     <script src="/assets/js/htmx.min.js"></script>
+    <script>
+      // The code-input editor (and other web components) manage their own
+      // class/style at runtime. htmx's attribute settling would strip those
+      // when swapping in a form that reuses the same element id, breaking the
+      // editor on every navigation between entries, so disable it.
+      if (window.htmx) { htmx.config.attributesToSettle = []; }
+    </script>
     <script src="/assets/js/code-input.min.js"></script>
     <script src="/assets/js/spell-editor.js"></script>
     <script src="/assets/js/keepalive.js"></script>

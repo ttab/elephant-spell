@@ -10,7 +10,7 @@ Each entry has the following fields:
 | Field | Description |
 |-------|-------------|
 | **Text** | The correct word or phrase. |
-| **Status** | `accepted` or `pending`. Only accepted entries are active in the spellchecker. |
+| **Status** | `accepted` or `pending`. Both are active in the spellchecker; corrections based on a `pending` entry are flagged as such in the response so clients can mark them as unreviewed. Pending entries are worked through in the moderation queue. |
 | **Description** | Optional explanation shown to editors as context for the correction. |
 | **Correction level** | `error` flags the text as wrong, `suggestion` offers a softer recommendation. |
 | **Common mistakes** | Misspellings or alternative spellings that should be corrected to the entry text. |

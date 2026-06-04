@@ -86,7 +86,8 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64
 }
 
 const listDictionaries = `-- name: ListDictionaries :many
-SELECT language, COUNT(*) AS entries
+SELECT language, COUNT(*) AS entries,
+       COUNT(*) FILTER (WHERE status = 'pending') AS pending
 FROM entry
 GROUP BY language
 `
@@ -94,6 +95,7 @@ GROUP BY language
 type ListDictionariesRow struct {
 	Language string
 	Entries  int64
+	Pending  int64
 }
 
 func (q *Queries) ListDictionaries(ctx context.Context) ([]ListDictionariesRow, error) {
@@ -105,7 +107,7 @@ func (q *Queries) ListDictionaries(ctx context.Context) ([]ListDictionariesRow, 
 	var items []ListDictionariesRow
 	for rows.Next() {
 		var i ListDictionariesRow
-		if err := rows.Scan(&i.Language, &i.Entries); err != nil {
+		if err := rows.Scan(&i.Language, &i.Entries, &i.Pending); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -284,4 +286,35 @@ func (q *Queries) SetEntry(ctx context.Context, arg SetEntryParams) error {
 		arg.UpdatedBy,
 	)
 	return err
+}
+
+const setEntryStatus = `-- name: SetEntryStatus :execrows
+UPDATE entry
+SET status = $1, updated = $2, updated_by = $3
+WHERE language = $4 AND entry = $5
+`
+
+type SetEntryStatusParams struct {
+	Status    string
+	Updated   pgtype.Timestamptz
+	UpdatedBy string
+	Language  string
+	Entry     string
+}
+
+// SetEntryStatus updates only the moderation status of an entry, used by the
+// accept/reject workflow. It reports the number of rows affected so the caller
+// can tell whether the entry existed.
+func (q *Queries) SetEntryStatus(ctx context.Context, arg SetEntryStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setEntryStatus,
+		arg.Status,
+		arg.Updated,
+		arg.UpdatedBy,
+		arg.Language,
+		arg.Entry,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

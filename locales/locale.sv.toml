@@ -1,6 +1,27 @@
 [Dictionaries]
 other = "Ordlistor"
 
+[Moderation]
+other = "Granskning"
+
+[ModerationIntro]
+other = "Granska poster som väntar på moderering. Godkända poster behålls, avvisade tas bort."
+
+[NoPending]
+other = "Inga poster väntar på granskning"
+
+[Accept]
+other = "Godkänn"
+
+[Reject]
+other = "Avvisa"
+
+[ConfirmReject]
+other = "Avvisa och ta bort posten?"
+
+[Edit]
+other = "Redigera"
+
 [Language]
 other = "Språk"
 

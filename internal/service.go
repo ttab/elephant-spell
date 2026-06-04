@@ -537,8 +537,9 @@ func (a *Application) ListDictionaries(
 
 	for i, row := range rows {
 		res.Dictionaries[i] = &spell.CustomDictionary{
-			Language:   row.Language,
-			EntryCount: row.Entries,
+			Language:     row.Language,
+			EntryCount:   row.Entries,
+			PendingCount: row.Pending,
 		}
 	}
 
@@ -565,7 +566,11 @@ func (a *Application) ListEntries(
 		pattern = req.Prefix + "%"
 	}
 
-	limit := int64(100)
+	limit := req.PageSize
+	if limit <= 0 {
+		limit = 100
+	}
+
 	offset := limit * req.Page
 
 	rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
@@ -689,6 +694,66 @@ func (a *Application) SetEntry(
 	}
 
 	return &spell.SetEntryResponse{}, nil
+}
+
+// SetEntryStatus implements spell.Dictionaries. It updates only the moderation
+// status of an existing entry — the lightweight path used by the accept/reject
+// workflow.
+func (a *Application) SetEntryStatus(
+	ctx context.Context, req *spell.SetEntryStatusRequest,
+) (_ *spell.SetEntryStatusResponse, outErr error) {
+	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	if err != nil {
+		return nil, err //nolint: wrapcheck
+	}
+
+	if req.Language == "" {
+		return nil, twirp.RequiredArgumentError("language")
+	}
+
+	if req.Text == "" {
+		return nil, twirp.RequiredArgumentError("text")
+	}
+
+	if req.Status == "" {
+		return nil, twirp.RequiredArgumentError("status")
+	}
+
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("start transaction: %w", err)
+	}
+
+	defer pg.Rollback(tx, &outErr)
+
+	q := a.q.WithTx(tx)
+
+	affected, err := q.SetEntryStatus(ctx, postgres.SetEntryStatusParams{
+		Language:  req.Language,
+		Entry:     req.Text,
+		Status:    req.Status,
+		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedBy: auth.Claims.Subject,
+	})
+	if err != nil {
+		return nil, twirp.InternalErrorf("write to database: %w", err)
+	}
+
+	if affected == 0 {
+		return nil, twirp.NotFoundError("entry does not exist")
+	}
+
+	err = a.recordEntryChange(ctx, q, tx, req.Language, req.Text, false)
+	if err != nil {
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("commit changes: %w", err)
+	}
+
+	return &spell.SetEntryStatusResponse{}, nil
 }
 
 func entryLevelFromRPC(level spell.CorrectionLevel) (postgres.EntryLevel, error) {

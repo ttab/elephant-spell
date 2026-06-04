@@ -79,6 +79,87 @@ func renderRuleForm(t *testing.T, contents rulesContents) string {
 	return buf.String()
 }
 
+func renderSpellcheckResult(t *testing.T, contents spellcheckContents) string {
+	t.Helper()
+
+	funcs := template.FuncMap{
+		"t": func(args ...string) string {
+			if len(args) > 0 {
+				return args[len(args)-1]
+			}
+
+			return ""
+		},
+		"tl": func(_ ...any) string { return "" },
+		"td": func(_ ...any) string { return "" },
+	}
+
+	tpl, err := template.New("spellcheck_result.html").Funcs(funcs).
+		ParseFiles("../templates/spellcheck_result.html")
+	if err != nil {
+		t.Fatalf("parse template: %v", err)
+	}
+
+	var buf bytes.Buffer
+
+	err = tpl.ExecuteTemplate(&buf, "spellcheck_result.html", struct {
+		Contents spellcheckContents
+	}{Contents: contents})
+	if err != nil {
+		t.Fatalf("execute template: %v", err)
+	}
+
+	return buf.String()
+}
+
+func TestSpellcheckResultRender(t *testing.T) {
+	t.Run("no issues", func(t *testing.T) {
+		out := renderSpellcheckResult(t, spellcheckContents{
+			Checked: true, TotalIssues: 0,
+		})
+
+		if !strings.Contains(out, "No issues found") {
+			t.Errorf("expected no-issues message, got %q", out)
+		}
+	})
+
+	t.Run("with findings", func(t *testing.T) {
+		out := renderSpellcheckResult(t, spellcheckContents{
+			Checked:     true,
+			TotalIssues: 1,
+			Chunks: []spellChunk{
+				{
+					Text: "Mexico City",
+					Entries: []spellResultEntry{
+						{
+							Text:   "Mexico",
+							Level:  "error",
+							Status: "accepted",
+							Suggestions: []spellSuggestion{
+								{Text: "Mexiko", Description: "spelling"},
+							},
+						},
+					},
+				},
+			},
+		})
+
+		for _, want := range []string{"Mexico", "Mexiko", "accepted", "spelling"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("result missing %q in %q", want, out)
+			}
+		}
+	})
+
+	t.Run("not checked renders empty", func(t *testing.T) {
+		out := renderSpellcheckResult(t, spellcheckContents{})
+
+		if strings.TrimSpace(out) != "" {
+			t.Errorf("expected empty output before a check, got %q", out)
+		}
+	})
+}
+
 func TestRuleFormRender(t *testing.T) {
 	t.Run("new rule", func(t *testing.T) {
 		out := renderRuleForm(t, rulesContents{

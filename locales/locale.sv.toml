@@ -261,3 +261,36 @@ other = "Logga ut"
 
 [Back]
 other = "Tillbaka"
+
+[Spellcheck]
+other = "Stavningskontroll"
+
+[SpellcheckIntro]
+other = "Testa text mot den aktiva ordlistan och reglerna. Varje rad kontrolleras som ett separat stycke eller en rubrik."
+
+[SpellcheckText]
+other = "Text"
+
+[SpellcheckPlaceholder]
+other = "Mellan 12-15 personer deltog."
+
+[SpellcheckSuggestions]
+other = "Inkludera förslag"
+
+[SpellcheckCustomOnly]
+other = "Endast egen ordlista och regler (hoppa över hunspell)"
+
+[SpellcheckNoIssues]
+other = "Inga problem hittades."
+
+[SpellcheckIssues]
+other = "problem hittades"
+
+[Check]
+other = "Kontrollera"
+
+[FromHunspell]
+other = "hunspell"
+
+[NoSuggestions]
+other = "Inga förslag"

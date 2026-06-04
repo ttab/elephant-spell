@@ -1052,6 +1052,135 @@ body {
   line-height: 1;
 }
 
+/* Spellcheck test page */
+.spellcheck-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.spellcheck-page h2 {
+  margin: 0 0 4px;
+}
+
+.spellcheck-form textarea {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  background: var(--color-surface);
+  resize: vertical;
+}
+
+.spellcheck-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.spellcheck-results {
+  margin-top: 20px;
+}
+
+.spellcheck-summary {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.spellcheck-ok {
+  color: var(--color-success, #2e7d32);
+}
+
+.spellcheck-chunk {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.spellcheck-chunk-text {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.spellcheck-entries,
+.spellcheck-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spellcheck-entry {
+  padding: 8px 0;
+}
+
+.spellcheck-entry + .spellcheck-entry {
+  border-top: 1px solid var(--color-border);
+}
+
+.spellcheck-entry-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spellcheck-term {
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.badge-level {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-error {
+  background: color-mix(in srgb, var(--color-danger, #d32f2f) 18%, transparent);
+  color: var(--color-danger, #d32f2f);
+}
+
+.badge-suggestion {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+}
+
+.spellcheck-suggestions {
+  margin-top: 6px;
+  padding-left: 14px;
+}
+
+.spellcheck-suggestions li {
+  font-size: 0.9rem;
+  padding: 1px 0;
+}
+
+.spellcheck-suggestion-text {
+  font-family: var(--font-mono);
+}
+
+.spellcheck-suggestion-desc {
+  color: var(--color-text-muted);
+  margin-left: 8px;
+}
+
+.spellcheck-no-suggestion {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 .moderation-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

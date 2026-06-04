@@ -128,10 +128,14 @@ func (a *Application) applyEvent(
 }
 
 func entryAsPhrase(e postgres.Entry) Phrase {
-	var forms map[string]string
+	var (
+		forms         map[string]string
+		caseSensitive bool
+	)
 
 	if e.Data != nil {
 		forms = e.Data.Forms
+		caseSensitive = e.Data.CaseSensitive
 	}
 
 	return Phrase{
@@ -141,5 +145,6 @@ func entryAsPhrase(e postgres.Entry) Phrase {
 		Level:          e.Level,
 		Forms:          forms,
 		Status:         e.Status,
+		CaseSensitive:  caseSensitive,
 	}
 }

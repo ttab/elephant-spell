@@ -1270,3 +1270,15 @@ code-input {
   font-size: 0.78rem;
   color: var(--color-text-muted);
 }
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  width: auto;
+  margin: 0;
+}

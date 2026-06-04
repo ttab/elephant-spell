@@ -40,6 +40,12 @@ other = "Lägg till form"
 [TotalExpansions]
 other = "Totalt antal expansioner"
 
+[CaseSensitive]
+other = "Skiftlägeskänslig"
+
+[CaseSensitiveHelp]
+other = "Matcha endast exakt skiftläge. Slå på för egennamn; lämna av för vanliga ord så att de även fångas i början av en mening."
+
 [Language]
 other = "Språk"
 

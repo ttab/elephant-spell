@@ -40,6 +40,12 @@ other = "Add form"
 [TotalExpansions]
 other = "Total expansions"
 
+[CaseSensitive]
+other = "Case sensitive"
+
+[CaseSensitiveHelp]
+other = "Only match the exact casing. Enable for proper nouns; leave off for ordinary words so they are caught at the start of a sentence too."
+
 [Language]
 other = "Language"
 

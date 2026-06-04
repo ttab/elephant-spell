@@ -124,7 +124,11 @@ SELECT language, entry, status, description, common_mistakes, level, data,
 FROM entry
 WHERE
         ($1::text IS NULL OR language = $1)
-        AND ($2::text IS NULL OR entry LIKE $2)
+        AND ($2::text IS NULL OR (
+                entry ILIKE $2
+                OR description ILIKE $2
+                OR array_to_string(common_mistakes, ' ') ILIKE $2
+        ))
         AND ($3::text IS NULL OR status = $3)
 ORDER BY language, entry
 LIMIT $5::bigint OFFSET $4::bigint
@@ -132,7 +136,7 @@ LIMIT $5::bigint OFFSET $4::bigint
 
 type ListEntriesParams struct {
 	Language pgtype.Text
-	Pattern  pgtype.Text
+	Query    pgtype.Text
 	Status   pgtype.Text
 	Offset   int64
 	Limit    int64
@@ -141,7 +145,7 @@ type ListEntriesParams struct {
 func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Entry, error) {
 	rows, err := q.db.Query(ctx, listEntries,
 		arg.Language,
-		arg.Pattern,
+		arg.Query,
 		arg.Status,
 		arg.Offset,
 		arg.Limit,

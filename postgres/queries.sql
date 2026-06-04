@@ -39,7 +39,11 @@ SELECT language, entry, status, description, common_mistakes, level, data,
 FROM entry
 WHERE
         (sqlc.narg('language')::text IS NULL OR language = @language)
-        AND (sqlc.narg('pattern')::text IS NULL OR entry LIKE @pattern)
+        AND (sqlc.narg('query')::text IS NULL OR (
+                entry ILIKE @query
+                OR description ILIKE @query
+                OR array_to_string(common_mistakes, ' ') ILIKE @query
+        ))
         AND (sqlc.narg('status')::text IS NULL OR status = @status)
 ORDER BY language, entry
 LIMIT sqlc.arg('limit')::bigint OFFSET sqlc.arg('offset')::bigint;

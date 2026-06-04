@@ -1258,6 +1258,9 @@ code-input {
    min-heights, so height:auto feeds back and the box grows on every render. */
 code-input.code-input-line {
   height: 44px;
+  /* let the autocomplete popup escape the fixed-height box instead of being
+     clipped to roughly one row. */
+  overflow: visible;
 }
 
 /* autocomplete popup */
@@ -1286,7 +1289,8 @@ code-input.code-input-line {
   cursor: pointer;
 }
 
-.ac-item:hover {
+.ac-item:hover,
+.ac-item.ac-active {
   background: var(--color-active);
 }
 

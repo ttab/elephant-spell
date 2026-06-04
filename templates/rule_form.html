@@ -48,12 +48,12 @@
     <div class="form-group">
       <label for="pattern">{{t "RulePattern" "Pattern"}}</label>
       <div class="help-text">{{t "RuleHelp" "Match text directly. Use {digit}, {word} and {gap(N)} placeholders; literal text and spacing are matched as written. Reference captures in the replacement as {1}, {2}."}}</div>
-      <code-input template="spell-rule" class="code-input-line" id="pattern" name="pattern" rows="1" placeholder="{digit}-{digit}" required {{if not .CanWrite}}readonly{{end}}>{{if .Rule}}{{.Rule.Pattern}}{{end}}</code-input>
+      <code-input template="spell-rule" class="code-input-line" id="pattern" name="pattern" rows="1" placeholder="{digit}-{digit}" autocomplete="off" autocorrect="off" spellcheck="false" required {{if not .CanWrite}}readonly{{end}}>{{if .Rule}}{{.Rule.Pattern}}{{end}}</code-input>
     </div>
 
     <div class="form-group">
       <label for="replacement">{{t "RuleReplacement" "Replacement"}}</label>
-      <code-input template="spell-rule-repl" class="code-input-line" id="replacement" name="replacement" rows="1" placeholder="{1}–{2}" {{if not .CanWrite}}readonly{{end}}>{{if .Rule}}{{.Rule.Replacement}}{{end}}</code-input>
+      <code-input template="spell-rule-repl" class="code-input-line" id="replacement" name="replacement" rows="1" placeholder="{1}–{2}" autocomplete="off" autocorrect="off" spellcheck="false" {{if not .CanWrite}}readonly{{end}}>{{if .Rule}}{{.Rule.Replacement}}{{end}}</code-input>
     </div>
 
     <div class="form-group">

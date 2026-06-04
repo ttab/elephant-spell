@@ -62,6 +62,10 @@ This expands to "Khan Younis" and "Khan Yunes".
 A pattern without any `{...}` groups is treated as a literal string and used
 as-is.
 
+In the entry editor the common-mistakes field highlights the `{A|B}` syntax and
+shows a live count of how many combinations each line expands to. Click that
+count to open a list of every expansion.
+
 ## Forms
 
 While common mistakes map many misspellings to the same correction, **forms**
@@ -82,12 +86,13 @@ editorial text. But the replacement depends on the inflected form:
 | kriminalvårdsanstalter | fängelser |
 
 In the entry for "fängelse", the **forms** field maps each incorrect inflection
-to its correct counterpart:
+to its correct counterpart. In the entry editor each mapping is a row with the
+incorrect form on the left and its correct replacement on the right:
 
-```
-kriminalvårdsanstalten=fängelset
-kriminalvårdsanstalter=fängelser
-```
+| Incorrect | → | Correct |
+|---|---|---|
+| kriminalvårdsanstalten | → | fängelset |
+| kriminalvårdsanstalter | → | fängelser |
 
 When the spellchecker encounters "kriminalvårdsanstalten" it will suggest
 "fängelset" (not just the base form "fängelse"), giving editors a

@@ -7,15 +7,22 @@
   {{end}}
 </div>
 
-{{if .Contents.Entries}}
+{{if .Contents.Items}}
 <div class="moderation-cards">
-  {{range .Contents.Entries}}
+  {{range .Contents.Items}}
   <div class="mod-card">
     <div class="mod-card-head">
-      <span class="mod-card-text">{{.Entry}}</span>
+      <span class="mod-card-text">{{.Name}}</span>
+      <span class="mod-card-kind">{{if .IsRule}}{{t "RuleKind" "Rule"}}{{else}}{{t "WordKind" "Word"}}{{end}}</span>
       <span class="mod-card-level level-{{.Level}}">{{if eq .Level "suggestion"}}{{t "Suggestion" "Suggestion"}}{{else}}{{t "Error" "Error"}}{{end}}</span>
     </div>
     {{if .Description}}<p class="mod-card-desc">{{.Description}}</p>{{end}}
+    {{if .IsRule}}
+    <div class="mod-card-section">
+      <span class="mod-card-label">{{t "RulePattern" "Pattern"}}</span>
+      <div class="mod-chips"><span class="chip">{{.Pattern}}</span>{{if .Replacement}}<span class="chip">→ {{.Replacement}}</span>{{end}}</div>
+    </div>
+    {{else}}
     {{if .CommonMistakes}}
     <div class="mod-card-section">
       <span class="mod-card-label">{{t "CommonMistakes" "Common mistakes"}}</span>
@@ -28,22 +35,27 @@
       <div class="mod-chips">{{range $k, $v := .Forms}}<span class="chip">{{$k}} → {{$v}}</span>{{end}}</div>
     </div>
     {{end}}
+    {{end}}
     <div class="mod-card-foot">
       <div class="mod-card-meta">
-        <a href="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Entry}}">{{t "Edit" "Edit"}}</a>
+        {{if .IsRule}}
+        <a href="/rules/{{$.Contents.Language}}/{{pathEscape .Name}}">{{t "Edit" "Edit"}}</a>
+        {{else}}
+        <a href="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Name}}">{{t "Edit" "Edit"}}</a>
+        {{end}}
         {{if .Updated}}<small>{{.Updated}}{{if .UpdatedBy}} · {{.UpdatedBy}}{{end}}</small>{{end}}
       </div>
       {{if $.Contents.CanWrite}}
       <div class="mod-card-actions">
         <button
           class="btn btn-sm btn-danger"
-          hx-post="/moderation/{{$.Contents.Language}}/{{pathEscape .Entry}}/reject?page={{$.Contents.Page}}"
+          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Name}}/reject?page={{$.Contents.Page}}"
           hx-target="#moderation-main"
-          hx-confirm="{{t "ConfirmReject" "Reject and delete this entry?"}}"
+          hx-confirm="{{t "ConfirmReject" "Reject and delete this item?"}}"
         >{{t "Reject" "Reject"}}</button>
         <button
           class="btn btn-sm btn-primary"
-          hx-post="/moderation/{{$.Contents.Language}}/{{pathEscape .Entry}}/accept?page={{$.Contents.Page}}"
+          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Name}}/accept?page={{$.Contents.Page}}"
           hx-target="#moderation-main"
         >{{t "Accept" "Accept"}}</button>
       </div>
@@ -70,5 +82,5 @@
 </div>
 {{end}}
 {{else}}
-<div class="moderation-empty">{{t "NoPending" "No entries awaiting moderation"}}</div>
+<div class="moderation-empty">{{t "NoPending" "Nothing awaiting moderation"}}</div>
 {{end}}

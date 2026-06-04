@@ -5,37 +5,69 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"sort"
 	"strconv"
 
 	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/howdah"
 )
 
-// moderationPageSize is how many pending entries the moderation queue shows per
+// moderationPageSize is how many pending items the moderation queue shows per
 // page.
 const moderationPageSize = 10
 
-// moderationLang is a language together with its count of pending entries. It
-// drives the at-a-glance queue badges and the language switcher in the
-// moderation view.
+// moderationFetch bounds how many pending items of each kind are pulled per
+// language before paging in memory. A moderation backlog is small, so this is
+// comfortably above any realistic queue.
+const moderationFetch = 500
+
+// moderationLang is a language together with its count of pending items (words
+// and rules). It drives the at-a-glance queue badges and the language switcher.
 type moderationLang struct {
 	Code    string
 	Pending int64
 	Active  bool
 }
 
+// moderationItem is one pending item in the unified queue, either a dictionary
+// word or a pattern rule.
+type moderationItem struct {
+	Kind           string // "word" or "rule"
+	Name           string // entry text or rule name
+	Level          string
+	Description    string
+	Updated        string
+	UpdatedBy      string
+	CommonMistakes []string          // word only
+	Forms          map[string]string // word only
+	Pattern        string            // rule only
+	Replacement    string            // rule only
+}
+
+func (m moderationItem) IsRule() bool {
+	return m.Kind == "rule"
+}
+
 type moderationContents struct {
 	Languages []moderationLang
 	Language  string
-	Entries   []uiEntry
+	Items     []moderationItem
 	Page      int64
 	HasMore   bool
-	Pending   int64
 	CanWrite  bool
 }
 
-// moderationData assembles the moderation view for a language and page: the
-// per-language pending badges plus the current page of pending entries.
+func levelString(l spell.CorrectionLevel) string {
+	if l == spell.CorrectionLevel_LEVEL_SUGGESTION {
+		return "suggestion"
+	}
+
+	return "error"
+}
+
+// moderationData assembles the unified moderation view for a language and page:
+// the per-language pending badges plus the current page of pending words and
+// rules, sorted newest first.
 func (d *DictionariesUI) moderationData(
 	ctx context.Context, lang string, page int64,
 ) (moderationContents, error) {
@@ -50,12 +82,13 @@ func (d *DictionariesUI) moderationData(
 		return moderationContents{}, fmt.Errorf("list dictionaries: %w", err)
 	}
 
-	pendingByLang := make(map[string]int64, len(dicts.Dictionaries))
+	langs := make([]moderationLang, 0, len(d.languages))
+	pendingByLang := make(map[string]int64)
+
 	for _, dict := range dicts.Dictionaries {
-		pendingByLang[dict.Language] = dict.PendingCount
+		pendingByLang[dict.Language] = dict.PendingCount + dict.RulePendingCount
 	}
 
-	langs := make([]moderationLang, 0, len(d.languages))
 	for _, code := range d.languages {
 		langs = append(langs, moderationLang{
 			Code:    code,
@@ -64,29 +97,78 @@ func (d *DictionariesUI) moderationData(
 		})
 	}
 
-	res, err := d.dicts.ListEntries(svcCtx, &spell.ListEntriesRequest{
+	entries, err := d.dicts.ListEntries(svcCtx, &spell.ListEntriesRequest{
 		Language: lang,
 		Status:   "pending",
-		Page:     page,
-		PageSize: moderationPageSize,
+		PageSize: moderationFetch,
 	})
 	if err != nil {
 		return moderationContents{}, fmt.Errorf("list pending entries: %w", err)
 	}
 
+	rules, err := d.rules.ListRules(svcCtx, &spell.ListRulesRequest{
+		Language: lang,
+		Status:   "pending",
+		PageSize: moderationFetch,
+	})
+	if err != nil {
+		return moderationContents{}, fmt.Errorf("list pending rules: %w", err)
+	}
+
+	var items []moderationItem
+
+	for _, e := range entries.Entries {
+		items = append(items, moderationItem{
+			Kind:           "word",
+			Name:           e.Text,
+			Level:          levelString(e.Level),
+			Description:    e.Description,
+			Updated:        e.Updated,
+			UpdatedBy:      e.UpdatedBy,
+			CommonMistakes: e.CommonMistakes,
+			Forms:          e.Forms,
+		})
+	}
+
+	for _, r := range rules.Rules {
+		items = append(items, moderationItem{
+			Kind:        "rule",
+			Name:        r.Name,
+			Level:       levelString(r.Level),
+			Description: r.Description,
+			Updated:     r.Updated,
+			UpdatedBy:   r.UpdatedBy,
+			Pattern:     r.Pattern,
+			Replacement: r.Replacement,
+		})
+	}
+
+	// Newest first; RFC3339 timestamps sort lexically.
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].Updated > items[j].Updated
+	})
+
+	start := int(page) * moderationPageSize
+	if start > len(items) {
+		start = len(items)
+	}
+
+	end := start + moderationPageSize
+	if end > len(items) {
+		end = len(items)
+	}
+
 	return moderationContents{
 		Languages: langs,
 		Language:  lang,
-		Entries:   customEntriesToUI(res.Entries),
+		Items:     items[start:end],
 		Page:      page,
-		HasMore:   int64(len(res.Entries)) == moderationPageSize,
-		Pending:   pendingByLang[lang],
+		HasMore:   end < len(items),
 		CanWrite:  hasWriteScope(ctx),
 	}, nil
 }
 
-// moderationRedirect sends /moderation/ to the editor's preferred language,
-// reusing the same language cookie as the dictionaries view.
+// moderationRedirect sends /moderation/ to the editor's preferred language.
 func (d *DictionariesUI) moderationRedirect(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
@@ -109,8 +191,7 @@ func (d *DictionariesUI) moderationRedirect(
 }
 
 // moderationPage renders the moderation queue for a language. On htmx requests
-// it returns just the main partial, which is also what the pagination links
-// target.
+// it returns just the main partial, which the pagination links also target.
 func (d *DictionariesUI) moderationPage(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
@@ -153,41 +234,58 @@ func (d *DictionariesUI) moderationPage(
 	}, nil
 }
 
-// moderationAccept marks a pending entry as accepted.
+// moderationAccept marks a pending word or rule as accepted.
 func (d *DictionariesUI) moderationAccept(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
-	return d.moderate(ctx, w, r, func(svcCtx context.Context, lang, text string) error {
-		_, err := d.dicts.SetEntryStatus(svcCtx, &spell.SetEntryStatusRequest{
-			Language: lang,
-			Text:     text,
-			Status:   "accepted",
-		})
+	return d.moderate(ctx, w, r,
+		func(svcCtx context.Context, kind, lang, name string) error {
+			if kind == "rule" {
+				_, err := d.rules.SetRuleStatus(svcCtx,
+					&spell.SetRuleStatusRequest{
+						Language: lang, Name: name, Status: "accepted",
+					})
 
-		return err
-	})
+				return err
+			}
+
+			_, err := d.dicts.SetEntryStatus(svcCtx,
+				&spell.SetEntryStatusRequest{
+					Language: lang, Text: name, Status: "accepted",
+				})
+
+			return err
+		})
 }
 
-// moderationReject removes a pending entry.
+// moderationReject removes a pending word or rule.
 func (d *DictionariesUI) moderationReject(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
-	return d.moderate(ctx, w, r, func(svcCtx context.Context, lang, text string) error {
-		_, err := d.dicts.DeleteEntry(svcCtx, &spell.DeleteEntryRequest{
-			Language: lang,
-			Text:     text,
-		})
+	return d.moderate(ctx, w, r,
+		func(svcCtx context.Context, kind, lang, name string) error {
+			if kind == "rule" {
+				_, err := d.rules.DeleteRule(svcCtx, &spell.DeleteRuleRequest{
+					Language: lang, Name: name,
+				})
 
-		return err
-	})
+				return err
+			}
+
+			_, err := d.dicts.DeleteEntry(svcCtx, &spell.DeleteEntryRequest{
+				Language: lang, Text: name,
+			})
+
+			return err
+		})
 }
 
-// moderate runs a moderation action and re-renders the queue. If the action
-// emptied the current page it steps back one page so the moderator isn't left
-// on a blank page.
+// moderate runs a moderation action against the right store based on the item
+// kind, then re-renders the queue. If the action emptied the current page it
+// steps back one page.
 func (d *DictionariesUI) moderate(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
-	action func(svcCtx context.Context, lang, text string) error,
+	action func(svcCtx context.Context, kind, lang, name string) error,
 ) (*howdah.Page, error) {
 	ctx, err := d.auth.RequireAuth(ctx, w, r)
 	if err != nil {
@@ -195,15 +293,12 @@ func (d *DictionariesUI) moderate(
 	}
 
 	if !hasWriteScope(ctx) {
-		return nil, howdah.NewHTTPError(
-			http.StatusForbidden,
-			"MissingScope", "You need the 'spell_write' scope to make changes",
-			fmt.Errorf("missing %q scope", ScopeSpellcheckWrite),
-		)
+		return nil, forbiddenScope()
 	}
 
 	lang := r.PathValue("language")
-	text := r.PathValue("text")
+	kind := r.PathValue("kind")
+	name := r.PathValue("name")
 
 	page, err := pageParam(r)
 	if err != nil {
@@ -215,7 +310,7 @@ func (d *DictionariesUI) moderate(
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	err = action(svcCtx, lang, text)
+	err = action(svcCtx, kind, lang, name)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -225,7 +320,7 @@ func (d *DictionariesUI) moderate(
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	if len(contents.Entries) == 0 && page > 0 {
+	if len(contents.Items) == 0 && page > 0 {
 		contents, err = d.moderationData(ctx, lang, page-1)
 		if err != nil {
 			return nil, twirpErrorToHTTP(err)

@@ -1205,16 +1205,20 @@ body {
   flex-shrink: 0;
 }
 
-/* code-input editor for expansion/rule patterns */
+/* code-input editor for expansion/rule patterns.
+   Only theme and size the host here — do NOT override display/position, the
+   vendored code-input CSS relies on `display: grid` to stack the textarea over
+   the highlighted pre. */
 code-input {
-  display: block;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  background: var(--color-surface);
+  background-color: var(--color-surface);
+  color: var(--color-text);
   font-family: var(--font-mono);
   font-size: 0.85rem;
-  line-height: 1.5;
-  min-height: 96px;
+  height: 140px;
+  margin: 0;
+  --padding: 10px;
 }
 
 .tok-brace {

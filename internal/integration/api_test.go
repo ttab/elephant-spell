@@ -434,38 +434,6 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
-	t.Run("builtin_dash_rule", func(t *testing.T) {
-		res, err := stack.Check.Text(ctx, &spellapi.TextRequest{
-			Language:    "sv-se",
-			Text:        []string{"Mellan 12-15 personer."},
-			CustomOnly:  true,
-			Suggestions: true,
-		})
-		if err != nil {
-			t.Fatalf("check: %v", err)
-		}
-
-		if len(res.Misspelled) != 1 {
-			t.Fatalf("expected one result, got %d", len(res.Misspelled))
-		}
-
-		var dash *spellapi.MisspelledEntry
-
-		for _, e := range res.Misspelled[0].Entries {
-			if e.Text == "12-15" {
-				dash = e
-			}
-		}
-
-		if dash == nil {
-			t.Fatalf("dash not flagged: %+v", res.Misspelled[0].Entries)
-		}
-
-		if len(dash.Suggestions) == 0 || dash.Suggestions[0].Text != "12–15" {
-			t.Errorf("dash suggestion = %+v, want 12–15", dash.Suggestions)
-		}
-	})
-
 	t.Run("custom_rule_flow", func(t *testing.T) {
 		created, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
 			Rule: &spellapi.Rule{

@@ -65,6 +65,7 @@ func (d *RulesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("GET /rules/{language}/new", d.newRulePage)
 	mux.HandleFunc("GET /rules/{language}/{id}", d.rulePage)
 	mux.HandleFunc("POST /rules/{language}/_new", d.saveNewRule)
+	mux.HandleFunc("POST /rules/{language}/_test", d.testRule)
 	mux.HandleFunc("POST /rules/{language}/{id}", d.saveRule)
 	mux.HandleFunc("POST /rules/{language}/{id}/delete", d.deleteRule)
 }
@@ -509,6 +510,66 @@ func (d *RulesUI) setRuleFromForm(
 	}
 
 	return res.Id, nil
+}
+
+type ruleTestMatch struct {
+	Text       string
+	Suggestion string
+}
+
+type ruleTestContents struct {
+	Error   string
+	Matches []ruleTestMatch
+	Sample  string
+}
+
+// testRule compiles the rule being edited and runs it against the sample input,
+// reporting the matches and their suggestions. It is read-only — no rule is
+// stored.
+func (d *RulesUI) testRule(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	_, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	err = r.ParseForm()
+	if err != nil {
+		return nil, howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid form data",
+			fmt.Errorf("parse form: %w", err))
+	}
+
+	sample := r.FormValue("sample")
+
+	def := RuleDef{
+		Pattern:     strings.TrimSpace(r.FormValue("pattern")),
+		Replacement: strings.TrimSpace(r.FormValue("replacement")),
+		Before:      splitCommaList(r.FormValue("before")),
+		After:       splitCommaList(r.FormValue("after")),
+		NotBefore:   splitCommaList(r.FormValue("not_before")),
+		NotAfter:    splitCommaList(r.FormValue("not_after")),
+	}
+
+	contents := ruleTestContents{Sample: sample}
+
+	rule, err := compileRule(def)
+	if err != nil {
+		contents.Error = err.Error()
+	} else {
+		for _, m := range matchRule(sample, rule) {
+			contents.Matches = append(contents.Matches, ruleTestMatch{
+				Text:       sample[m.start:m.end],
+				Suggestion: m.suggestion,
+			})
+		}
+	}
+
+	return &howdah.Page{
+		Template: "rule_test.html",
+		Contents: contents,
+	}, nil
 }
 
 // ruleIDParam reads and parses the {id} path value.

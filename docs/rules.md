@@ -61,7 +61,8 @@ A `{digit}`/`{word}` next to literal text only matches at a word boundary, so
 | `{digit} kr` | `{1} kronor` | `5 kr` → `5 kronor` |
 | `inte {gap} varken` | `inte {1}` | `inte längre varken` → `inte längre` |
 
-The number-range dash rule (`{digit}-{digit}`) is built in and always active.
+The rule editor has a **sample input** field with a **Test** button — enter some
+text and the matches and their suggested replacements are shown beneath it.
 
 ## Context guards
 

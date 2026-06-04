@@ -79,6 +79,21 @@ other = "only if preceded by..."
 [RuleAfter]
 other = "only if followed by..."
 
+[SampleInput]
+other = "Sample input"
+
+[SampleInputHelp]
+other = "Try the rule against some text to see what it matches."
+
+[SampleInputPlaceholder]
+other = "Mellan 12-15 personer"
+
+[Test]
+other = "Test"
+
+[NoMatches]
+other = "No matches in the sample"
+
 [ViewExpansions]
 other = "view all"
 

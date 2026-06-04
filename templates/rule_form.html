@@ -65,6 +65,22 @@
       <input type="text" name="after" value="{{if .Rule}}{{.Rule.After}}{{end}}" placeholder="{{t "RuleAfter" "only if followed by..."}}" {{if not .CanWrite}}disabled{{end}}>
     </div>
 
+    <div class="form-group">
+      <label for="rule_sample">{{t "SampleInput" "Sample input"}}</label>
+      <div class="help-text">{{t "SampleInputHelp" "Try the rule against some text to see what it matches."}}</div>
+      <div class="rule-test-row">
+        <input type="text" id="rule_sample" name="sample" placeholder="{{t "SampleInputPlaceholder" "Mellan 12-15 personer"}}">
+        <button
+          type="button"
+          class="btn btn-sm"
+          hx-post="/rules/{{.Language}}/_test"
+          hx-include="closest form"
+          hx-target="#rule-test-result"
+        >{{t "Test" "Test"}}</button>
+      </div>
+      <div id="rule-test-result" class="rule-test-result"></div>
+    </div>
+
     {{if .CanWrite}}
     <div class="form-actions">
       {{if not .NewRule}}

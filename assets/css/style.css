@@ -1378,6 +1378,47 @@ button.pattern-preview-total:hover .pattern-preview-view {
   color: var(--color-text-muted);
 }
 
+/* rule editor: sample test */
+.rule-test-row {
+  display: flex;
+  gap: 8px;
+}
+
+.rule-test-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rule-test-result {
+  margin-top: 6px;
+}
+
+.rule-test-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.rule-test-match {
+  font-family: var(--font-mono);
+  color: var(--color-danger);
+}
+
+.rule-test-sugg {
+  font-family: var(--font-mono);
+  color: var(--color-success);
+}
+
+.rule-test-empty {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
 .checkbox-label {
   display: flex;
   align-items: center;

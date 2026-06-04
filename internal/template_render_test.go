@@ -87,7 +87,10 @@ func TestRuleFormRender(t *testing.T) {
 			CanWrite: true,
 		})
 
-		for _, want := range []string{`name="pattern"`, `name="replacement"`, `name="not_before"`} {
+		for _, want := range []string{
+			`name="pattern"`, `name="replacement"`, `name="not_before"`,
+			`name="sample"`, "/sv-se/_test",
+		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("new-rule form missing %q", want)
 			}

@@ -834,6 +834,7 @@ func ruleToRPC(r postgres.Rule) (*spell.Rule, error) {
 		out.After = r.Data.After
 		out.NotBefore = r.Data.NotBefore
 		out.NotAfter = r.Data.NotAfter
+		out.CaseSensitive = r.Data.CaseSensitive
 	}
 
 	return out, nil

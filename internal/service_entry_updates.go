@@ -231,6 +231,7 @@ func ruleDefFromRule(r postgres.Rule) RuleDef {
 		def.After = r.Data.After
 		def.NotBefore = r.Data.NotBefore
 		def.NotAfter = r.Data.NotAfter
+		def.CaseSensitive = r.Data.CaseSensitive
 	}
 
 	return def

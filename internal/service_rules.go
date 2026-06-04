@@ -20,15 +20,16 @@ import (
 // are no guards.
 func ruleDataFromRPC(r *spell.Rule) *postgres.RuleData {
 	if len(r.Before) == 0 && len(r.After) == 0 &&
-		len(r.NotBefore) == 0 && len(r.NotAfter) == 0 {
+		len(r.NotBefore) == 0 && len(r.NotAfter) == 0 && !r.CaseSensitive {
 		return nil
 	}
 
 	return &postgres.RuleData{
-		Before:    r.Before,
-		After:     r.After,
-		NotBefore: r.NotBefore,
-		NotAfter:  r.NotAfter,
+		Before:        r.Before,
+		After:         r.After,
+		NotBefore:     r.NotBefore,
+		NotAfter:      r.NotAfter,
+		CaseSensitive: r.CaseSensitive,
 	}
 }
 

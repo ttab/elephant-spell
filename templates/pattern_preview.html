@@ -1,0 +1,13 @@
+{{with .Contents}}
+{{if .Results}}
+<ul class="pattern-preview-list">
+  {{range .Results}}
+  <li class="{{if .Error}}invalid{{end}}">
+    <code>{{.Line}}</code>
+    {{if .Error}}<span class="pp-error">{{.Error}}</span>{{else}}<span class="pp-count">→ {{.Count}}</span>{{end}}
+  </li>
+  {{end}}
+</ul>
+<div class="pattern-preview-total">{{t "TotalExpansions" "Total expansions"}}: {{.Total}}</div>
+{{end}}
+{{end}}

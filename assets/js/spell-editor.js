@@ -182,12 +182,15 @@
     }
 
     var popup = ci.querySelector(".code-input_autocomplete_popup");
-    if (!popup) {
-      return;
-    }
+    var items = popup ? popup.querySelectorAll(".ac-item") : [];
 
-    var items = popup.querySelectorAll(".ac-item");
+    // With no completion popup open, keep the single-line rule editors on one
+    // line — a pattern or replacement never spans multiple lines.
     if (!items.length) {
+      if (e.key === "Enter" && ci.classList.contains("code-input-line")) {
+        e.preventDefault();
+      }
+
       return;
     }
 

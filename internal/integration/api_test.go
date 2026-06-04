@@ -40,11 +40,12 @@ func TestAPI(t *testing.T) {
 
 		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
 			Entry: &spellapi.CustomEntry{
-				Language:    "sv-se",
-				Text:        text,
-				Status:      "approved",
-				Description: "a small country",
-				Level:       spellapi.CorrectionLevel_LEVEL_ERROR,
+				Language:      "sv-se",
+				Text:          text,
+				Status:        "approved",
+				Description:   "a small country",
+				Level:         spellapi.CorrectionLevel_LEVEL_ERROR,
+				CaseSensitive: true,
 			},
 		})
 		if err != nil {
@@ -61,6 +62,10 @@ func TestAPI(t *testing.T) {
 
 		if got.Entry == nil || got.Entry.Text != text {
 			t.Fatalf("unexpected entry: %+v", got.Entry)
+		}
+
+		if !got.Entry.CaseSensitive {
+			t.Errorf("CaseSensitive did not round-trip")
 		}
 
 		if got.Entry.UpdatedBy != stack.Admin.Subject {

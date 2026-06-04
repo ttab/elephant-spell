@@ -489,10 +489,14 @@ func (a *Application) GetEntry(
 		return nil, twirp.InternalErrorf("get entry level: %v", err)
 	}
 
-	var forms map[string]string
+	var (
+		forms         map[string]string
+		caseSensitive bool
+	)
 
 	if row.Data != nil {
 		forms = row.Data.Forms
+		caseSensitive = row.Data.CaseSensitive
 	}
 
 	var updated string
@@ -511,6 +515,7 @@ func (a *Application) GetEntry(
 			Forms:          forms,
 			Updated:        updated,
 			UpdatedBy:      row.UpdatedBy,
+			CaseSensitive:  caseSensitive,
 		},
 	}
 
@@ -594,10 +599,14 @@ func (a *Application) ListEntries(
 			return nil, twirp.InternalErrorf("get entry level: %v", err)
 		}
 
-		var forms map[string]string
+		var (
+			forms         map[string]string
+			caseSensitive bool
+		)
 
 		if row.Data != nil {
 			forms = row.Data.Forms
+			caseSensitive = row.Data.CaseSensitive
 		}
 
 		var updated string
@@ -615,6 +624,7 @@ func (a *Application) ListEntries(
 			Forms:          forms,
 			Updated:        updated,
 			UpdatedBy:      row.UpdatedBy,
+			CaseSensitive:  caseSensitive,
 		}
 	}
 
@@ -674,7 +684,8 @@ func (a *Application) SetEntry(
 		CommonMistakes: req.Entry.CommonMistakes,
 		Level:          level,
 		Data: &postgres.EntryData{
-			Forms: req.Entry.Forms,
+			Forms:         req.Entry.Forms,
+			CaseSensitive: req.Entry.CaseSensitive,
 		},
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedBy: auth.Claims.Subject,

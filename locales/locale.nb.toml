@@ -40,6 +40,12 @@ other = "Legg til form"
 [TotalExpansions]
 other = "Totalt antall utvidelser"
 
+[CaseSensitive]
+other = "Skill mellom store og små bokstaver"
+
+[CaseSensitiveHelp]
+other = "Treff bare nøyaktig skrivemåte. Slå på for egennavn; la stå av for vanlige ord så de også fanges først i en setning."
+
 [Language]
 other = "Språk"
 

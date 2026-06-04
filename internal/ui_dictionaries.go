@@ -102,6 +102,7 @@ type uiEntry struct {
 	Forms          map[string]string
 	Updated        string
 	UpdatedBy      string
+	CaseSensitive  bool
 }
 
 func customEntryToUI(e *spell.CustomEntry) uiEntry {
@@ -119,6 +120,7 @@ func customEntryToUI(e *spell.CustomEntry) uiEntry {
 		Forms:          e.Forms,
 		Updated:        e.Updated,
 		UpdatedBy:      e.UpdatedBy,
+		CaseSensitive:  e.CaseSensitive,
 	}
 }
 
@@ -648,6 +650,7 @@ func (d *DictionariesUI) setEntryFromForm(
 			CommonMistakes: commonMistakes,
 			Level:          level,
 			Forms:          forms,
+			CaseSensitive:  r.FormValue("case_sensitive") == "on",
 		},
 	})
 	if err != nil {

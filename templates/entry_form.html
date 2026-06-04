@@ -51,6 +51,14 @@
     </div>
 
     <div class="form-group">
+      <label class="checkbox-label">
+        <input type="checkbox" name="case_sensitive" {{if and .Entry .Entry.CaseSensitive}}checked{{end}} {{if not .CanWrite}}disabled{{end}}>
+        {{t "CaseSensitive" "Case sensitive"}}
+      </label>
+      <div class="help-text">{{t "CaseSensitiveHelp" "Only match the exact casing. Enable for proper nouns; leave off for ordinary words so they are caught at the start of a sentence too."}}</div>
+    </div>
+
+    <div class="form-group">
       <label for="common_mistakes">{{t "CommonMistakes" "Common mistakes"}}</label>
       <div class="help-text">{{t "CommonMistakesHelp" "One per line, supports {A|B} expansion"}}</div>
       <code-input

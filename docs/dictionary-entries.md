@@ -15,6 +15,7 @@ Each entry has the following fields:
 | **Correction level** | `error` flags the text as wrong, `suggestion` offers a softer recommendation. |
 | **Common mistakes** | Misspellings or alternative spellings that should be corrected to the entry text. |
 | **Forms** | Maps specific incorrect inflections to specific correct replacements. |
+| **Case sensitive** | When off (the default), the text and common mistakes match regardless of casing, and suggestions take on the leading-capital style of the matched word — so a lowercase entry is still caught at the start of a sentence. Enable it for proper nouns that must only match their exact casing. |
 
 ## Common mistakes and pattern expansion
 

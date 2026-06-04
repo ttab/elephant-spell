@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/blevesearch/segment"
 	"github.com/dghubble/trie"
@@ -27,6 +28,11 @@ type Phrase struct {
 	// "pending"). It is surfaced on corrections so clients can flag matches
 	// based on unreviewed entries.
 	Status string
+	// CaseSensitive controls whether the entry only matches with its exact
+	// casing. When false (the default) the text, common mistakes and forms are
+	// matched case-insensitively, and suggestions take on the leading-capital
+	// style of the matched input.
+	CaseSensitive bool
 }
 
 func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) {
@@ -41,45 +47,93 @@ func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) 
 	}
 
 	return &Spellcheck{
-		lang:        lang,
-		trie:        trie.NewRuneTrie(),
-		mistakeTrie: trie.NewRuneTrie(),
-		hunspell:    checker,
-		bufs:        bufs,
+		lang:          lang,
+		trie:          trie.NewRuneTrie(),
+		mistakeTrie:   trie.NewRuneTrie(),
+		ciTrie:        trie.NewRuneTrie(),
+		ciMistakeTrie: trie.NewRuneTrie(),
+		hunspell:      checker,
+		bufs:          bufs,
 	}, nil
 }
 
 type Spellcheck struct {
-	lang        string
-	m           sync.RWMutex
+	lang string
+	m    sync.RWMutex
+	// trie and mistakeTrie hold case-sensitive entries, keyed by exact text.
 	trie        *trie.RuneTrie
 	mistakeTrie *trie.RuneTrie
-	hunspell    *hunspell.Checker
-	bufs        *puddle.Pool[*bytes.Buffer]
+	// ciTrie and ciMistakeTrie hold case-insensitive entries, keyed by their
+	// case-folded text so lookups can match any casing.
+	ciTrie        *trie.RuneTrie
+	ciMistakeTrie *trie.RuneTrie
+	hunspell      *hunspell.Checker
+	bufs          *puddle.Pool[*bytes.Buffer]
+}
+
+// foldKey normalises a key for case-insensitive matching.
+func foldKey(s string) string {
+	return strings.ToLower(s)
+}
+
+// tries returns the valid-phrase and mistake tries plus the key normaliser to
+// use for a phrase, depending on whether it is case-sensitive.
+func (s *Spellcheck) tries(caseSensitive bool) (
+	valid, mistake *trie.RuneTrie, key func(string) string,
+) {
+	if caseSensitive {
+		return s.trie, s.mistakeTrie, func(x string) string {
+			return x
+		}
+	}
+
+	return s.ciTrie, s.ciMistakeTrie, foldKey
+}
+
+// findExisting locates a stored phrase for an entry text regardless of whether
+// it was registered as case-sensitive, so an update that flips the case
+// sensitivity still finds the old data to clear.
+func (s *Spellcheck) findExisting(text string) *Phrase {
+	if old, ok := s.trie.Get(text).(*Phrase); ok && old != nil {
+		return old
+	}
+
+	if old, ok := s.ciTrie.Get(foldKey(text)).(*Phrase); ok && old != nil {
+		return old
+	}
+
+	return nil
+}
+
+// clearPhrase removes all trie and hunspell entries for a phrase. It uses
+// Put(key, nil) instead of Delete(key) to work around a bug in dghubble/trie
+// v0.1.0 where RuneTrie.Delete panics on multi-byte UTF-8 keys.
+func (s *Spellcheck) clearPhrase(p *Phrase) {
+	valid, mistake, key := s.tries(p.CaseSensitive)
+
+	valid.Put(key(p.Text), nil)
+	s.hunspell.Remove(p.Text)
+
+	for _, cm := range p.CommonMistakes {
+		mistake.Put(key(cm), nil)
+	}
+
+	for form, correct := range p.Forms {
+		valid.Put(key(correct), nil)
+		s.hunspell.Remove(correct)
+		mistake.Put(key(form), nil)
+	}
 }
 
 func (s *Spellcheck) AddPhrase(p Phrase) {
 	s.m.Lock()
+	defer s.m.Unlock()
 
-	// Remove old common mistakes and forms before adding new ones,
-	// so that updates to an entry don't leave stale data in the tries.
-	if old, ok := s.trie.Get(p.Text).(*Phrase); ok {
-		for _, cm := range old.CommonMistakes {
-			// Use Put(key, nil) instead of Delete(key) to work
-			// around a bug in dghubble/trie v0.1.0 where
-			// RuneTrie.Delete panics on multi-byte UTF-8 keys.
-			s.mistakeTrie.Put(cm, nil)
-		}
-
-		for form, correct := range old.Forms {
-			s.trie.Put(correct, nil)
-			s.hunspell.Remove(correct)
-			s.mistakeTrie.Put(form, nil)
-		}
+	// Remove any existing data for this entry before adding the new version,
+	// so updates don't leave stale keys behind.
+	if old := s.findExisting(p.Text); old != nil {
+		s.clearPhrase(old)
 	}
-
-	s.trie.Put(p.Text, &p)
-	s.hunspell.Add(p.Text)
 
 	var commonMistakes []string
 
@@ -95,41 +149,28 @@ func (s *Spellcheck) AddPhrase(p Phrase) {
 
 	p.CommonMistakes = commonMistakes
 
-	for _, mistake := range p.CommonMistakes {
-		s.mistakeTrie.Put(mistake, &p)
+	valid, mistake, key := s.tries(p.CaseSensitive)
+
+	valid.Put(key(p.Text), &p)
+	s.hunspell.Add(p.Text)
+
+	for _, m := range p.CommonMistakes {
+		mistake.Put(key(m), &p)
 	}
 
 	for form, correct := range p.Forms {
-		s.trie.Put(correct, &p)
+		valid.Put(key(correct), &p)
 		s.hunspell.Add(correct)
-		s.mistakeTrie.Put(form, &p)
+		mistake.Put(key(form), &p)
 	}
-
-	s.m.Unlock()
 }
 
 func (s *Spellcheck) RemovePhrase(text string) {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	v := s.trie.Get(text)
-
-	p, ok := v.(*Phrase)
-	if !ok {
-		return
-	}
-
-	s.hunspell.Remove(text)
-	s.trie.Put(text, nil)
-
-	for _, cm := range p.CommonMistakes {
-		s.mistakeTrie.Put(cm, nil)
-	}
-
-	for form, correct := range p.Forms {
-		s.trie.Put(correct, nil)
-		s.hunspell.Remove(correct)
-		s.mistakeTrie.Put(form, nil)
+	if old := s.findExisting(text); old != nil {
+		s.clearPhrase(old)
 	}
 }
 
@@ -151,15 +192,22 @@ func (s *Spellcheck) Check(
 	s.m.RLock()
 
 	for text := range PhraseIterator(textData, 3) {
-		// Check if the phrase has been marked as valid, make sure that
-		// it doesn't get sent to hunspell, but allow continued
-		// processing to get further suggestions.
-		correct := s.trie.Get(text)
-		if correct != nil {
+		folded := foldKey(text)
+
+		// Check if the phrase has been marked as valid (case-sensitive exact
+		// or case-insensitive folded), make sure that it doesn't get sent to
+		// hunspell, but allow continued processing to get further suggestions.
+		if s.trie.Get(text) != nil || s.ciTrie.Get(folded) != nil {
 			replacements = append(replacements, text, "")
 		}
 
 		v := s.mistakeTrie.Get(text)
+		ci := false
+
+		if v == nil {
+			v = s.ciMistakeTrie.Get(folded)
+			ci = true
+		}
 
 		p, ok := v.(*Phrase)
 		if !ok {
@@ -183,22 +231,19 @@ func (s *Spellcheck) Check(
 			Status: p.Status,
 		}
 
-		inCommonMistakes := slices.Contains(p.CommonMistakes, text)
-
-		if withSuggestions && inCommonMistakes {
+		if withSuggestions && containsKey(p.CommonMistakes, text, ci) {
 			entry.Suggestions = append(entry.Suggestions,
 				&spell.Suggestion{
-					Text:        p.Text,
+					Text:        matchLeadingCase(p.Text, text, ci),
 					Description: p.Description,
 				})
 		}
 
-		if withSuggestions && p.Forms != nil {
-			form, isForm := p.Forms[text]
-			if isForm {
+		if withSuggestions {
+			if formVal, isForm := lookupForm(p.Forms, text, ci); isForm {
 				entry.Suggestions = append(entry.Suggestions,
 					&spell.Suggestion{
-						Text:        form,
+						Text:        matchLeadingCase(formVal, text, ci),
 						Description: p.Description,
 					})
 			}
@@ -303,28 +348,29 @@ func (s *Spellcheck) Suggestions(
 	s.m.RLock()
 
 	v := s.mistakeTrie.Get(text)
+	ci := false
+
+	if v == nil {
+		v = s.ciMistakeTrie.Get(foldKey(text))
+		ci = true
+	}
 
 	p, ok := v.(*Phrase)
 	if ok {
-		inCommonMistakes := slices.Contains(p.CommonMistakes, text)
-
-		if inCommonMistakes {
+		if containsKey(p.CommonMistakes, text, ci) {
 			suggestions = append(suggestions,
 				&spell.Suggestion{
-					Text:        p.Text,
+					Text:        matchLeadingCase(p.Text, text, ci),
 					Description: p.Description,
 				})
 		}
 
-		if p.Forms != nil {
-			form, isForm := p.Forms[text]
-			if isForm {
-				suggestions = append(suggestions,
-					&spell.Suggestion{
-						Text:        form,
-						Description: p.Description,
-					})
-			}
+		if formVal, isForm := lookupForm(p.Forms, text, ci); isForm {
+			suggestions = append(suggestions,
+				&spell.Suggestion{
+					Text:        matchLeadingCase(formVal, text, ci),
+					Description: p.Description,
+				})
 		}
 	}
 
@@ -344,4 +390,67 @@ func (s *Spellcheck) Suggestions(
 	}
 
 	return suggestions, nil
+}
+
+// containsKey reports whether text matches one of keys, comparing
+// case-insensitively when ci is set.
+func containsKey(keys []string, text string, ci bool) bool {
+	if !ci {
+		return slices.Contains(keys, text)
+	}
+
+	folded := foldKey(text)
+
+	for _, k := range keys {
+		if foldKey(k) == folded {
+			return true
+		}
+	}
+
+	return false
+}
+
+// lookupForm finds the replacement for a form key, matching the key
+// case-insensitively when ci is set.
+func lookupForm(forms map[string]string, text string, ci bool) (string, bool) {
+	if forms == nil {
+		return "", false
+	}
+
+	if !ci {
+		v, ok := forms[text]
+
+		return v, ok
+	}
+
+	folded := foldKey(text)
+
+	for k, v := range forms {
+		if foldKey(k) == folded {
+			return v, true
+		}
+	}
+
+	return "", false
+}
+
+// matchLeadingCase adapts a suggestion to the leading-capital style of the
+// matched input for case-insensitive matches, so a lowercase entry suggested
+// for a sentence-initial word keeps its capital. It is a no-op for
+// case-sensitive matches.
+func matchLeadingCase(suggestion, input string, ci bool) string {
+	if !ci || suggestion == "" || input == "" {
+		return suggestion
+	}
+
+	in := []rune(input)
+	sg := []rune(suggestion)
+
+	if unicode.IsUpper(in[0]) && unicode.IsLower(sg[0]) {
+		sg[0] = unicode.ToUpper(sg[0])
+
+		return string(sg)
+	}
+
+	return suggestion
 }

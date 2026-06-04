@@ -1,0 +1,13 @@
+{{with .Contents}}
+{{if .Error}}
+<div class="pp-error">{{.Error}}</div>
+{{else if .Matches}}
+<ul class="rule-test-list">
+  {{range .Matches}}
+  <li><code class="rule-test-match">{{.Text}}</code> → <code class="rule-test-sugg">{{.Suggestion}}</code></li>
+  {{end}}
+</ul>
+{{else}}
+<div class="rule-test-empty">{{t "NoMatches" "No matches in the sample"}}</div>
+{{end}}
+{{end}}

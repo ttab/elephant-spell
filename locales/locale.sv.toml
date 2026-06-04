@@ -79,6 +79,21 @@ other = "endast om föregås av..."
 [RuleAfter]
 other = "endast om följs av..."
 
+[SampleInput]
+other = "Exempeltext"
+
+[SampleInputHelp]
+other = "Testa regeln mot lite text för att se vad den träffar."
+
+[SampleInputPlaceholder]
+other = "Mellan 12-15 personer"
+
+[Test]
+other = "Testa"
+
+[NoMatches]
+other = "Inga träffar i exempeltexten"
+
 [ViewExpansions]
 other = "visa alla"
 

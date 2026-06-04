@@ -79,6 +79,21 @@ other = "bare hvis foran står..."
 [RuleAfter]
 other = "bare hvis etter står..."
 
+[SampleInput]
+other = "Eksempeltekst"
+
+[SampleInputHelp]
+other = "Test regelen mot litt tekst for å se hva den treffer."
+
+[SampleInputPlaceholder]
+other = "Mellan 12-15 personer"
+
+[Test]
+other = "Test"
+
+[NoMatches]
+other = "Ingen treff i eksempelteksten"
+
 [ViewExpansions]
 other = "vis alle"
 

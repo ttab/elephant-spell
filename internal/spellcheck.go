@@ -46,11 +46,6 @@ func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) 
 		return nil, fmt.Errorf("create spellcheck buffer pool: %w", err)
 	}
 
-	builtins, err := builtinRules()
-	if err != nil {
-		return nil, fmt.Errorf("compile built-in rules: %w", err)
-	}
-
 	return &Spellcheck{
 		lang:          lang,
 		trie:          trie.NewRuneTrie(),
@@ -60,7 +55,6 @@ func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) 
 		hunspell:      checker,
 		bufs:          bufs,
 		rules:         make(map[int64]*compiledRule),
-		builtinRules:  builtins,
 	}, nil
 }
 
@@ -76,28 +70,8 @@ type Spellcheck struct {
 	ciMistakeTrie *trie.RuneTrie
 	hunspell      *hunspell.Checker
 	bufs          *puddle.Pool[*bytes.Buffer]
-	// rules holds user-defined pattern rules keyed by rule id; builtinRules are
-	// always-on rules for common writing errors.
-	rules        map[int64]*compiledRule
-	builtinRules []*compiledRule
-}
-
-// builtinRules are the always-active pattern rules shipped with the service.
-func builtinRules() ([]*compiledRule, error) {
-	dash, err := compileRule(RuleDef{
-		Name:        "__builtin_number_dash",
-		Pattern:     "{digit}-{digit}",
-		Replacement: "{1}–{2}",
-		Description: "Use an en dash (–) for number ranges, " +
-			"not a hyphen (-).",
-		Level:  postgres.EntryLevelError,
-		Status: "accepted",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("number-dash rule: %w", err)
-	}
-
-	return []*compiledRule{dash}, nil
+	// rules holds user-defined pattern rules keyed by rule id.
+	rules map[int64]*compiledRule
 }
 
 // AddRule compiles and registers a user-defined rule, replacing any existing
@@ -122,13 +96,13 @@ func (s *Spellcheck) RemoveRule(id int64) {
 	s.m.Unlock()
 }
 
-// matchAllRules runs the built-in and user rules over the text and returns the
-// resulting misspelled entries, deduplicated by matched span. The caller must
-// hold at least a read lock.
+// matchAllRules runs the user rules over the text and returns the resulting
+// misspelled entries, deduplicated by matched span. The caller must hold at
+// least a read lock.
 func (s *Spellcheck) matchAllRules(
 	text string, withSuggestions bool,
 ) []*spell.MisspelledEntry {
-	if len(s.rules) == 0 && len(s.builtinRules) == 0 {
+	if len(s.rules) == 0 {
 		return nil
 	}
 
@@ -164,10 +138,6 @@ func (s *Spellcheck) matchAllRules(
 		}
 	}
 
-	for _, r := range s.builtinRules {
-		emit(r)
-	}
-
 	for _, r := range s.rules {
 		emit(r)
 	}
@@ -190,10 +160,6 @@ func (s *Spellcheck) ruleSuggestions(text string) []*spell.Suggestion {
 				})
 			}
 		}
-	}
-
-	for _, r := range s.builtinRules {
-		add(r)
 	}
 
 	for _, r := range s.rules {

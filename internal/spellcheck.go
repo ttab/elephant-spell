@@ -86,7 +86,7 @@ type Spellcheck struct {
 func builtinRules() ([]*compiledRule, error) {
 	dash, err := compileRule(RuleDef{
 		Name:        "__builtin_number_dash",
-		Pattern:     ":digit - :digit",
+		Pattern:     "{digit}-{digit}",
 		Replacement: "{1}–{2}",
 		Description: "Use an en dash (–) for number ranges, " +
 			"not a hyphen (-).",
@@ -132,13 +132,12 @@ func (s *Spellcheck) matchAllRules(
 		return nil
 	}
 
-	sig := significant(tokenize(text))
 	seen := make(map[string]bool)
 
 	var entries []*spell.MisspelledEntry
 
 	emit := func(r *compiledRule) {
-		for _, m := range matchRule(text, sig, r) {
+		for _, m := range matchRule(text, r) {
 			span := text[m.start:m.end]
 			if seen[span] {
 				continue
@@ -180,12 +179,10 @@ func (s *Spellcheck) matchAllRules(
 // against a phrase, used for on-demand suggestion lookups. The caller must hold
 // at least a read lock.
 func (s *Spellcheck) ruleSuggestions(text string) []*spell.Suggestion {
-	sig := significant(tokenize(text))
-
 	var out []*spell.Suggestion
 
 	add := func(r *compiledRule) {
-		for _, m := range matchRule(text, sig, r) {
+		for _, m := range matchRule(text, r) {
 			if m.suggestion != "" {
 				out = append(out, &spell.Suggestion{
 					Text:        m.suggestion,

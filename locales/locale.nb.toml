@@ -53,7 +53,7 @@ other = "Mønsterregel (avansert)"
 other = "Behandle oppføringen som en mønsterregel"
 
 [RuleHelp]
-other = "Treff et tokenmønster i stedet for ordrett tekst. Bruk literaler, :digit, :word og :gap(N); vis til fangede token i erstatningen som {1}, {2}."
+other = "Treff teksten direkte. Bruk plassholderne {digit}, {word} og {gap(N)}; ordrett tekst og mellomrom treffes slik de skrives. Vis til fangede grupper i erstatningen som {1}, {2}."
 
 [RulePattern]
 other = "Mønster"

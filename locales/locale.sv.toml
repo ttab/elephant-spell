@@ -53,7 +53,7 @@ other = "Mönsterregel (avancerat)"
 other = "Behandla posten som en mönsterregel"
 
 [RuleHelp]
-other = "Matcha ett teckenmönster i stället för exakt text. Använd literaler, :digit, :word och :gap(N); hänvisa till fångade token i ersättningen som {1}, {2}."
+other = "Matcha texten direkt. Använd platshållarna {digit}, {word} och {gap(N)}; bokstavlig text och mellanslag matchas som de skrivs. Hänvisa till fångade grupper i ersättningen som {1}, {2}."
 
 [RulePattern]
 other = "Mönster"

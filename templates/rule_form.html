@@ -47,8 +47,8 @@
 
     <div class="form-group">
       <label for="pattern">{{t "RulePattern" "Pattern"}}</label>
-      <div class="help-text">{{t "RuleHelp" "Match a token pattern. Use literals, :digit, :word and :gap(N); reference captured tokens in the replacement as {1}, {2}."}}</div>
-      <input type="text" id="pattern" name="pattern" value="{{if .Rule}}{{.Rule.Pattern}}{{end}}" placeholder=":digit - :digit" required {{if not .CanWrite}}disabled{{end}}>
+      <div class="help-text">{{t "RuleHelp" "Match text directly. Use {digit}, {word} and {gap(N)} placeholders; literal text and spacing are matched as written. Reference captures in the replacement as {1}, {2}."}}</div>
+      <input type="text" id="pattern" name="pattern" value="{{if .Rule}}{{.Rule.Pattern}}{{end}}" placeholder="{digit}-{digit}" required {{if not .CanWrite}}disabled{{end}}>
     </div>
 
     <div class="form-group">

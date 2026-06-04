@@ -3,48 +3,33 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
-	"github.com/blevesearch/segment"
 	"github.com/ttab/elephant-spell/postgres"
 )
 
-// The rule engine matches patterns over a token stream rather than exact
-// strings, which lets it express things the trie can't: character classes
-// (numbers, words), bounded gaps between words, and context guards on the
-// surrounding tokens. Suggestions are produced by filling a replacement
-// template with the captured token text.
+// The rule engine matches a pattern against the source text and produces a
+// suggestion from a replacement template. Patterns are a small, curated DSL
+// compiled to a safe RE2 regexp — there is no separate tokenisation step, so
+// whitespace in the pattern is significant:
 //
-// Pattern DSL (whitespace-separated tokens):
+//	{digit}     a run of digits (captured)
+//	{word}      a run of letters (captured)
+//	{gap}       up to 4 whitespace-separated words in between (captured)
+//	{gap(N)}    up to N words in between
+//	other text  matched literally and case-insensitively; a run of spaces
+//	            means "one or more whitespace", and adjacency means none
 //
-//	literal     a word or punctuation token, matched case-insensitively
-//	:digit      a run of digits (captures)
-//	:word       a single word token (captures)
-//	:gap        up to 4 intervening words (captures the spanned text)
-//	:gap(N)     up to N intervening words
-//
-// Replacement templates reference captures by position: {1}, {2}, … in the
-// order the capturing tokens appear. For example the dash rule is
-// `:digit - :digit` ⇒ `{1}–{2}`, turning "12-15" into "12–15".
-
-type matcherKind int
-
-const (
-	matchLiteral matcherKind = iota
-	matchDigit
-	matchWord
-	matchGap
-)
+// So {digit}-{digit} matches "12-15" but not "12 - 15", while {digit} - {digit}
+// matches "12 - 15" but not "12-15". Captures are referenced in the replacement
+// template by position: {1}, {2}, … For example the dash rule is
+// `{digit}-{digit}` ⇒ `{1}–{2}`, turning "12-15" into "12–15".
 
 const defaultGap = 4
-
-type matcher struct {
-	kind    matcherKind
-	literal string // folded literal, for matchLiteral
-	maxGap  int    // for matchGap
-	capture bool
-}
 
 // RuleDef is the uncompiled definition of a rule, decoupled from storage and
 // protobuf types.
@@ -64,7 +49,9 @@ type RuleDef struct {
 
 type compiledRule struct {
 	name        string
-	matchers    []matcher
+	re          *regexp.Regexp
+	startWord   bool // pattern starts on a word character
+	endWord     bool // pattern ends on a word character
 	replacement string
 	description string
 	level       postgres.EntryLevel
@@ -77,14 +64,16 @@ type compiledRule struct {
 
 // compileRule parses a rule definition into a matchable form.
 func compileRule(def RuleDef) (*compiledRule, error) {
-	matchers, err := compilePattern(def.Pattern)
+	re, startWord, endWord, err := compilePattern(def.Pattern)
 	if err != nil {
 		return nil, fmt.Errorf("compile pattern: %w", err)
 	}
 
 	return &compiledRule{
 		name:        def.Name,
-		matchers:    matchers,
+		re:          re,
+		startWord:   startWord,
+		endWord:     endWord,
 		replacement: def.Replacement,
 		description: def.Description,
 		level:       def.Level,
@@ -96,45 +85,134 @@ func compileRule(def RuleDef) (*compiledRule, error) {
 	}, nil
 }
 
-func compilePattern(pattern string) ([]matcher, error) {
-	fields := strings.Fields(pattern)
-	if len(fields) == 0 {
-		return nil, errors.New("empty pattern")
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+// compilePattern compiles a rule pattern into a regexp, also reporting whether
+// the pattern begins and ends on a word character (used for boundary checks).
+func compilePattern(pattern string) (*regexp.Regexp, bool, bool, error) {
+	if strings.TrimSpace(pattern) == "" {
+		return nil, false, false, errors.New("empty pattern")
 	}
 
-	matchers := make([]matcher, 0, len(fields))
+	var body strings.Builder
 
-	for _, f := range fields {
-		switch {
-		case f == ":digit":
-			matchers = append(matchers, matcher{kind: matchDigit, capture: true})
-		case f == ":word":
-			matchers = append(matchers, matcher{kind: matchWord, capture: true})
-		case f == ":gap" || strings.HasPrefix(f, ":gap("):
-			n := defaultGap
+	firstWord := -1 // -1 unknown, 0 no, 1 yes
+	lastWord := false
 
-			if strings.HasPrefix(f, ":gap(") {
-				inner, ok := strings.CutPrefix(f, ":gap(")
-				inner, ok2 := strings.CutSuffix(inner, ")")
-				if !ok || !ok2 {
-					return nil, fmt.Errorf("malformed gap token %q", f)
-				}
-
-				v, err := strconv.Atoi(inner)
-				if err != nil || v < 0 {
-					return nil, fmt.Errorf("invalid gap size in %q", f)
-				}
-
-				n = v
+	setFirst := func(w bool) {
+		if firstWord == -1 {
+			if w {
+				firstWord = 1
+			} else {
+				firstWord = 0
 			}
-
-			matchers = append(matchers, matcher{kind: matchGap, maxGap: n, capture: true})
-		default:
-			matchers = append(matchers, matcher{kind: matchLiteral, literal: foldKey(f)})
 		}
 	}
 
-	return matchers, nil
+	emitLiteral := func(s string) {
+		runes := []rune(s)
+
+		for j := 0; j < len(runes); {
+			if unicode.IsSpace(runes[j]) {
+				for j < len(runes) && unicode.IsSpace(runes[j]) {
+					j++
+				}
+
+				body.WriteString(`\s+`)
+				setFirst(false)
+				lastWord = false
+
+				continue
+			}
+
+			k := j
+			for k < len(runes) && !unicode.IsSpace(runes[k]) {
+				k++
+			}
+
+			chunk := runes[j:k]
+			body.WriteString(regexp.QuoteMeta(string(chunk)))
+			setFirst(isWordRune(chunk[0]))
+			lastWord = isWordRune(chunk[len(chunk)-1])
+			j = k
+		}
+	}
+
+	var lit strings.Builder
+
+	flush := func() {
+		if lit.Len() > 0 {
+			emitLiteral(lit.String())
+			lit.Reset()
+		}
+	}
+
+	for i := 0; i < len(pattern); {
+		if pattern[i] != '{' {
+			lit.WriteByte(pattern[i])
+			i++
+
+			continue
+		}
+
+		closeIdx := strings.IndexByte(pattern[i:], '}')
+		if closeIdx < 0 {
+			return nil, false, false, errors.New("unclosed '{' in pattern")
+		}
+
+		token := pattern[i+1 : i+closeIdx]
+
+		grp, err := placeholderRegex(token)
+		if err != nil {
+			return nil, false, false, err
+		}
+
+		flush()
+		body.WriteString(grp)
+		setFirst(true)
+		lastWord = true
+
+		i += closeIdx + 1
+	}
+
+	flush()
+
+	re, err := regexp.Compile("(?i)" + body.String())
+	if err != nil {
+		return nil, false, false, fmt.Errorf("invalid pattern: %w", err)
+	}
+
+	return re, firstWord == 1, lastWord, nil
+}
+
+// placeholderRegex returns the capturing-group regexp for a {…} placeholder.
+func placeholderRegex(token string) (string, error) {
+	switch {
+	case token == "digit":
+		return `(\d+)`, nil
+	case token == "word":
+		return `(\p{L}+)`, nil
+	case token == "gap":
+		return gapRegex(defaultGap), nil
+	case strings.HasPrefix(token, "gap(") && strings.HasSuffix(token, ")"):
+		inner := token[len("gap(") : len(token)-1]
+
+		n, err := strconv.Atoi(inner)
+		if err != nil || n < 1 {
+			return "", fmt.Errorf("invalid gap size in %q", token)
+		}
+
+		return gapRegex(n), nil
+	default:
+		return "", fmt.Errorf("unknown placeholder {%s}", token)
+	}
+}
+
+// gapRegex matches 1..n whitespace-separated words.
+func gapRegex(n int) string {
+	return `(\S+(?:\s+\S+){0,` + strconv.Itoa(n-1) + `})`
 }
 
 func foldAll(in []string) []string {
@@ -150,57 +228,6 @@ func foldAll(in []string) []string {
 	return out
 }
 
-// ruleToken is a token from the input with its byte span and whether it is a
-// word (letter or number) token.
-type ruleToken struct {
-	Text  string
-	Type  int
-	Start int
-	End   int
-}
-
-// tokenize splits text into contiguous tokens with byte offsets.
-func tokenize(text string) []ruleToken {
-	seg := segment.NewWordSegmenter(strings.NewReader(text))
-
-	var (
-		toks []ruleToken
-		pos  int
-	)
-
-	for seg.Segment() {
-		txt := seg.Text()
-
-		toks = append(toks, ruleToken{
-			Text:  txt,
-			Type:  seg.Type(),
-			Start: pos,
-			End:   pos + len(txt),
-		})
-
-		pos += len(txt)
-	}
-
-	return toks
-}
-
-// significant drops whitespace-only tokens, keeping words and punctuation. The
-// retained tokens keep their original offsets so spans can be sliced from the
-// source text.
-func significant(toks []ruleToken) []ruleToken {
-	out := make([]ruleToken, 0, len(toks))
-
-	for _, t := range toks {
-		if strings.TrimSpace(t.Text) == "" {
-			continue
-		}
-
-		out = append(out, t)
-	}
-
-	return out
-}
-
 // ruleMatch is a single rule hit over the input.
 type ruleMatch struct {
 	rule       *compiledRule
@@ -209,144 +236,78 @@ type ruleMatch struct {
 	suggestion string
 }
 
-// matchRule scans the significant tokens for all non-overlapping matches of the
-// rule and returns them.
-func matchRule(text string, sig []ruleToken, r *compiledRule) []ruleMatch {
+// matchRule returns all non-overlapping matches of the rule in the text.
+func matchRule(text string, r *compiledRule) []ruleMatch {
 	var matches []ruleMatch
 
-	i := 0
-	for i < len(sig) {
-		end, caps, ok := matchSeq(sig, i, r.matchers)
-		if !ok {
-			i++
+	for _, loc := range r.re.FindAllStringSubmatchIndex(text, -1) {
+		start, end := loc[0], loc[1]
 
+		// Enforce word boundaries at word-char edges so e.g. {digit}kr does
+		// not match inside "5krona". Done by rune inspection rather than \b,
+		// which is ASCII-only in RE2.
+		if r.startWord && wordCharBefore(text, start) {
 			continue
 		}
 
-		if !guardsPass(sig, i, end, r) {
-			i++
+		if r.endWord && wordCharAfter(text, end) {
+			continue
+		}
 
+		var caps []string
+
+		for g := 1; 2*g+1 < len(loc); g++ {
+			s, e := loc[2*g], loc[2*g+1]
+			if s < 0 {
+				caps = append(caps, "")
+			} else {
+				caps = append(caps, text[s:e])
+			}
+		}
+
+		if !guardsPass(text, start, end, r) {
 			continue
 		}
 
 		matches = append(matches, ruleMatch{
 			rule:       r,
-			start:      sig[i].Start,
-			end:        sig[end-1].End,
+			start:      start,
+			end:        end,
 			suggestion: expandTemplate(r.replacement, caps),
 		})
-
-		// Continue after the match to avoid overlapping hits.
-		i = end
 	}
 
 	return matches
 }
 
-// matchSeq tries to match the matcher sequence starting at sig[start],
-// returning the index just past the last consumed token and the ordered
-// captures.
-func matchSeq(sig []ruleToken, start int, matchers []matcher) (int, []string, bool) {
-	i := start
-
-	var caps []string
-
-	for mi := 0; mi < len(matchers); mi++ {
-		m := matchers[mi]
-
-		if m.kind == matchGap {
-			rest := matchers[mi+1:]
-
-			for k := 0; k <= m.maxGap; k++ {
-				gapEnd := i + k
-				if gapEnd > len(sig) {
-					break
-				}
-
-				subEnd, subCaps, ok := matchSeq(sig, gapEnd, rest)
-				if !ok {
-					continue
-				}
-
-				gapText := ""
-				if k > 0 {
-					gapText = spanText(sig, i, gapEnd)
-				}
-
-				full := append(append(append([]string{}, caps...), gapText), subCaps...)
-
-				return subEnd, full, true
-			}
-
-			return 0, nil, false
-		}
-
-		if i >= len(sig) {
-			return 0, nil, false
-		}
-
-		tok := sig[i]
-
-		if !matchToken(m, tok) {
-			return 0, nil, false
-		}
-
-		if m.capture {
-			caps = append(caps, tok.Text)
-		}
-
-		i++
-	}
-
-	return i, caps, true
-}
-
-func matchToken(m matcher, tok ruleToken) bool {
-	switch m.kind {
-	case matchLiteral:
-		return foldKey(tok.Text) == m.literal
-	case matchDigit:
-		return tok.Type == segment.Number
-	case matchWord:
-		return tok.Type == segment.Letter
-	default:
+func wordCharBefore(text string, pos int) bool {
+	if pos <= 0 {
 		return false
 	}
+
+	r, _ := utf8.DecodeLastRuneInString(text[:pos])
+
+	return isWordRune(r)
 }
 
-// spanText returns the source text spanned by sig[from:to] including any
-// interior whitespace, reconstructed from offsets.
-func spanText(sig []ruleToken, from, to int) string {
-	if from >= to || from < 0 || to > len(sig) {
-		return ""
+func wordCharAfter(text string, pos int) bool {
+	if pos >= len(text) {
+		return false
 	}
 
-	// The span text isn't sliced from source here; callers that need the
-	// matched source slice use the offsets directly. For gap captures we join
-	// the token texts, which is sufficient for replacement templates.
-	var b strings.Builder
+	r, _ := utf8.DecodeRuneInString(text[pos:])
 
-	for i := from; i < to; i++ {
-		if i > from {
-			b.WriteByte(' ')
-		}
-
-		b.WriteString(sig[i].Text)
-	}
-
-	return b.String()
+	return isWordRune(r)
 }
 
-func guardsPass(sig []ruleToken, start, end int, r *compiledRule) bool {
-	var prev, next string
+var (
+	trailingWordRE = regexp.MustCompile(`([\p{L}\d]+)\s*$`)
+	leadingWordRE  = regexp.MustCompile(`^\s*([\p{L}\d]+)`)
+)
 
-	if start-1 >= 0 {
-		prev = foldKey(sig[start-1].Text)
-	}
-
-	if end < len(sig) {
-		next = foldKey(sig[end].Text)
-	}
+func guardsPass(text string, start, end int, r *compiledRule) bool {
+	prev := foldKey(matchGroup(trailingWordRE, text[:start]))
+	next := foldKey(matchGroup(leadingWordRE, text[end:]))
 
 	if len(r.before) > 0 && !sliceContains(r.before, prev) {
 		return false
@@ -365,6 +326,15 @@ func guardsPass(sig []ruleToken, start, end int, r *compiledRule) bool {
 	}
 
 	return true
+}
+
+func matchGroup(re *regexp.Regexp, s string) string {
+	m := re.FindStringSubmatch(s)
+	if m == nil {
+		return ""
+	}
+
+	return m[1]
 }
 
 func sliceContains(folded []string, v string) bool {
@@ -388,24 +358,24 @@ func expandTemplate(tmpl string, caps []string) string {
 			continue
 		}
 
-		close := strings.IndexByte(tmpl[i:], '}')
-		if close < 0 {
+		closeIdx := strings.IndexByte(tmpl[i:], '}')
+		if closeIdx < 0 {
 			b.WriteString(tmpl[i:])
 
 			break
 		}
 
-		ref := tmpl[i+1 : i+close]
+		ref := tmpl[i+1 : i+closeIdx]
 
 		n, err := strconv.Atoi(ref)
 		if err != nil || n < 1 || n > len(caps) {
 			// Not a valid capture reference; emit verbatim.
-			b.WriteString(tmpl[i : i+close+1])
+			b.WriteString(tmpl[i : i+closeIdx+1])
 		} else {
 			b.WriteString(caps[n-1])
 		}
 
-		i += close
+		i += closeIdx
 	}
 
 	return b.String()

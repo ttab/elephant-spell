@@ -23,28 +23,45 @@ dictionary words.
 
 ## Pattern DSL
 
-A pattern is a space-separated sequence of tokens:
+A pattern is matched against the text directly. Placeholders in curly braces
+capture parts of the match; everything else is literal text, matched
+case-insensitively.
 
-| Token | Matches |
-|-------|---------|
-| a literal (e.g. `kr`, `-`) | that exact token, ignoring case |
-| `:digit` | a run of digits (captured) |
-| `:word` | a single word (captured) |
-| `:gap` | up to 4 intervening words (captured) |
-| `:gap(N)` | up to N intervening words (captured) |
+| Placeholder | Matches |
+|-------------|---------|
+| `{digit}` | a run of digits (captured) |
+| `{word}` | a run of letters (captured) |
+| `{gap}` | up to 4 whitespace-separated words in between (captured) |
+| `{gap(N)}` | up to N words in between (captured) |
 
-Capturing tokens are referenced in the **replacement** by position — `{1}` is
-the first capture, `{2}` the second, and so on.
+Captures are referenced in the **replacement** by position — `{1}` is the first
+capture, `{2}` the second, and so on.
+
+### Whitespace is significant
+
+Because literal text (including spaces) is matched as written, you control
+spacing exactly. A run of spaces in the pattern means "one or more whitespace
+characters"; adjacency means none:
+
+| Pattern | Matches | Does not match |
+|---------|---------|----------------|
+| `{digit}-{digit}` | `12-15` | `12 - 15` |
+| `{digit} - {digit}` | `12 - 15` | `12-15` |
+| `{digit}kr` | `5kr` | `5 kr` |
+| `{digit} kr` | `5 kr` | `5kr` |
+
+A `{digit}`/`{word}` next to literal text only matches at a word boundary, so
+`{digit}kr` matches `5kr` but not the `5kr` inside `5krona`.
 
 ## Examples
 
-| Pattern | Replacement | "12-15" / "5 kr" / "inte längre varken" → |
-|---------|-------------|-------------------------------------------|
-| `:digit - :digit` | `{1}–{2}` | "12-15" → "12–15" (en dash) |
-| `:digit kr` | `{1} kronor` | "5 kr" → "5 kronor" |
-| `inte :gap varken` | `inte {1}` | "inte längre varken" → "inte längre" |
+| Pattern | Replacement | Effect |
+|---------|-------------|--------|
+| `{digit}-{digit}` | `{1}–{2}` | `12-15` → `12–15` (en dash) |
+| `{digit} kr` | `{1} kronor` | `5 kr` → `5 kronor` |
+| `inte {gap} varken` | `inte {1}` | `inte längre varken` → `inte längre` |
 
-The number-range dash rule (`:digit - :digit`) is built in and always active.
+The number-range dash rule (`{digit}-{digit}`) is built in and always active.
 
 ## Context guards
 

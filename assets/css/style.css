@@ -1057,6 +1057,11 @@ body {
   max-width: 760px;
   margin: 0 auto;
   padding: 24px 16px;
+  /* app-main is overflow:hidden for the master-detail pages, so this page
+     scrolls itself when there are many findings. */
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .spellcheck-page h2 {
@@ -1111,8 +1116,7 @@ body {
   border-bottom: 1px solid var(--color-border);
 }
 
-.spellcheck-entries,
-.spellcheck-suggestions {
+.spellcheck-entries {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1156,23 +1160,28 @@ body {
   color: var(--color-primary);
 }
 
-.spellcheck-suggestions {
+.spellcheck-suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin-top: 6px;
-  padding-left: 14px;
 }
 
-.spellcheck-suggestions li {
-  font-size: 0.9rem;
-  padding: 1px 0;
-}
-
-.spellcheck-suggestion-text {
-  font-family: var(--font-mono);
-}
-
-.spellcheck-suggestion-desc {
+.spellcheck-suggest-label {
+  font-size: 0.85rem;
   color: var(--color-text-muted);
-  margin-left: 8px;
+}
+
+.suggestion-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-active);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text);
 }
 
 .spellcheck-no-suggestion {

@@ -37,6 +37,9 @@ case-insensitively.
 Captures are referenced in the **replacement** by position — `{1}` is the first
 capture, `{2}` the second, and so on.
 
+The pattern and replacement fields are syntax-highlighted, and typing `{` in the
+pattern offers an autocomplete of the available placeholders.
+
 ### Whitespace is significant
 
 Because literal text (including spaces) is matched as written, you control

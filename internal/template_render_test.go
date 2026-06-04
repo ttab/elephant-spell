@@ -105,14 +105,15 @@ func TestRuleFormRender(t *testing.T) {
 				Name:        "dash",
 				Status:      "accepted",
 				Level:       "error",
-				Pattern:     ":digit - :digit",
+				Pattern:     "{digit}-{digit}",
 				Replacement: "{1}–{2}",
 				NotBefore:   "att",
 			},
 		})
 
 		for _, want := range []string{
-			`value=":digit - :digit"`,
+			// pattern/replacement render as code-input element content
+			`>{digit}-{digit}</code-input>`,
 			`name="not_before" value="att"`,
 		} {
 			if !strings.Contains(out, want) {

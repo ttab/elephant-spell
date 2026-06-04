@@ -1243,6 +1243,52 @@ code-input {
   font-weight: 600;
 }
 
+.tok-rule {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.tok-cap {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+/* single-line code-input for rule pattern/replacement */
+code-input.code-input-line {
+  height: auto;
+  min-height: 40px;
+}
+
+/* autocomplete popup */
+.code-input_autocomplete_popup {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.code-input_autocomplete_popup:empty {
+  display: none;
+}
+
+.ac-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.ac-item:hover {
+  background: var(--color-active);
+}
+
 /* common-mistakes expansion preview */
 .pattern-preview {
   margin-top: 6px;

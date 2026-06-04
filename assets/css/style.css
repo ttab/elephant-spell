@@ -1276,8 +1276,10 @@ code-input.code-input-line {
 code-input.code-input-line textarea,
 code-input.code-input-line pre {
   /* a fixed (not percentage) min-height fills one line without the grid
-     feedback loop that makes height:auto grow on every render. */
-  min-height: 1.5em !important;
+     feedback loop that makes height:auto grow on every render. Includes the
+     padding because box-sizing is border-box (below), so an empty editor still
+     stands a full line tall. */
+  min-height: calc(1.5em + var(--padding-top) + var(--padding-bottom)) !important;
   /* only the wrapping code-input draws the field border; the global
      input/textarea styling otherwise adds a second, offset border. */
   border: 0 !important;

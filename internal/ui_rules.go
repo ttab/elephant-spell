@@ -85,19 +85,20 @@ func (d *RulesUI) MenuHook(hooks *howdah.MenuHooks) {
 // uiRule mirrors a rule for templates, with guard lists flattened to
 // comma-separated strings for the text inputs.
 type uiRule struct {
-	ID          int64
-	Name        string
-	Status      string
-	Description string
-	Level       string
-	Pattern     string
-	Replacement string
-	Before      string
-	After       string
-	NotBefore   string
-	NotAfter    string
-	Updated     string
-	UpdatedBy   string
+	ID            int64
+	Name          string
+	Status        string
+	Description   string
+	Level         string
+	Pattern       string
+	Replacement   string
+	Before        string
+	After         string
+	NotBefore     string
+	NotAfter      string
+	CaseSensitive bool
+	Updated       string
+	UpdatedBy     string
 }
 
 func ruleToUI(r *spell.Rule) uiRule {
@@ -107,19 +108,20 @@ func ruleToUI(r *spell.Rule) uiRule {
 	}
 
 	return uiRule{
-		ID:          r.Id,
-		Name:        r.Name,
-		Status:      r.Status,
-		Description: r.Description,
-		Level:       level,
-		Pattern:     r.Pattern,
-		Replacement: r.Replacement,
-		Before:      strings.Join(r.Before, ", "),
-		After:       strings.Join(r.After, ", "),
-		NotBefore:   strings.Join(r.NotBefore, ", "),
-		NotAfter:    strings.Join(r.NotAfter, ", "),
-		Updated:     r.Updated,
-		UpdatedBy:   r.UpdatedBy,
+		ID:            r.Id,
+		Name:          r.Name,
+		Status:        r.Status,
+		Description:   r.Description,
+		Level:         level,
+		Pattern:       r.Pattern,
+		Replacement:   r.Replacement,
+		Before:        strings.Join(r.Before, ", "),
+		After:         strings.Join(r.After, ", "),
+		NotBefore:     strings.Join(r.NotBefore, ", "),
+		NotAfter:      strings.Join(r.NotAfter, ", "),
+		CaseSensitive: r.CaseSensitive,
+		Updated:       r.Updated,
+		UpdatedBy:     r.UpdatedBy,
 	}
 }
 
@@ -508,18 +510,19 @@ func (d *RulesUI) setRuleFromForm(
 
 	res, err := d.rules.SetRule(ctx, &spell.SetRuleRequest{
 		Rule: &spell.Rule{
-			Id:          id,
-			Language:    lang,
-			Name:        strings.TrimSpace(r.FormValue("name")),
-			Status:      status,
-			Description: strings.TrimSpace(r.FormValue("description")),
-			Level:       level,
-			Pattern:     strings.TrimSpace(r.FormValue("pattern")),
-			Replacement: strings.TrimSpace(r.FormValue("replacement")),
-			Before:      splitCommaList(r.FormValue("before")),
-			After:       splitCommaList(r.FormValue("after")),
-			NotBefore:   splitCommaList(r.FormValue("not_before")),
-			NotAfter:    splitCommaList(r.FormValue("not_after")),
+			Id:            id,
+			Language:      lang,
+			Name:          strings.TrimSpace(r.FormValue("name")),
+			Status:        status,
+			Description:   strings.TrimSpace(r.FormValue("description")),
+			Level:         level,
+			Pattern:       strings.TrimSpace(r.FormValue("pattern")),
+			Replacement:   strings.TrimSpace(r.FormValue("replacement")),
+			Before:        splitCommaList(r.FormValue("before")),
+			After:         splitCommaList(r.FormValue("after")),
+			NotBefore:     splitCommaList(r.FormValue("not_before")),
+			NotAfter:      splitCommaList(r.FormValue("not_after")),
+			CaseSensitive: r.FormValue("case_sensitive") == "on",
 		},
 	})
 	if err != nil {
@@ -561,12 +564,13 @@ func (d *RulesUI) testRule(
 	sample := r.FormValue("sample")
 
 	def := RuleDef{
-		Pattern:     strings.TrimSpace(r.FormValue("pattern")),
-		Replacement: strings.TrimSpace(r.FormValue("replacement")),
-		Before:      splitCommaList(r.FormValue("before")),
-		After:       splitCommaList(r.FormValue("after")),
-		NotBefore:   splitCommaList(r.FormValue("not_before")),
-		NotAfter:    splitCommaList(r.FormValue("not_after")),
+		Pattern:       strings.TrimSpace(r.FormValue("pattern")),
+		Replacement:   strings.TrimSpace(r.FormValue("replacement")),
+		Before:        splitCommaList(r.FormValue("before")),
+		After:         splitCommaList(r.FormValue("after")),
+		NotBefore:     splitCommaList(r.FormValue("not_before")),
+		NotAfter:      splitCommaList(r.FormValue("not_after")),
+		CaseSensitive: r.FormValue("case_sensitive") == "on",
 	}
 
 	contents := ruleTestContents{Sample: sample}

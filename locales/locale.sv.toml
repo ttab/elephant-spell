@@ -79,14 +79,14 @@ other = "Endast om föregås av"
 [RuleAfter]
 other = "Endast om följs av"
 
+[RuleCaseSensitiveHelp]
+other = "Matcha mönstret och kontextvillkoren med exakt skiftläge. Aktivera för egennamn."
+
 [SampleInput]
 other = "Exempeltext"
 
 [SampleInputHelp]
 other = "Testa regeln mot lite text för att se vad den träffar."
-
-[SampleInputPlaceholder]
-other = "Mellan 12-15 personer"
 
 [Test]
 other = "Testa"

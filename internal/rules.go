@@ -34,54 +34,57 @@ const defaultGap = 4
 // RuleDef is the uncompiled definition of a rule, decoupled from storage and
 // protobuf types.
 type RuleDef struct {
-	ID          int64
-	Name        string
-	Pattern     string
-	Replacement string
-	Description string
-	Level       postgres.EntryLevel
-	Status      string
-	Before      []string
-	After       []string
-	NotBefore   []string
-	NotAfter    []string
+	ID            int64
+	Name          string
+	Pattern       string
+	Replacement   string
+	Description   string
+	Level         postgres.EntryLevel
+	Status        string
+	Before        []string
+	After         []string
+	NotBefore     []string
+	NotAfter      []string
+	CaseSensitive bool
 }
 
 type compiledRule struct {
-	name        string
-	re          *regexp.Regexp
-	startWord   bool // pattern starts on a word character
-	endWord     bool // pattern ends on a word character
-	replacement string
-	description string
-	level       postgres.EntryLevel
-	status      string
-	before      []string
-	after       []string
-	notBefore   []string
-	notAfter    []string
+	name          string
+	re            *regexp.Regexp
+	startWord     bool // pattern starts on a word character
+	endWord       bool // pattern ends on a word character
+	replacement   string
+	description   string
+	level         postgres.EntryLevel
+	status        string
+	before        []string
+	after         []string
+	notBefore     []string
+	notAfter      []string
+	caseSensitive bool
 }
 
 // compileRule parses a rule definition into a matchable form.
 func compileRule(def RuleDef) (*compiledRule, error) {
-	re, startWord, endWord, err := compilePattern(def.Pattern)
+	re, startWord, endWord, err := compilePattern(def.Pattern, def.CaseSensitive)
 	if err != nil {
 		return nil, fmt.Errorf("compile pattern: %w", err)
 	}
 
 	return &compiledRule{
-		name:        def.Name,
-		re:          re,
-		startWord:   startWord,
-		endWord:     endWord,
-		replacement: def.Replacement,
-		description: def.Description,
-		level:       def.Level,
-		status:      def.Status,
-		before:      foldAll(def.Before),
-		after:       foldAll(def.After),
-		notBefore:   foldAll(def.NotBefore),
-		notAfter:    foldAll(def.NotAfter),
+		name:          def.Name,
+		re:            re,
+		startWord:     startWord,
+		endWord:       endWord,
+		replacement:   def.Replacement,
+		description:   def.Description,
+		level:         def.Level,
+		status:        def.Status,
+		before:        guardKeys(def.Before, def.CaseSensitive),
+		after:         guardKeys(def.After, def.CaseSensitive),
+		notBefore:     guardKeys(def.NotBefore, def.CaseSensitive),
+		notAfter:      guardKeys(def.NotAfter, def.CaseSensitive),
+		caseSensitive: def.CaseSensitive,
 	}, nil
 }
 
@@ -91,7 +94,10 @@ func isWordRune(r rune) bool {
 
 // compilePattern compiles a rule pattern into a regexp, also reporting whether
 // the pattern begins and ends on a word character (used for boundary checks).
-func compilePattern(pattern string) (*regexp.Regexp, bool, bool, error) {
+// Unless caseSensitive is set the regexp matches case-insensitively.
+func compilePattern(
+	pattern string, caseSensitive bool,
+) (*regexp.Regexp, bool, bool, error) {
 	if strings.TrimSpace(pattern) == "" {
 		return nil, false, false, errors.New("empty pattern")
 	}
@@ -179,7 +185,12 @@ func compilePattern(pattern string) (*regexp.Regexp, bool, bool, error) {
 
 	flush()
 
-	re, err := regexp.Compile("(?i)" + body.String())
+	prefix := "(?i)"
+	if caseSensitive {
+		prefix = ""
+	}
+
+	re, err := regexp.Compile(prefix + body.String())
 	if err != nil {
 		return nil, false, false, fmt.Errorf("invalid pattern: %w", err)
 	}
@@ -215,14 +226,21 @@ func gapRegex(n int) string {
 	return `(\S+(?:\s+\S+){0,` + strconv.Itoa(n-1) + `})`
 }
 
-func foldAll(in []string) []string {
+// guardKeys normalises guard words for comparison. Case-insensitive rules fold
+// the words; case-sensitive rules compare them verbatim.
+func guardKeys(in []string, caseSensitive bool) []string {
 	if len(in) == 0 {
 		return nil
 	}
 
 	out := make([]string, len(in))
+
 	for i, s := range in {
-		out[i] = foldKey(s)
+		if caseSensitive {
+			out[i] = s
+		} else {
+			out[i] = foldKey(s)
+		}
 	}
 
 	return out
@@ -306,8 +324,13 @@ var (
 )
 
 func guardsPass(text string, start, end int, r *compiledRule) bool {
-	prev := foldKey(matchGroup(trailingWordRE, text[:start]))
-	next := foldKey(matchGroup(leadingWordRE, text[end:]))
+	prev := matchGroup(trailingWordRE, text[:start])
+	next := matchGroup(leadingWordRE, text[end:])
+
+	if !r.caseSensitive {
+		prev = foldKey(prev)
+		next = foldKey(next)
+	}
 
 	if len(r.before) > 0 && !sliceContains(r.before, prev) {
 		return false

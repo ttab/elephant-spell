@@ -79,14 +79,14 @@ other = "Bare hvis foran står"
 [RuleAfter]
 other = "Bare hvis etter står"
 
+[RuleCaseSensitiveHelp]
+other = "Match mønsteret og kontekstvilkårene med nøyaktig skifte. Aktiver for egennavn."
+
 [SampleInput]
 other = "Eksempeltekst"
 
 [SampleInputHelp]
 other = "Test regelen mot litt tekst for å se hva den treffer."
-
-[SampleInputPlaceholder]
-other = "Mellan 12-15 personer"
 
 [Test]
 other = "Test"

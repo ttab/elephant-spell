@@ -58,6 +58,72 @@ func TestRuleDigitDash(t *testing.T) {
 	}
 }
 
+// TestRuleCaseSensitivity covers the case_sensitive flag over both the pattern
+// and the context guards. The "Mexico"⇒"Mexiko" rule skips the proper noun
+// "Mexico City"; case-sensitively, lowercase "city" must not trip that guard.
+func TestRuleCaseSensitivity(t *testing.T) {
+	base := RuleDef{
+		Name:        "mexico",
+		Pattern:     "Mexico",
+		Replacement: "Mexiko",
+		NotAfter:    []string{"City"},
+		Level:       postgres.EntryLevelError,
+	}
+
+	insensitive := base
+	sensitive := base
+	sensitive.CaseSensitive = true
+
+	cases := []struct {
+		name  string
+		def   RuleDef
+		input string
+		want  []matchResult
+	}{
+		{
+			"insensitive matches any casing",
+			insensitive, "mexico är vackert",
+			[]matchResult{{text: "mexico", suggestion: "Mexiko"}},
+		},
+		{
+			"insensitive guard skips 'City' and 'city' alike",
+			insensitive, "Mexico city är stort",
+			nil,
+		},
+		{
+			"sensitive only matches exact casing",
+			sensitive, "mexico är vackert",
+			nil,
+		},
+		{
+			"sensitive guard skips only exact 'City'",
+			sensitive, "Mexico City är stort",
+			nil,
+		},
+		{
+			"sensitive guard fires on lowercase 'city'",
+			sensitive, "Mexico city är stort",
+			[]matchResult{{text: "Mexico", suggestion: "Mexiko"}},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := runRule(t, c.def, c.input)
+
+			if len(got) != len(c.want) {
+				t.Fatalf("got %d matches, want %d: %+v", len(got), len(c.want), got)
+			}
+
+			for i := range c.want {
+				if got[i] != c.want[i] {
+					t.Errorf("match %d = %+v, want %+v", i, got[i], c.want[i])
+				}
+			}
+		})
+	}
+}
+
 // TestRuleWhitespaceSignificant covers the whitespace handling: adjacency in the
 // pattern requires adjacency in the source, and a space requires whitespace.
 func TestRuleWhitespaceSignificant(t *testing.T) {
@@ -149,7 +215,7 @@ func TestRuleGuards(t *testing.T) {
 
 func TestRulePatternErrors(t *testing.T) {
 	for _, pattern := range []string{"", "   ", "{gap(x)}", "{gap(-1)}", "{bogus}", "a {digit"} {
-		if _, _, _, err := compilePattern(pattern); err == nil {
+		if _, _, _, err := compilePattern(pattern, false); err == nil {
 			t.Errorf("pattern %q should not compile", pattern)
 		}
 	}

@@ -79,14 +79,14 @@ other = "Only if preceded by"
 [RuleAfter]
 other = "Only if followed by"
 
+[RuleCaseSensitiveHelp]
+other = "Match the pattern and context guards with their exact casing. Enable for proper nouns."
+
 [SampleInput]
 other = "Sample input"
 
 [SampleInputHelp]
 other = "Try the rule against some text to see what it matches."
-
-[SampleInputPlaceholder]
-other = "Mellan 12-15 personer"
 
 [Test]
 other = "Test"

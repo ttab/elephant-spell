@@ -241,11 +241,15 @@ func entryAsPhrase(e postgres.Entry) Phrase {
 	var (
 		forms         map[string]string
 		caseSensitive bool
+		g             guards
 	)
 
 	if e.Data != nil {
 		forms = e.Data.Forms
 		caseSensitive = e.Data.CaseSensitive
+		g = compileGuards(
+			e.Data.Before, e.Data.After,
+			e.Data.NotBefore, e.Data.NotAfter, caseSensitive)
 	}
 
 	return Phrase{
@@ -256,5 +260,6 @@ func entryAsPhrase(e postgres.Entry) Phrase {
 		Forms:          forms,
 		Status:         e.Status,
 		CaseSensitive:  caseSensitive,
+		Guards:         g,
 	}
 }

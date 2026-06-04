@@ -107,6 +107,10 @@ type uiEntry struct {
 	Updated        string
 	UpdatedBy      string
 	CaseSensitive  bool
+	Before         string
+	After          string
+	NotBefore      string
+	NotAfter       string
 }
 
 func customEntryToUI(e *spell.CustomEntry) uiEntry {
@@ -125,6 +129,10 @@ func customEntryToUI(e *spell.CustomEntry) uiEntry {
 		Updated:        e.Updated,
 		UpdatedBy:      e.UpdatedBy,
 		CaseSensitive:  e.CaseSensitive,
+		Before:         strings.Join(e.Before, ", "),
+		After:          strings.Join(e.After, ", "),
+		NotBefore:      strings.Join(e.NotBefore, ", "),
+		NotAfter:       strings.Join(e.NotAfter, ", "),
 	}
 }
 
@@ -658,6 +666,10 @@ func (d *DictionariesUI) setEntryFromForm(
 			Level:          level,
 			Forms:          forms,
 			CaseSensitive:  r.FormValue("case_sensitive") == "on",
+			Before:         splitCommaList(r.FormValue("before")),
+			After:          splitCommaList(r.FormValue("after")),
+			NotBefore:      splitCommaList(r.FormValue("not_before")),
+			NotAfter:       splitCommaList(r.FormValue("not_after")),
 		},
 	})
 	if err != nil {

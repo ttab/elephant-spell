@@ -26,19 +26,19 @@ func (q *Queries) DeleteEntry(ctx context.Context, arg DeleteEntryParams) error 
 	return err
 }
 
-const deleteRule = `-- name: DeleteRule :exec
+const deleteRule = `-- name: DeleteRule :one
 DELETE FROM rule
-WHERE language = $1 AND name = $2
+WHERE id = $1
+RETURNING language
 `
 
-type DeleteRuleParams struct {
-	Language string
-	Name     string
-}
-
-func (q *Queries) DeleteRule(ctx context.Context, arg DeleteRuleParams) error {
-	_, err := q.db.Exec(ctx, deleteRule, arg.Language, arg.Name)
-	return err
+// DeleteRule removes a rule and returns its language so the change can be
+// recorded for the right spellchecker.
+func (q *Queries) DeleteRule(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRow(ctx, deleteRule, id)
+	var language string
+	err := row.Scan(&language)
+	return language, err
 }
 
 const getEntry = `-- name: GetEntry :one
@@ -82,21 +82,17 @@ func (q *Queries) GetLastEventID(ctx context.Context) (int64, error) {
 }
 
 const getRule = `-- name: GetRule :one
-SELECT language, name, status, description, level, pattern, replacement, data,
-       updated, updated_by
+SELECT id, language, name, status, description, level, pattern, replacement,
+       data, updated, updated_by
 FROM rule
-WHERE language = $1 AND name = $2
+WHERE id = $1
 `
 
-type GetRuleParams struct {
-	Language string
-	Name     string
-}
-
-func (q *Queries) GetRule(ctx context.Context, arg GetRuleParams) (Rule, error) {
-	row := q.db.QueryRow(ctx, getRule, arg.Language, arg.Name)
+func (q *Queries) GetRule(ctx context.Context, id int64) (Rule, error) {
+	row := q.db.QueryRow(ctx, getRule, id)
 	var i Rule
 	err := row.Scan(
+		&i.ID,
 		&i.Language,
 		&i.Name,
 		&i.Status,
@@ -130,6 +126,48 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64
 		arg.Entry,
 		arg.Deleted,
 		arg.Kind,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertRule = `-- name: InsertRule :one
+INSERT INTO rule(
+       language, name, status, description, level, pattern, replacement, data,
+       updated, updated_by
+) VALUES (
+       $1, $2, $3, $4, $5, $6, $7,
+       $8, $9, $10
+)
+RETURNING id
+`
+
+type InsertRuleParams struct {
+	Language    string
+	Name        string
+	Status      string
+	Description string
+	Level       EntryLevel
+	Pattern     string
+	Replacement string
+	Data        *RuleData
+	Updated     pgtype.Timestamptz
+	UpdatedBy   string
+}
+
+func (q *Queries) InsertRule(ctx context.Context, arg InsertRuleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertRule,
+		arg.Language,
+		arg.Name,
+		arg.Status,
+		arg.Description,
+		arg.Level,
+		arg.Pattern,
+		arg.Replacement,
+		arg.Data,
+		arg.Updated,
+		arg.UpdatedBy,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -263,8 +301,8 @@ func (q *Queries) ListRuleCounts(ctx context.Context) ([]ListRuleCountsRow, erro
 }
 
 const listRules = `-- name: ListRules :many
-SELECT language, name, status, description, level, pattern, replacement, data,
-       updated, updated_by
+SELECT id, language, name, status, description, level, pattern, replacement,
+       data, updated, updated_by
 FROM rule
 WHERE
         ($1::text IS NULL OR language = $1)
@@ -303,6 +341,7 @@ func (q *Queries) ListRules(ctx context.Context, arg ListRulesParams) ([]Rule, e
 	for rows.Next() {
 		var i Rule
 		if err := rows.Scan(
+			&i.ID,
 			&i.Language,
 			&i.Name,
 			&i.Status,
@@ -470,27 +509,49 @@ func (q *Queries) SetEntryStatus(ctx context.Context, arg SetEntryStatusParams) 
 	return result.RowsAffected(), nil
 }
 
-const setRule = `-- name: SetRule :exec
-INSERT INTO rule(
-       language, name, status, description, level, pattern, replacement, data,
-       updated, updated_by
-) VALUES (
-       $1, $2, $3, $4, $5, $6, $7,
-       $8, $9, $10
-) ON CONFLICT(language, name) DO
-  UPDATE SET
-       status = excluded.status,
-       description = excluded.description,
-       level = excluded.level,
-       pattern = excluded.pattern,
-       replacement = excluded.replacement,
-       data = excluded.data,
-       updated = excluded.updated,
-       updated_by = excluded.updated_by
+const setRuleStatus = `-- name: SetRuleStatus :one
+UPDATE rule
+SET status = $1, updated = $2, updated_by = $3
+WHERE id = $4
+RETURNING language
 `
 
-type SetRuleParams struct {
-	Language    string
+type SetRuleStatusParams struct {
+	Status    string
+	Updated   pgtype.Timestamptz
+	UpdatedBy string
+	ID        int64
+}
+
+// SetRuleStatus updates only the moderation status of a rule, returning its
+// language so the change can be recorded for the right spellchecker.
+func (q *Queries) SetRuleStatus(ctx context.Context, arg SetRuleStatusParams) (string, error) {
+	row := q.db.QueryRow(ctx, setRuleStatus,
+		arg.Status,
+		arg.Updated,
+		arg.UpdatedBy,
+		arg.ID,
+	)
+	var language string
+	err := row.Scan(&language)
+	return language, err
+}
+
+const updateRule = `-- name: UpdateRule :execrows
+UPDATE rule
+SET name = $1,
+    status = $2,
+    description = $3,
+    level = $4,
+    pattern = $5,
+    replacement = $6,
+    data = $7,
+    updated = $8,
+    updated_by = $9
+WHERE id = $10
+`
+
+type UpdateRuleParams struct {
 	Name        string
 	Status      string
 	Description string
@@ -500,11 +561,11 @@ type SetRuleParams struct {
 	Data        *RuleData
 	Updated     pgtype.Timestamptz
 	UpdatedBy   string
+	ID          int64
 }
 
-func (q *Queries) SetRule(ctx context.Context, arg SetRuleParams) error {
-	_, err := q.db.Exec(ctx, setRule,
-		arg.Language,
+func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateRule,
 		arg.Name,
 		arg.Status,
 		arg.Description,
@@ -514,32 +575,7 @@ func (q *Queries) SetRule(ctx context.Context, arg SetRuleParams) error {
 		arg.Data,
 		arg.Updated,
 		arg.UpdatedBy,
-	)
-	return err
-}
-
-const setRuleStatus = `-- name: SetRuleStatus :execrows
-UPDATE rule
-SET status = $1, updated = $2, updated_by = $3
-WHERE language = $4 AND name = $5
-`
-
-type SetRuleStatusParams struct {
-	Status    string
-	Updated   pgtype.Timestamptz
-	UpdatedBy string
-	Language  string
-	Name      string
-}
-
-// SetRuleStatus updates only the moderation status of a rule.
-func (q *Queries) SetRuleStatus(ctx context.Context, arg SetRuleStatusParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setRuleStatus,
-		arg.Status,
-		arg.Updated,
-		arg.UpdatedBy,
-		arg.Language,
-		arg.Name,
+		arg.ID,
 	)
 	if err != nil {
 		return 0, err

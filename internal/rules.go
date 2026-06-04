@@ -49,6 +49,7 @@ type matcher struct {
 // RuleDef is the uncompiled definition of a rule, decoupled from storage and
 // protobuf types.
 type RuleDef struct {
+	ID          int64
 	Name        string
 	Pattern     string
 	Replacement string

@@ -82,6 +82,7 @@ type JobLock struct {
 }
 
 type Rule struct {
+	ID          int64
 	Language    string
 	Name        string
 	Status      string

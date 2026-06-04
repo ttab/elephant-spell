@@ -33,7 +33,8 @@ type moderationLang struct {
 // word or a pattern rule.
 type moderationItem struct {
 	Kind           string // "word" or "rule"
-	Name           string // entry text or rule name
+	Ident          string // entry text, or rule id, used in action URLs
+	Name           string // entry text or rule label
 	Level          string
 	Description    string
 	Updated        string
@@ -120,6 +121,7 @@ func (d *DictionariesUI) moderationData(
 	for _, e := range entries.Entries {
 		items = append(items, moderationItem{
 			Kind:           "word",
+			Ident:          e.Text,
 			Name:           e.Text,
 			Level:          levelString(e.Level),
 			Description:    e.Description,
@@ -133,6 +135,7 @@ func (d *DictionariesUI) moderationData(
 	for _, r := range rules.Rules {
 		items = append(items, moderationItem{
 			Kind:        "rule",
+			Ident:       strconv.FormatInt(r.Id, 10),
 			Name:        r.Name,
 			Level:       levelString(r.Level),
 			Description: r.Description,
@@ -239,19 +242,22 @@ func (d *DictionariesUI) moderationAccept(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
 	return d.moderate(ctx, w, r,
-		func(svcCtx context.Context, kind, lang, name string) error {
+		func(svcCtx context.Context, kind, lang, ident string) error {
 			if kind == "rule" {
-				_, err := d.rules.SetRuleStatus(svcCtx,
-					&spell.SetRuleStatusRequest{
-						Language: lang, Name: name, Status: "accepted",
-					})
+				id, err := strconv.ParseInt(ident, 10, 64)
+				if err != nil {
+					return err
+				}
+
+				_, err = d.rules.SetRuleStatus(svcCtx,
+					&spell.SetRuleStatusRequest{Id: id, Status: "accepted"})
 
 				return err
 			}
 
 			_, err := d.dicts.SetEntryStatus(svcCtx,
 				&spell.SetEntryStatusRequest{
-					Language: lang, Text: name, Status: "accepted",
+					Language: lang, Text: ident, Status: "accepted",
 				})
 
 			return err
@@ -263,17 +269,21 @@ func (d *DictionariesUI) moderationReject(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
 	return d.moderate(ctx, w, r,
-		func(svcCtx context.Context, kind, lang, name string) error {
+		func(svcCtx context.Context, kind, lang, ident string) error {
 			if kind == "rule" {
-				_, err := d.rules.DeleteRule(svcCtx, &spell.DeleteRuleRequest{
-					Language: lang, Name: name,
-				})
+				id, err := strconv.ParseInt(ident, 10, 64)
+				if err != nil {
+					return err
+				}
+
+				_, err = d.rules.DeleteRule(svcCtx,
+					&spell.DeleteRuleRequest{Id: id})
 
 				return err
 			}
 
 			_, err := d.dicts.DeleteEntry(svcCtx, &spell.DeleteEntryRequest{
-				Language: lang, Text: name,
+				Language: lang, Text: ident,
 			})
 
 			return err
@@ -285,7 +295,7 @@ func (d *DictionariesUI) moderationReject(
 // steps back one page.
 func (d *DictionariesUI) moderate(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
-	action func(svcCtx context.Context, kind, lang, name string) error,
+	action func(svcCtx context.Context, kind, lang, ident string) error,
 ) (*howdah.Page, error) {
 	ctx, err := d.auth.RequireAuth(ctx, w, r)
 	if err != nil {
@@ -298,7 +308,7 @@ func (d *DictionariesUI) moderate(
 
 	lang := r.PathValue("language")
 	kind := r.PathValue("kind")
-	name := r.PathValue("name")
+	ident := r.PathValue("ident")
 
 	page, err := pageParam(r)
 	if err != nil {
@@ -310,7 +320,7 @@ func (d *DictionariesUI) moderate(
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	err = action(svcCtx, kind, lang, name)
+	err = action(svcCtx, kind, lang, ident)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}

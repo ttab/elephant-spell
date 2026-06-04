@@ -817,6 +817,7 @@ func ruleToRPC(r postgres.Rule) (*spell.Rule, error) {
 	}
 
 	out := &spell.Rule{
+		Id:          r.ID,
 		Language:    r.Language,
 		Name:        r.Name,
 		Status:      r.Status,

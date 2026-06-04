@@ -39,7 +39,7 @@
     <div class="mod-card-foot">
       <div class="mod-card-meta">
         {{if .IsRule}}
-        <a href="/rules/{{$.Contents.Language}}/{{pathEscape .Name}}">{{t "Edit" "Edit"}}</a>
+        <a href="/rules/{{$.Contents.Language}}/{{.Ident}}">{{t "Edit" "Edit"}}</a>
         {{else}}
         <a href="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Name}}">{{t "Edit" "Edit"}}</a>
         {{end}}
@@ -49,13 +49,13 @@
       <div class="mod-card-actions">
         <button
           class="btn btn-sm btn-danger"
-          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Name}}/reject?page={{$.Contents.Page}}"
+          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Ident}}/reject?page={{$.Contents.Page}}"
           hx-target="#moderation-main"
           hx-confirm="{{t "ConfirmReject" "Reject and delete this item?"}}"
         >{{t "Reject" "Reject"}}</button>
         <button
           class="btn btn-sm btn-primary"
-          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Name}}/accept?page={{$.Contents.Page}}"
+          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Ident}}/accept?page={{$.Contents.Page}}"
           hx-target="#moderation-main"
         >{{t "Accept" "Accept"}}</button>
       </div>

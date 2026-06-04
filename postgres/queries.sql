@@ -84,43 +84,53 @@ SELECT COALESCE(MAX(id), 0)::bigint AS id FROM eventlog;
 -- name: PruneEventlog :execrows
 DELETE FROM eventlog WHERE created < @before;
 
--- name: SetRule :exec
+-- name: InsertRule :one
 INSERT INTO rule(
        language, name, status, description, level, pattern, replacement, data,
        updated, updated_by
 ) VALUES (
        @language, @name, @status, @description, @level, @pattern, @replacement,
        @data, @updated, @updated_by
-) ON CONFLICT(language, name) DO
-  UPDATE SET
-       status = excluded.status,
-       description = excluded.description,
-       level = excluded.level,
-       pattern = excluded.pattern,
-       replacement = excluded.replacement,
-       data = excluded.data,
-       updated = excluded.updated,
-       updated_by = excluded.updated_by;
+)
+RETURNING id;
+
+-- name: UpdateRule :execrows
+UPDATE rule
+SET name = @name,
+    status = @status,
+    description = @description,
+    level = @level,
+    pattern = @pattern,
+    replacement = @replacement,
+    data = @data,
+    updated = @updated,
+    updated_by = @updated_by
+WHERE id = @id;
 
 -- name: GetRule :one
-SELECT language, name, status, description, level, pattern, replacement, data,
-       updated, updated_by
+SELECT id, language, name, status, description, level, pattern, replacement,
+       data, updated, updated_by
 FROM rule
-WHERE language = @language AND name = @name;
+WHERE id = @id;
 
--- name: DeleteRule :exec
+-- DeleteRule removes a rule and returns its language so the change can be
+-- recorded for the right spellchecker.
+-- name: DeleteRule :one
 DELETE FROM rule
-WHERE language = @language AND name = @name;
+WHERE id = @id
+RETURNING language;
 
--- SetRuleStatus updates only the moderation status of a rule.
--- name: SetRuleStatus :execrows
+-- SetRuleStatus updates only the moderation status of a rule, returning its
+-- language so the change can be recorded for the right spellchecker.
+-- name: SetRuleStatus :one
 UPDATE rule
 SET status = @status, updated = @updated, updated_by = @updated_by
-WHERE language = @language AND name = @name;
+WHERE id = @id
+RETURNING language;
 
 -- name: ListRules :many
-SELECT language, name, status, description, level, pattern, replacement, data,
-       updated, updated_by
+SELECT id, language, name, status, description, level, pattern, replacement,
+       data, updated, updated_by
 FROM rule
 WHERE
         (sqlc.narg('language')::text IS NULL OR language = @language)

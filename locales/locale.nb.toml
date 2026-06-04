@@ -127,6 +127,12 @@ other = "Regel oppdatert"
 [ConfirmDeleteRule]
 other = "Er du sikker på at du vil slette regelen?"
 
+[RuleKind]
+other = "Regel"
+
+[WordKind]
+other = "Ord"
+
 [Language]
 other = "Språk"
 

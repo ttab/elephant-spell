@@ -377,7 +377,7 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 	}
 
 	cDicts := NewDictionariesUI(
-		a.logger, cAuth, a.p.AuthInfoParser, a,
+		a.logger, cAuth, a.p.AuthInfoParser, a, a,
 		supportedLanguages, a.p.DefaultLanguage,
 	)
 

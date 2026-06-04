@@ -1090,6 +1090,18 @@ body {
   border-radius: var(--radius-sm);
 }
 
+.mod-card-kind {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+
 .level-error {
   background: var(--color-warning-bg);
   color: var(--color-warning-text);

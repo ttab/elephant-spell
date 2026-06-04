@@ -22,6 +22,7 @@ type DictionariesUI struct {
 	auth            howdah.Authenticator
 	authParser      elephantine.AuthInfoParser
 	dicts           spell.Dictionaries
+	rules           spell.Rules
 	languages       []string
 	defaultLanguage string
 }
@@ -31,6 +32,7 @@ func NewDictionariesUI(
 	auth howdah.Authenticator,
 	authParser elephantine.AuthInfoParser,
 	dicts spell.Dictionaries,
+	rules spell.Rules,
 	languages []string,
 	defaultLanguage string,
 ) *DictionariesUI {
@@ -45,6 +47,7 @@ func NewDictionariesUI(
 		auth:            auth,
 		authParser:      authParser,
 		dicts:           dicts,
+		rules:           rules,
 		languages:       languages,
 		defaultLanguage: defaultLanguage,
 	}
@@ -72,8 +75,8 @@ func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("POST /dictionaries/{language}/{text}/delete", d.deleteEntry)
 	mux.HandleFunc("GET /moderation/{$}", d.moderationRedirect)
 	mux.HandleFunc("GET /moderation/{language}/{$}", d.moderationPage)
-	mux.HandleFunc("POST /moderation/{language}/{text}/accept", d.moderationAccept)
-	mux.HandleFunc("POST /moderation/{language}/{text}/reject", d.moderationReject)
+	mux.HandleFunc("POST /moderation/{language}/{kind}/{name}/accept", d.moderationAccept)
+	mux.HandleFunc("POST /moderation/{language}/{kind}/{name}/reject", d.moderationReject)
 }
 
 func (d *DictionariesUI) MenuHook(hooks *howdah.MenuHooks) {

@@ -127,6 +127,12 @@ other = "Rule updated"
 [ConfirmDeleteRule]
 other = "Are you sure you want to delete this rule?"
 
+[RuleKind]
+other = "Rule"
+
+[WordKind]
+other = "Word"
+
 [Language]
 other = "Language"
 

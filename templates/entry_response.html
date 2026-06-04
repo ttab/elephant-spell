@@ -1,0 +1,8 @@
+<div id="entry-list" hx-swap-oob="true">
+{{template "entry_list.html" .}}
+</div>
+{{if .Contents.Entry}}
+{{template "entry_form.html" .}}
+{{else}}
+<div class="panel-right-empty">{{t "SelectEntry" "Select an entry to edit"}}</div>
+{{end}}

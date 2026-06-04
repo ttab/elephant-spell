@@ -63,12 +63,12 @@ GROUP BY language;
 LOCK TABLE eventlog IN EXCLUSIVE MODE;
 
 -- name: InsertEvent :one
-INSERT INTO eventlog(language, entry, deleted)
-VALUES (@language, @entry, @deleted)
+INSERT INTO eventlog(language, entry, deleted, kind)
+VALUES (@language, @entry, @deleted, @kind)
 RETURNING id;
 
 -- name: ReadEventlog :many
-SELECT id, language, entry, deleted, created
+SELECT id, language, entry, deleted, created, kind
 FROM eventlog
 WHERE id > @after
 ORDER BY id
@@ -83,3 +83,59 @@ SELECT COALESCE(MAX(id), 0)::bigint AS id FROM eventlog;
 -- consumer lag window are safe to drop.
 -- name: PruneEventlog :execrows
 DELETE FROM eventlog WHERE created < @before;
+
+-- name: SetRule :exec
+INSERT INTO rule(
+       language, name, status, description, level, pattern, replacement, data,
+       updated, updated_by
+) VALUES (
+       @language, @name, @status, @description, @level, @pattern, @replacement,
+       @data, @updated, @updated_by
+) ON CONFLICT(language, name) DO
+  UPDATE SET
+       status = excluded.status,
+       description = excluded.description,
+       level = excluded.level,
+       pattern = excluded.pattern,
+       replacement = excluded.replacement,
+       data = excluded.data,
+       updated = excluded.updated,
+       updated_by = excluded.updated_by;
+
+-- name: GetRule :one
+SELECT language, name, status, description, level, pattern, replacement, data,
+       updated, updated_by
+FROM rule
+WHERE language = @language AND name = @name;
+
+-- name: DeleteRule :exec
+DELETE FROM rule
+WHERE language = @language AND name = @name;
+
+-- SetRuleStatus updates only the moderation status of a rule.
+-- name: SetRuleStatus :execrows
+UPDATE rule
+SET status = @status, updated = @updated, updated_by = @updated_by
+WHERE language = @language AND name = @name;
+
+-- name: ListRules :many
+SELECT language, name, status, description, level, pattern, replacement, data,
+       updated, updated_by
+FROM rule
+WHERE
+        (sqlc.narg('language')::text IS NULL OR language = @language)
+        AND (sqlc.narg('query')::text IS NULL OR (
+                name ILIKE @query
+                OR description ILIKE @query
+                OR pattern ILIKE @query
+                OR replacement ILIKE @query
+        ))
+        AND (sqlc.narg('status')::text IS NULL OR status = @status)
+ORDER BY language, name
+LIMIT sqlc.arg('limit')::bigint OFFSET sqlc.arg('offset')::bigint;
+
+-- name: ListRuleCounts :many
+SELECT language, COUNT(*) AS rules,
+       COUNT(*) FILTER (WHERE status = 'pending') AS pending
+FROM rule
+GROUP BY language;

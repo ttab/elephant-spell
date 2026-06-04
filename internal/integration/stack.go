@@ -33,6 +33,7 @@ type Stack struct {
 	Admin        Caller
 	Check        spellapi.Check
 	Dictionaries spellapi.Dictionaries
+	Rules        spellapi.Rules
 }
 
 // NewStack boots backing services, starts the real spell server, and waits for
@@ -123,6 +124,7 @@ func NewStack(t T) *Stack {
 		Admin:        admin,
 		Check:        spellapi.NewCheckProtobufClient(baseURL, BearerHTTPClient(nil, admin.Token)),
 		Dictionaries: spellapi.NewDictionariesProtobufClient(baseURL, BearerHTTPClient(nil, admin.Token)),
+		Rules:        spellapi.NewRulesProtobufClient(baseURL, BearerHTTPClient(nil, admin.Token)),
 	}
 }
 

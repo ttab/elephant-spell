@@ -16,4 +16,8 @@ sql:
           go_type:
             pointer: true
             type: "EntryData"
+        - column: "rule.data"
+          go_type:
+            pointer: true
+            type: "RuleData"
 

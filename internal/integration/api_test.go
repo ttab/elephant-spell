@@ -467,16 +467,14 @@ func TestAPI(t *testing.T) {
 	})
 
 	t.Run("custom_rule_flow", func(t *testing.T) {
-		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
-			Entry: &spellapi.CustomEntry{
-				Language: "sv-se",
-				Text:     "kronor-rule",
-				Status:   "accepted",
-				Level:    spellapi.CorrectionLevel_LEVEL_SUGGESTION,
-				Rule: &spellapi.Rule{
-					Pattern:     ":digit kr",
-					Replacement: "{1} kronor",
-				},
+		_, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Language:    "sv-se",
+				Name:        "kronor-rule",
+				Status:      "accepted",
+				Level:       spellapi.CorrectionLevel_LEVEL_SUGGESTION,
+				Pattern:     ":digit kr",
+				Replacement: "{1} kronor",
 			},
 		})
 		if err != nil {
@@ -518,30 +516,75 @@ func TestAPI(t *testing.T) {
 			t.Errorf("expected '5 kronor' suggestion, got %+v", sug.Suggestions)
 		}
 
-		got, err := stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+		got, err := stack.Rules.GetRule(ctx, &spellapi.GetRuleRequest{
 			Language: "sv-se",
-			Text:     "kronor-rule",
+			Name:     "kronor-rule",
 		})
 		if err != nil {
 			t.Fatalf("get rule: %v", err)
 		}
 
-		if got.Entry.Rule == nil || got.Entry.Rule.Pattern != ":digit kr" {
-			t.Errorf("rule did not round-trip: %+v", got.Entry.Rule)
+		if got.Rule == nil || got.Rule.Pattern != ":digit kr" {
+			t.Errorf("rule did not round-trip: %+v", got.Rule)
+		}
+
+		// The rule shows up in the rule listing, filtered by pattern substring.
+		list, err := stack.Rules.ListRules(ctx, &spellapi.ListRulesRequest{
+			Language: "sv-se", Query: "kr",
+		})
+		if err != nil {
+			t.Fatalf("list rules: %v", err)
+		}
+
+		if !slices.ContainsFunc(list.Rules, func(r *spellapi.Rule) bool {
+			return r.Name == "kronor-rule"
+		}) {
+			t.Errorf("rule missing from listing: %+v", list.Rules)
 		}
 	})
 
 	t.Run("invalid_rule_rejected", func(t *testing.T) {
-		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
-			Entry: &spellapi.CustomEntry{
+		_, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
 				Language: "sv-se",
-				Text:     "bad-rule",
+				Name:     "bad-rule",
 				Status:   "accepted",
-				Rule:     &spellapi.Rule{Pattern: ":gap(x)"},
+				Pattern:  ":gap(x)",
 			},
 		})
 
 		assertTwirpCode(t, err, twirp.InvalidArgument)
+	})
+
+	t.Run("rule_status_and_delete", func(t *testing.T) {
+		_, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Language: "sv-se", Name: "pending-rule", Status: "pending",
+				Pattern: ":digit %", Replacement: "{1} procent",
+			},
+		})
+		if err != nil {
+			t.Fatalf("set pending rule: %v", err)
+		}
+
+		_, err = stack.Rules.SetRuleStatus(ctx, &spellapi.SetRuleStatusRequest{
+			Language: "sv-se", Name: "pending-rule", Status: "accepted",
+		})
+		if err != nil {
+			t.Fatalf("set rule status: %v", err)
+		}
+
+		_, err = stack.Rules.DeleteRule(ctx, &spellapi.DeleteRuleRequest{
+			Language: "sv-se", Name: "pending-rule",
+		})
+		if err != nil {
+			t.Fatalf("delete rule: %v", err)
+		}
+
+		_, err = stack.Rules.SetRuleStatus(ctx, &spellapi.SetRuleStatusRequest{
+			Language: "sv-se", Name: "does-not-exist", Status: "accepted",
+		})
+		assertTwirpCode(t, err, twirp.NotFound)
 	})
 }
 

@@ -53,6 +53,13 @@
 
 {{define "footer"}}
     </main>
+    <dialog id="expansion-modal" class="modal">
+      <div class="modal-head">
+        <h3>{{t "Expansions" "Expansions"}}</h3>
+        <button type="button" class="modal-close" data-close-modal aria-label="{{t "Close" "Close"}}">×</button>
+      </div>
+      <div id="expansion-modal-body" class="modal-body"></div>
+    </dialog>
     <script>
       function cycleTheme() {
         var current = document.documentElement.getAttribute('data-theme');

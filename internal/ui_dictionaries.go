@@ -67,6 +67,7 @@ func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("GET /dictionaries/{language}/{text}", d.entryPage)
 	mux.HandleFunc("POST /dictionaries/{language}/_new", d.saveNewEntry)
 	mux.HandleFunc("POST /dictionaries/{language}/_validate", d.validateMistakes)
+	mux.HandleFunc("POST /dictionaries/{language}/_expansions", d.listExpansions)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}", d.saveEntry)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}/delete", d.deleteEntry)
 	mux.HandleFunc("GET /moderation/{$}", d.moderationRedirect)
@@ -806,6 +807,89 @@ func parseForms(form url.Values) map[string]string {
 	}
 
 	return forms
+}
+
+// maxExpansionsShown caps how many expansions the modal renders, to keep the
+// DOM bounded for patterns that expand to very many combinations.
+const maxExpansionsShown = 500
+
+// expansionGroup is the full expansion of one common-mistakes line.
+type expansionGroup struct {
+	Line       string
+	Expansions []string
+	Error      string
+}
+
+type expansionsContents struct {
+	Groups  []expansionGroup
+	Total   int
+	Shown   int
+	Omitted int
+}
+
+// listExpansions enumerates every expansion of the submitted common-mistakes
+// patterns for the detail modal, reusing the canonical Expand logic.
+func (d *DictionariesUI) listExpansions(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	_, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	err = r.ParseForm()
+	if err != nil {
+		return nil, howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid form data",
+			fmt.Errorf("parse form: %w", err),
+		)
+	}
+
+	var (
+		groups []expansionGroup
+		total  int
+		shown  int
+	)
+
+	for _, line := range strings.Split(r.FormValue("common_mistakes"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		group := expansionGroup{Line: line}
+
+		expanded, err := Expand(line)
+		if err != nil {
+			group.Error = err.Error()
+			groups = append(groups, group)
+
+			continue
+		}
+
+		total += len(expanded)
+
+		for _, e := range expanded {
+			if shown >= maxExpansionsShown {
+				break
+			}
+
+			group.Expansions = append(group.Expansions, e)
+			shown++
+		}
+
+		groups = append(groups, group)
+	}
+
+	return &howdah.Page{
+		Template: "expansions.html",
+		Contents: expansionsContents{
+			Groups:  groups,
+			Total:   total,
+			Shown:   shown,
+			Omitted: total - shown,
+		},
+	}, nil
 }
 
 func (d *DictionariesUI) listEntries(

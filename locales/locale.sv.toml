@@ -79,6 +79,21 @@ other = "endast om föregås av..."
 [RuleAfter]
 other = "endast om följs av..."
 
+[ViewExpansions]
+other = "visa alla"
+
+[Expansions]
+other = "Expansioner"
+
+[ExpansionsOmitted]
+other = "Visar de första {{.Shown}} av {{.Total}} expansionerna."
+
+[NoExpansions]
+other = "Inget att expandera ännu."
+
+[Close]
+other = "Stäng"
+
 [Language]
 other = "Språk"
 

@@ -8,6 +8,13 @@
   </li>
   {{end}}
 </ul>
+{{if gt .Total 0}}
+<button type="button" class="pattern-preview-total" data-open-expansions>
+  {{t "TotalExpansions" "Total expansions"}}: {{.Total}} ·
+  <span class="pattern-preview-view">{{t "ViewExpansions" "view all"}}</span>
+</button>
+{{else}}
 <div class="pattern-preview-total">{{t "TotalExpansions" "Total expansions"}}: {{.Total}}</div>
+{{end}}
 {{end}}
 {{end}}

@@ -79,6 +79,21 @@ other = "bare hvis foran står..."
 [RuleAfter]
 other = "bare hvis etter står..."
 
+[ViewExpansions]
+other = "vis alle"
+
+[Expansions]
+other = "Utvidelser"
+
+[ExpansionsOmitted]
+other = "Viser de første {{.Shown}} av {{.Total}} utvidelsene."
+
+[NoExpansions]
+other = "Ingenting å utvide ennå."
+
+[Close]
+other = "Lukk"
+
 [Language]
 other = "Språk"
 

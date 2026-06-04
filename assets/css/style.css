@@ -1253,38 +1253,48 @@ code-input {
   font-weight: 600;
 }
 
-/* single-line code-input for rule pattern/replacement. A fixed height is
-   required: code-input is display:grid and its textarea/pre use percentage
-   min-heights, so height:auto feeds back and the box grows on every render. */
+/* Compact code-input for rule pattern/replacement fields. code-input is built
+   as a multi-line code editor (a transparent textarea over a highlighted
+   <pre>); rather than force it into a fixed single-line box — which desyncs the
+   two layers as soon as content scrolls — let it grow with its content and wrap
+   long lines, so it never needs to scroll. */
 code-input.code-input-line {
-  height: 44px;
-  /* code-input defaults to 16px padding on every side, which on a 44px-tall
-     single-line box leaves only ~12px for a ~24px line — the text spills and,
-     with overflow visible (below), overlaps neighbouring fields. Shrink the
-     padding so one line fits and stays vertically centred. */
+  height: auto;
+  /* code-input defaults to 16px padding on every side; trim it so a one-line
+     field is compact like the surrounding inputs. */
   --padding-top: 11px;
   --padding-bottom: 11px;
   --padding-left: 12px;
   --padding-right: 12px;
   font-size: 0.9rem;
-  /* let the autocomplete popup escape the fixed-height box instead of being
-     clipped to roughly one row. */
+  /* the autocomplete popup is appended inside the element, so it must be able
+     to escape the box. Safe here because the content wraps (below) and the box
+     grows to fit, so it never scrolls. */
   overflow: visible;
 }
 
-/* The textarea/pre inherit a percentage min-height (calc(100% - padding)) that,
-   inside the grid, resolves against a blown-up containing block and overrides
-   code-input's own one-line height — leaving the textarea ~100px tall so it
-   overflowed the box and overlapped the next field. Pin it to a single line so
-   it fills the 44px box whether empty (code-input auto-sizes it to 0) or not,
-   and the typing/highlight layers line up. */
 code-input.code-input-line textarea,
 code-input.code-input-line pre {
+  /* a fixed (not percentage) min-height fills one line without the grid
+     feedback loop that makes height:auto grow on every render. */
   min-height: 1.5em !important;
-  /* the wrapping code-input draws the field border; the global input/textarea
-     styling otherwise gives the inner textarea a second, offset border. */
+  /* only the wrapping code-input draws the field border; the global
+     input/textarea styling otherwise adds a second, offset border. */
   border: 0 !important;
   border-radius: 0 !important;
+  box-sizing: border-box !important;
+  /* wrap long input instead of scrolling sideways (which would desync the
+     textarea from the highlight overlay). */
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* code-input syncs the textarea's size to the highlight <pre>, which defaults
+   to width:max-content and so grows with no-wrap content. Constrain the <pre>
+   to the box so it wraps, and the synced textarea wraps with it. */
+code-input.code-input-line pre {
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 /* autocomplete popup */

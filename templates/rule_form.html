@@ -56,7 +56,7 @@
       <code-input template="spell-rule-repl" class="code-input-line" id="replacement" name="replacement" rows="1" placeholder="{1}–{2}" autocomplete="off" autocorrect="off" spellcheck="false" {{if not .CanWrite}}readonly{{end}}>{{if .Rule}}{{.Rule.Replacement}}{{end}}</code-input>
     </div>
 
-    <div class="form-group">
+    <div class="form-group rule-guards">
       <label>{{t "RuleGuards" "Context guards"}}</label>
       <div class="help-text">{{t "RuleGuardsHelp" "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."}}</div>
       <input type="text" name="not_before" value="{{if .Rule}}{{.Rule.NotBefore}}{{end}}" placeholder="{{t "RuleNotBefore" "skip if preceded by..."}}" {{if not .CanWrite}}disabled{{end}}>

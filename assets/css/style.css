@@ -1253,10 +1253,11 @@ code-input {
   font-weight: 600;
 }
 
-/* single-line code-input for rule pattern/replacement */
+/* single-line code-input for rule pattern/replacement. A fixed height is
+   required: code-input is display:grid and its textarea/pre use percentage
+   min-heights, so height:auto feeds back and the box grows on every render. */
 code-input.code-input-line {
-  height: auto;
-  min-height: 40px;
+  height: 44px;
 }
 
 /* autocomplete popup */

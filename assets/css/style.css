@@ -1258,9 +1258,28 @@ code-input {
    min-heights, so height:auto feeds back and the box grows on every render. */
 code-input.code-input-line {
   height: 44px;
+  /* code-input defaults to 16px padding on every side, which on a 44px-tall
+     single-line box leaves only ~12px for a ~24px line — the text spills and,
+     with overflow visible (below), overlaps neighbouring fields. Shrink the
+     padding so one line fits and stays vertically centred. */
+  --padding-top: 11px;
+  --padding-bottom: 11px;
+  --padding-left: 12px;
+  --padding-right: 12px;
+  font-size: 0.9rem;
   /* let the autocomplete popup escape the fixed-height box instead of being
      clipped to roughly one row. */
   overflow: visible;
+}
+
+/* The textarea/pre inherit a percentage min-height (calc(100% - padding)) that,
+   inside the grid, resolves against a blown-up containing block and overrides
+   code-input's own one-line height — leaving the textarea ~100px tall so it
+   overflowed the box and overlapped the next field. Pin it so a single line
+   fits the 44px box and the typing/highlight layers line up. */
+code-input.code-input-line textarea,
+code-input.code-input-line pre {
+  min-height: 0 !important;
 }
 
 /* autocomplete popup */

@@ -7,7 +7,12 @@
           "text": "Muammar Gaddafi"
         }
       ],
-      "level": "LEVEL_ERROR"
+      "level": "LEVEL_ERROR",
+      "spans": [
+        {
+          "end": "17"
+        }
+      ]
     },
     {
       "text": "fly",
@@ -17,7 +22,13 @@
           "description": "Vi flyr nödsituationer, rymmer från plats"
         }
       ],
-      "level": "LEVEL_SUGGESTION"
+      "level": "LEVEL_SUGGESTION",
+      "spans": [
+        {
+          "start": "55",
+          "end": "58"
+        }
+      ]
     },
     {
       "text": "rymma",
@@ -27,7 +38,13 @@
           "description": "Vi flyr nödsituationer, rymmer från plats"
         }
       ],
-      "level": "LEVEL_SUGGESTION"
+      "level": "LEVEL_SUGGESTION",
+      "spans": [
+        {
+          "start": "65",
+          "end": "70"
+        }
+      ]
     },
     {
       "text": "emmellan",

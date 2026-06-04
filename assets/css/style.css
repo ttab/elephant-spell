@@ -1173,6 +1173,12 @@ body {
   color: var(--color-text-muted);
 }
 
+.spellcheck-spans {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
 .suggestion-pill {
   display: inline-block;
   padding: 2px 9px;

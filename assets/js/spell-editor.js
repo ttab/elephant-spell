@@ -124,4 +124,61 @@
       scheduleValidate(el);
     }
   });
+
+  // --- expansions modal ----------------------------------------------------
+
+  function openExpansions(trigger) {
+    var group = trigger.closest(".form-group");
+    var editor = group && group.querySelector("code-input[data-expansions-url]");
+    var modal = document.getElementById("expansion-modal");
+    var body = document.getElementById("expansion-modal-body");
+    if (!editor || !modal || !body) {
+      return;
+    }
+
+    var data = new URLSearchParams();
+    data.set("common_mistakes", editor.value);
+
+    fetch(editor.getAttribute("data-expansions-url"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "HX-Request": "true",
+      },
+      body: data.toString(),
+      credentials: "same-origin",
+    })
+      .then(function (r) {
+        return r.ok ? r.text() : Promise.reject(r.status);
+      })
+      .then(function (html) {
+        body.innerHTML = html;
+        modal.showModal();
+      })
+      .catch(function () {
+        /* ignore transient errors */
+      });
+  }
+
+  document.addEventListener("click", function (e) {
+    var open = e.target.closest("[data-open-expansions]");
+    if (open) {
+      e.preventDefault();
+      openExpansions(open);
+      return;
+    }
+
+    if (e.target.closest("[data-close-modal]")) {
+      var modal = document.getElementById("expansion-modal");
+      if (modal && modal.open) {
+        modal.close();
+      }
+      return;
+    }
+
+    // Close when clicking the backdrop (outside the dialog content).
+    if (e.target.id === "expansion-modal") {
+      e.target.close();
+    }
+  });
 })();

@@ -1,0 +1,21 @@
+{{with .Contents}}
+{{if .Groups}}
+{{range .Groups}}
+<div class="expansion-group">
+  <div class="expansion-line"><code>{{.Line}}</code></div>
+  {{if .Error}}
+  <div class="pp-error">{{.Error}}</div>
+  {{else}}
+  <ul class="expansion-list">
+    {{range .Expansions}}<li>{{.}}</li>{{end}}
+  </ul>
+  {{end}}
+</div>
+{{end}}
+{{if gt .Omitted 0}}
+<div class="expansion-omitted">{{td "ExpansionsOmitted" "Showing the first {{.Shown}} of {{.Total}} expansions." .}}</div>
+{{end}}
+{{else}}
+<div class="expansion-empty">{{t "NoExpansions" "Nothing to expand yet."}}</div>
+{{end}}
+{{end}}

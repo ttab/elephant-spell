@@ -69,6 +69,7 @@
         placeholder="{Mohammar|Muammar} Gaddafi"
         {{if not .CanWrite}}readonly{{end}}
         data-validate-url="/dictionaries/{{.Language}}/_validate"
+        data-expansions-url="/dictionaries/{{.Language}}/_expansions"
         data-preview-target="#common-mistakes-preview"
       >{{if .Entry}}{{range $i, $m := .Entry.CommonMistakes}}{{if $i}}
 {{end}}{{$m}}{{end}}{{end}}</code-input>

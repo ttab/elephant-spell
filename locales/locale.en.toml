@@ -79,6 +79,21 @@ other = "only if preceded by..."
 [RuleAfter]
 other = "only if followed by..."
 
+[ViewExpansions]
+other = "view all"
+
+[Expansions]
+other = "Expansions"
+
+[ExpansionsOmitted]
+other = "Showing the first {{.Shown}} of {{.Total}} expansions."
+
+[NoExpansions]
+other = "Nothing to expand yet."
+
+[Close]
+other = "Close"
+
 [Language]
 other = "Language"
 

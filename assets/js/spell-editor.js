@@ -57,8 +57,10 @@
     }
 
     var partial = m[1].toLowerCase();
+    // Offer completions that extend the partial, but not one that is already an
+    // exact match — there is nothing left to complete, so showing it is noise.
     var matches = ruleTokens.filter(function (t) {
-      return t.indexOf(partial) === 0;
+      return t.indexOf(partial) === 0 && t !== partial;
     });
 
     if (!matches.length) {

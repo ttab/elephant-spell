@@ -94,6 +94,7 @@ CREATE TABLE public.job_lock (
 --
 
 CREATE TABLE public.rule (
+    id bigint NOT NULL,
     language text NOT NULL,
     name text NOT NULL,
     status text NOT NULL,
@@ -104,6 +105,20 @@ CREATE TABLE public.rule (
     data jsonb,
     updated timestamp with time zone DEFAULT now() NOT NULL,
     updated_by text DEFAULT ''::text NOT NULL
+);
+
+
+--
+-- Name: rule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.rule ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.rule_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
 );
 
 
@@ -145,7 +160,7 @@ ALTER TABLE ONLY public.job_lock
 --
 
 ALTER TABLE ONLY public.rule
-    ADD CONSTRAINT rule_pkey PRIMARY KEY (language, name);
+    ADD CONSTRAINT rule_pkey PRIMARY KEY (id);
 
 
 --
@@ -153,6 +168,13 @@ ALTER TABLE ONLY public.rule
 --
 
 CREATE INDEX idx_entry_pattern_ops ON public.entry USING btree (entry varchar_pattern_ops);
+
+
+--
+-- Name: idx_rule_language; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rule_language ON public.rule USING btree (language);
 
 
 --

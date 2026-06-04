@@ -1,4 +1,5 @@
 CREATE TABLE rule(
+       id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
        language text NOT NULL,
        name text NOT NULL,
        status text NOT NULL,
@@ -8,9 +9,10 @@ CREATE TABLE rule(
        replacement text NOT NULL,
        data jsonb,
        updated timestamptz NOT NULL DEFAULT now(),
-       updated_by text NOT NULL DEFAULT '',
-       primary key(language, name)
+       updated_by text NOT NULL DEFAULT ''
 );
+
+CREATE INDEX idx_rule_language ON rule(language);
 
 ALTER TABLE eventlog ADD COLUMN kind text NOT NULL DEFAULT 'entry';
 

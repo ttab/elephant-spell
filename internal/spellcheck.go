@@ -59,7 +59,7 @@ func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) 
 		ciMistakeTrie: trie.NewRuneTrie(),
 		hunspell:      checker,
 		bufs:          bufs,
-		rules:         make(map[string]*compiledRule),
+		rules:         make(map[int64]*compiledRule),
 		builtinRules:  builtins,
 	}, nil
 }
@@ -76,9 +76,9 @@ type Spellcheck struct {
 	ciMistakeTrie *trie.RuneTrie
 	hunspell      *hunspell.Checker
 	bufs          *puddle.Pool[*bytes.Buffer]
-	// rules holds user-defined pattern rules keyed by entry name; builtinRules
-	// are always-on rules for common writing errors.
-	rules        map[string]*compiledRule
+	// rules holds user-defined pattern rules keyed by rule id; builtinRules are
+	// always-on rules for common writing errors.
+	rules        map[int64]*compiledRule
 	builtinRules []*compiledRule
 }
 
@@ -101,24 +101,24 @@ func builtinRules() ([]*compiledRule, error) {
 }
 
 // AddRule compiles and registers a user-defined rule, replacing any existing
-// rule with the same name.
+// rule with the same id.
 func (s *Spellcheck) AddRule(def RuleDef) error {
 	r, err := compileRule(def)
 	if err != nil {
-		return fmt.Errorf("compile rule %q: %w", def.Name, err)
+		return fmt.Errorf("compile rule %d: %w", def.ID, err)
 	}
 
 	s.m.Lock()
-	s.rules[def.Name] = r
+	s.rules[def.ID] = r
 	s.m.Unlock()
 
 	return nil
 }
 
-// RemoveRule drops a user-defined rule.
-func (s *Spellcheck) RemoveRule(name string) {
+// RemoveRule drops a user-defined rule by id.
+func (s *Spellcheck) RemoveRule(id int64) {
 	s.m.Lock()
-	delete(s.rules, name)
+	delete(s.rules, id)
 	s.m.Unlock()
 }
 

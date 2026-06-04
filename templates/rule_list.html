@@ -1,8 +1,8 @@
 {{range .Contents.Rules}}
 <a
-  class="entry-item {{if eq .Name $.Contents.ActiveRule}}active{{end}}"
-  href="/rules/{{$.Contents.Language}}/{{pathEscape .Name}}"
-  hx-get="/rules/{{$.Contents.Language}}/{{pathEscape .Name}}"
+  class="entry-item {{if eq .ID $.Contents.ActiveRule}}active{{end}}"
+  href="/rules/{{$.Contents.Language}}/{{.ID}}"
+  hx-get="/rules/{{$.Contents.Language}}/{{.ID}}"
   hx-target="#entry-detail"
   hx-push-url="true"
 >

@@ -16,16 +16,12 @@
   </div>
   <form
     class="entry-form"
-    hx-post="/rules/{{.Language}}/{{if .NewRule}}_new{{else}}{{pathEscape .Rule.Name}}{{end}}"
+    hx-post="/rules/{{.Language}}/{{if .NewRule}}_new{{else}}{{.Rule.ID}}{{end}}"
     hx-target="#entry-detail"
   >
     <div class="form-group">
       <label for="name">{{t "Name" "Name"}}</label>
-      {{if .NewRule}}
-      <input type="text" id="name" name="name" value="" required {{if not .CanWrite}}disabled{{end}}>
-      {{else}}
-      <input type="text" id="name" name="name" value="{{.Rule.Name}}" readonly>
-      {{end}}
+      <input type="text" id="name" name="name" value="{{if .Rule}}{{.Rule.Name}}{{end}}" required {{if not .CanWrite}}disabled{{end}}>
     </div>
 
     <div class="form-group">
@@ -75,7 +71,7 @@
       <button
         type="button"
         class="btn btn-danger"
-        hx-post="/rules/{{.Language}}/{{pathEscape .Rule.Name}}/delete"
+        hx-post="/rules/{{.Language}}/{{.Rule.ID}}/delete"
         hx-target="#entry-detail"
         hx-confirm="{{t "ConfirmDeleteRule" "Are you sure you want to delete this rule?"}}"
       >{{t "Delete" "Delete"}}</button>

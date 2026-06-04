@@ -467,7 +467,7 @@ func TestAPI(t *testing.T) {
 	})
 
 	t.Run("custom_rule_flow", func(t *testing.T) {
-		_, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+		created, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
 			Rule: &spellapi.Rule{
 				Language:    "sv-se",
 				Name:        "kronor-rule",
@@ -479,6 +479,10 @@ func TestAPI(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatalf("set rule: %v", err)
+		}
+
+		if created.Id == 0 {
+			t.Fatal("SetRule did not return a new id")
 		}
 
 		flagged := func() bool {
@@ -517,14 +521,14 @@ func TestAPI(t *testing.T) {
 		}
 
 		got, err := stack.Rules.GetRule(ctx, &spellapi.GetRuleRequest{
-			Language: "sv-se",
-			Name:     "kronor-rule",
+			Id: created.Id,
 		})
 		if err != nil {
 			t.Fatalf("get rule: %v", err)
 		}
 
-		if got.Rule == nil || got.Rule.Pattern != ":digit kr" {
+		if got.Rule == nil || got.Rule.Pattern != ":digit kr" ||
+			got.Rule.Name != "kronor-rule" {
 			t.Errorf("rule did not round-trip: %+v", got.Rule)
 		}
 
@@ -557,7 +561,7 @@ func TestAPI(t *testing.T) {
 	})
 
 	t.Run("rule_status_and_delete", func(t *testing.T) {
-		_, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+		created, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
 			Rule: &spellapi.Rule{
 				Language: "sv-se", Name: "pending-rule", Status: "pending",
 				Pattern: ":digit %", Replacement: "{1} procent",
@@ -567,22 +571,37 @@ func TestAPI(t *testing.T) {
 			t.Fatalf("set pending rule: %v", err)
 		}
 
+		// Updating by id keeps the same rule.
+		updated, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Id: created.Id, Language: "sv-se", Name: "renamed-rule",
+				Status: "pending", Pattern: ":digit %", Replacement: "{1} procent",
+			},
+		})
+		if err != nil {
+			t.Fatalf("update rule: %v", err)
+		}
+
+		if updated.Id != created.Id {
+			t.Fatalf("update changed the id: %d -> %d", created.Id, updated.Id)
+		}
+
 		_, err = stack.Rules.SetRuleStatus(ctx, &spellapi.SetRuleStatusRequest{
-			Language: "sv-se", Name: "pending-rule", Status: "accepted",
+			Id: created.Id, Status: "accepted",
 		})
 		if err != nil {
 			t.Fatalf("set rule status: %v", err)
 		}
 
 		_, err = stack.Rules.DeleteRule(ctx, &spellapi.DeleteRuleRequest{
-			Language: "sv-se", Name: "pending-rule",
+			Id: created.Id,
 		})
 		if err != nil {
 			t.Fatalf("delete rule: %v", err)
 		}
 
 		_, err = stack.Rules.SetRuleStatus(ctx, &spellapi.SetRuleStatusRequest{
-			Language: "sv-se", Name: "does-not-exist", Status: "accepted",
+			Id: 999999, Status: "accepted",
 		})
 		assertTwirpCode(t, err, twirp.NotFound)
 	})

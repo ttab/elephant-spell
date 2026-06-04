@@ -75,8 +75,8 @@ func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("POST /dictionaries/{language}/{text}/delete", d.deleteEntry)
 	mux.HandleFunc("GET /moderation/{$}", d.moderationRedirect)
 	mux.HandleFunc("GET /moderation/{language}/{$}", d.moderationPage)
-	mux.HandleFunc("POST /moderation/{language}/{kind}/{name}/accept", d.moderationAccept)
-	mux.HandleFunc("POST /moderation/{language}/{kind}/{name}/reject", d.moderationReject)
+	mux.HandleFunc("POST /moderation/{language}/{kind}/{ident}/accept", d.moderationAccept)
+	mux.HandleFunc("POST /moderation/{language}/{kind}/{ident}/reject", d.moderationReject)
 }
 
 func (d *DictionariesUI) MenuHook(hooks *howdah.MenuHooks) {

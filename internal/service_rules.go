@@ -2,9 +2,12 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/postgres"
@@ -89,19 +92,14 @@ func (a *Application) GetRule(
 		return nil, err //nolint: wrapcheck
 	}
 
-	if req.Language == "" {
-		return nil, twirp.RequiredArgumentError("language")
+	if req.Id == 0 {
+		return nil, twirp.RequiredArgumentError("id")
 	}
 
-	if req.Name == "" {
-		return nil, twirp.RequiredArgumentError("name")
-	}
-
-	row, err := a.q.GetRule(ctx, postgres.GetRuleParams{
-		Language: req.Language,
-		Name:     req.Name,
-	})
-	if err != nil {
+	row, err := a.q.GetRule(ctx, req.Id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, twirp.NotFoundError("rule does not exist")
+	} else if err != nil {
 		return nil, twirp.InternalErrorf("read from database: %w", err)
 	}
 
@@ -113,7 +111,8 @@ func (a *Application) GetRule(
 	return &spell.GetRuleResponse{Rule: rule}, nil
 }
 
-// SetRule implements spell.Rules.
+// SetRule implements spell.Rules. A zero id creates a new rule; a non-zero id
+// updates the existing rule.
 func (a *Application) SetRule(
 	ctx context.Context, req *spell.SetRuleRequest,
 ) (_ *spell.SetRuleResponse, outErr error) {
@@ -167,24 +166,50 @@ func (a *Application) SetRule(
 	defer pg.Rollback(tx, &outErr)
 
 	q := a.q.WithTx(tx)
+	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
 
-	err = q.SetRule(ctx, postgres.SetRuleParams{
-		Language:    req.Rule.Language,
-		Name:        req.Rule.Name,
-		Status:      req.Rule.Status,
-		Description: req.Rule.Description,
-		Level:       level,
-		Pattern:     req.Rule.Pattern,
-		Replacement: req.Rule.Replacement,
-		Data:        ruleDataFromRPC(req.Rule),
-		Updated:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		UpdatedBy:   auth.Claims.Subject,
-	})
-	if err != nil {
-		return nil, twirp.InternalErrorf("write to database: %w", err)
+	id := req.Rule.Id
+
+	if id == 0 {
+		id, err = q.InsertRule(ctx, postgres.InsertRuleParams{
+			Language:    req.Rule.Language,
+			Name:        req.Rule.Name,
+			Status:      req.Rule.Status,
+			Description: req.Rule.Description,
+			Level:       level,
+			Pattern:     req.Rule.Pattern,
+			Replacement: req.Rule.Replacement,
+			Data:        ruleDataFromRPC(req.Rule),
+			Updated:     now,
+			UpdatedBy:   auth.Claims.Subject,
+		})
+		if err != nil {
+			return nil, twirp.InternalErrorf("write to database: %w", err)
+		}
+	} else {
+		affected, err := q.UpdateRule(ctx, postgres.UpdateRuleParams{
+			ID:          id,
+			Name:        req.Rule.Name,
+			Status:      req.Rule.Status,
+			Description: req.Rule.Description,
+			Level:       level,
+			Pattern:     req.Rule.Pattern,
+			Replacement: req.Rule.Replacement,
+			Data:        ruleDataFromRPC(req.Rule),
+			Updated:     now,
+			UpdatedBy:   auth.Claims.Subject,
+		})
+		if err != nil {
+			return nil, twirp.InternalErrorf("write to database: %w", err)
+		}
+
+		if affected == 0 {
+			return nil, twirp.NotFoundError("rule does not exist")
+		}
 	}
 
-	err = a.recordChange(ctx, q, tx, req.Rule.Language, req.Rule.Name, false, eventKindRule)
+	err = a.recordChange(ctx, q, tx,
+		req.Rule.Language, strconv.FormatInt(id, 10), false, eventKindRule)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record rule change: %w", err)
 	}
@@ -194,7 +219,7 @@ func (a *Application) SetRule(
 		return nil, twirp.InternalErrorf("commit changes: %w", err)
 	}
 
-	return &spell.SetRuleResponse{}, nil
+	return &spell.SetRuleResponse{Id: id}, nil
 }
 
 // SetRuleStatus implements spell.Rules.
@@ -206,12 +231,8 @@ func (a *Application) SetRuleStatus(
 		return nil, err //nolint: wrapcheck
 	}
 
-	if req.Language == "" {
-		return nil, twirp.RequiredArgumentError("language")
-	}
-
-	if req.Name == "" {
-		return nil, twirp.RequiredArgumentError("name")
+	if req.Id == 0 {
+		return nil, twirp.RequiredArgumentError("id")
 	}
 
 	if req.Status == "" {
@@ -227,22 +248,20 @@ func (a *Application) SetRuleStatus(
 
 	q := a.q.WithTx(tx)
 
-	affected, err := q.SetRuleStatus(ctx, postgres.SetRuleStatusParams{
-		Language:  req.Language,
-		Name:      req.Name,
+	language, err := q.SetRuleStatus(ctx, postgres.SetRuleStatusParams{
+		ID:        req.Id,
 		Status:    req.Status,
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedBy: auth.Claims.Subject,
 	})
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, twirp.NotFoundError("rule does not exist")
+	} else if err != nil {
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	if affected == 0 {
-		return nil, twirp.NotFoundError("rule does not exist")
-	}
-
-	err = a.recordChange(ctx, q, tx, req.Language, req.Name, false, eventKindRule)
+	err = a.recordChange(ctx, q, tx,
+		language, strconv.FormatInt(req.Id, 10), false, eventKindRule)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record rule change: %w", err)
 	}
@@ -264,12 +283,8 @@ func (a *Application) DeleteRule(
 		return nil, err //nolint: wrapcheck
 	}
 
-	if req.Language == "" {
-		return nil, twirp.RequiredArgumentError("language")
-	}
-
-	if req.Name == "" {
-		return nil, twirp.RequiredArgumentError("name")
+	if req.Id == 0 {
+		return nil, twirp.RequiredArgumentError("id")
 	}
 
 	tx, err := a.db.Begin(ctx)
@@ -281,15 +296,20 @@ func (a *Application) DeleteRule(
 
 	q := a.q.WithTx(tx)
 
-	err = q.DeleteRule(ctx, postgres.DeleteRuleParams{
-		Language: req.Language,
-		Name:     req.Name,
-	})
-	if err != nil {
+	language, err := q.DeleteRule(ctx, req.Id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Nothing to delete — treat as a no-op success.
+		if err := tx.Commit(ctx); err != nil {
+			return nil, twirp.InternalErrorf("commit changes: %w", err)
+		}
+
+		return &spell.DeleteRuleResponse{}, nil
+	} else if err != nil {
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	err = a.recordChange(ctx, q, tx, req.Language, req.Name, true, eventKindRule)
+	err = a.recordChange(ctx, q, tx,
+		language, strconv.FormatInt(req.Id, 10), true, eventKindRule)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record rule change: %w", err)
 	}

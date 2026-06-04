@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/ttab/elephant-spell/postgres"
@@ -181,18 +182,21 @@ func (a *Application) applyEntryEvent(
 func (a *Application) applyRuleEvent(
 	ctx context.Context, s *Spellcheck, e postgres.Eventlog,
 ) error {
+	// The eventlog carries the rule id as text for rule events.
+	id, err := strconv.ParseInt(e.Entry, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse rule id %q: %w", e.Entry, err)
+	}
+
 	if e.Deleted {
-		s.RemoveRule(e.Entry)
+		s.RemoveRule(id)
 
 		return nil
 	}
 
-	row, err := a.q.GetRule(ctx, postgres.GetRuleParams{
-		Language: e.Language,
-		Name:     e.Entry,
-	})
+	row, err := a.q.GetRule(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		s.RemoveRule(e.Entry)
+		s.RemoveRule(id)
 
 		return nil
 	} else if err != nil {
@@ -204,7 +208,7 @@ func (a *Application) applyRuleEvent(
 	err = s.AddRule(ruleDefFromRule(row))
 	if err != nil {
 		a.logger.ErrorContext(ctx, "skip invalid rule",
-			"rule", row.Name, "language", row.Language,
+			"rule", row.ID, "language", row.Language,
 			elephantine.LogKeyError, err)
 	}
 
@@ -213,6 +217,7 @@ func (a *Application) applyRuleEvent(
 
 func ruleDefFromRule(r postgres.Rule) RuleDef {
 	def := RuleDef{
+		ID:          r.ID,
 		Name:        r.Name,
 		Pattern:     r.Pattern,
 		Replacement: r.Replacement,

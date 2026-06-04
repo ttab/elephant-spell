@@ -6,8 +6,8 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/ttab/elephant-api/spell"
@@ -63,10 +63,10 @@ func (d *RulesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("GET /rules/{language}/{$}", d.languagePage)
 	mux.HandleFunc("GET /rules/{language}/list", d.listPartial)
 	mux.HandleFunc("GET /rules/{language}/new", d.newRulePage)
-	mux.HandleFunc("GET /rules/{language}/{name}", d.rulePage)
+	mux.HandleFunc("GET /rules/{language}/{id}", d.rulePage)
 	mux.HandleFunc("POST /rules/{language}/_new", d.saveNewRule)
-	mux.HandleFunc("POST /rules/{language}/{name}", d.saveRule)
-	mux.HandleFunc("POST /rules/{language}/{name}/delete", d.deleteRule)
+	mux.HandleFunc("POST /rules/{language}/{id}", d.saveRule)
+	mux.HandleFunc("POST /rules/{language}/{id}/delete", d.deleteRule)
 }
 
 func (d *RulesUI) MenuHook(hooks *howdah.MenuHooks) {
@@ -84,6 +84,7 @@ func (d *RulesUI) MenuHook(hooks *howdah.MenuHooks) {
 // uiRule mirrors a rule for templates, with guard lists flattened to
 // comma-separated strings for the text inputs.
 type uiRule struct {
+	ID          int64
 	Name        string
 	Status      string
 	Description string
@@ -105,6 +106,7 @@ func ruleToUI(r *spell.Rule) uiRule {
 	}
 
 	return uiRule{
+		ID:          r.Id,
 		Name:        r.Name,
 		Status:      r.Status,
 		Description: r.Description,
@@ -125,7 +127,7 @@ type rulesContents struct {
 	Language   string
 	Rules      []uiRule
 	Rule       *uiRule
-	ActiveRule string
+	ActiveRule int64
 	NewRule    bool
 	Count      int
 	Flash      *flashMessage
@@ -272,18 +274,19 @@ func (d *RulesUI) rulePage(
 	}
 
 	lang := r.PathValue("language")
-	name := r.PathValue("name")
 	canWrite := hasWriteScope(ctx)
+
+	id, err := ruleIDParam(r)
+	if err != nil {
+		return nil, err
+	}
 
 	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{
-		Language: lang,
-		Name:     name,
-	})
+	res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{Id: id})
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -294,7 +297,7 @@ func (d *RulesUI) rulePage(
 		return &howdah.Page{
 			Template: "rule_form.html",
 			Contents: rulesContents{
-				Language: lang, Rule: &rule, ActiveRule: name, CanWrite: canWrite,
+				Language: lang, Rule: &rule, ActiveRule: id, CanWrite: canWrite,
 			},
 		}, nil
 	}
@@ -306,14 +309,14 @@ func (d *RulesUI) rulePage(
 
 	return &howdah.Page{
 		Template: "rules.html",
-		Title:    howdah.TLiteral(name + " – Rules"),
+		Title:    howdah.TLiteral(rule.Name + " – Rules"),
 		Contents: rulesContents{
 			Languages:  d.languages,
 			Language:   lang,
 			Rules:      rules,
 			Count:      d.ruleCount(ctx, lang),
 			Rule:       &rule,
-			ActiveRule: name,
+			ActiveRule: id,
 			CanWrite:   canWrite,
 			HasMore:    hasMore,
 		},
@@ -360,14 +363,16 @@ func (d *RulesUI) saveNewRule(
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	err = d.setRuleFromForm(svcCtx, lang, name, r)
+	id, err := d.setRuleFromForm(svcCtx, lang, 0, r)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	w.Header().Set("HX-Push-Url", "/rules/"+lang+"/"+url.PathEscape(name))
+	idStr := strconv.FormatInt(id, 10)
 
-	return d.ruleFormResponse(svcCtx, lang, name,
+	w.Header().Set("HX-Push-Url", "/rules/"+lang+"/"+idStr)
+
+	return d.ruleFormResponse(svcCtx, lang, id,
 		howdah.TL("RuleCreated", "Rule created"))
 }
 
@@ -384,7 +389,11 @@ func (d *RulesUI) saveRule(
 	}
 
 	lang := r.PathValue("language")
-	name := r.PathValue("name")
+
+	id, err := ruleIDParam(r)
+	if err != nil {
+		return nil, err
+	}
 
 	err = r.ParseForm()
 	if err != nil {
@@ -398,12 +407,12 @@ func (d *RulesUI) saveRule(
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	err = d.setRuleFromForm(svcCtx, lang, name, r)
+	_, err = d.setRuleFromForm(svcCtx, lang, id, r)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	return d.ruleFormResponse(svcCtx, lang, name,
+	return d.ruleFormResponse(svcCtx, lang, id,
 		howdah.TL("RuleUpdated", "Rule updated"))
 }
 
@@ -420,17 +429,18 @@ func (d *RulesUI) deleteRule(
 	}
 
 	lang := r.PathValue("language")
-	name := r.PathValue("name")
+
+	id, err := ruleIDParam(r)
+	if err != nil {
+		return nil, err
+	}
 
 	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	_, err = d.rules.DeleteRule(svcCtx, &spell.DeleteRuleRequest{
-		Language: lang,
-		Name:     name,
-	})
+	_, err = d.rules.DeleteRule(svcCtx, &spell.DeleteRuleRequest{Id: id})
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -442,12 +452,9 @@ func (d *RulesUI) deleteRule(
 
 // ruleFormResponse re-reads a rule and renders the form with a flash message.
 func (d *RulesUI) ruleFormResponse(
-	svcCtx context.Context, lang, name string, flash howdah.TextLabel,
+	svcCtx context.Context, lang string, id int64, flash howdah.TextLabel,
 ) (*howdah.Page, error) {
-	res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{
-		Language: lang,
-		Name:     name,
-	})
+	res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{Id: id})
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -459,16 +466,18 @@ func (d *RulesUI) ruleFormResponse(
 		Contents: rulesContents{
 			Language:   lang,
 			Rule:       &rule,
-			ActiveRule: name,
+			ActiveRule: id,
 			CanWrite:   true,
 			Flash:      &flashMessage{Type: "success", Message: flash},
 		},
 	}, nil
 }
 
+// setRuleFromForm sets a rule from the submitted form and returns its id. A
+// zero id creates a new rule.
 func (d *RulesUI) setRuleFromForm(
-	ctx context.Context, lang, name string, r *http.Request,
-) error {
+	ctx context.Context, lang string, id int64, r *http.Request,
+) (int64, error) {
 	level := spell.CorrectionLevel_LEVEL_ERROR
 	if r.FormValue("level") == "suggestion" {
 		level = spell.CorrectionLevel_LEVEL_SUGGESTION
@@ -479,10 +488,11 @@ func (d *RulesUI) setRuleFromForm(
 		status = "accepted"
 	}
 
-	_, err := d.rules.SetRule(ctx, &spell.SetRuleRequest{
+	res, err := d.rules.SetRule(ctx, &spell.SetRuleRequest{
 		Rule: &spell.Rule{
+			Id:          id,
 			Language:    lang,
-			Name:        name,
+			Name:        strings.TrimSpace(r.FormValue("name")),
 			Status:      status,
 			Description: strings.TrimSpace(r.FormValue("description")),
 			Level:       level,
@@ -495,10 +505,23 @@ func (d *RulesUI) setRuleFromForm(
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("set rule: %w", err)
+		return 0, fmt.Errorf("set rule: %w", err)
 	}
 
-	return nil
+	return res.Id, nil
+}
+
+// ruleIDParam reads and parses the {id} path value.
+func ruleIDParam(r *http.Request) (int64, error) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		return 0, howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid rule id",
+			fmt.Errorf("parse rule id: %w", err),
+		)
+	}
+
+	return id, nil
 }
 
 func (d *RulesUI) listRules(

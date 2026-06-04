@@ -393,7 +393,7 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 
 	cUserInfo := NewUserInfo(a.logger, cAuth)
 
-	cDocs, err := NewDocsUI(cAuth, a.p.Docs, "dictionary-entries.md")
+	cDocs, err := NewDocsUI(cAuth, a.p.Docs)
 	if err != nil {
 		return fmt.Errorf("create docs component: %w", err)
 	}

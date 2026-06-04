@@ -3,49 +3,68 @@ package internal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/ttab/howdah"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 )
 
-// DocsUI is the howdah component for the documentation page.
+// DocsUI is the howdah component for the documentation pages. It renders every
+// markdown file in the docs filesystem; index.md is served at /docs/ and the
+// rest at /docs/{name} (without the .md suffix).
 type DocsUI struct {
-	auth    howdah.Authenticator
-	content template.HTML
+	auth howdah.Authenticator
+	docs map[string]template.HTML
 }
 
-// NewDocsUI creates a new DocsUI component that renders the given markdown
-// file from the docs filesystem.
-func NewDocsUI(
-	auth howdah.Authenticator, docsFS fs.FS, filename string,
-) (*DocsUI, error) {
-	src, err := fs.ReadFile(docsFS, filename)
+// NewDocsUI creates a DocsUI rendering all markdown files in the docs
+// filesystem. An index.md is required.
+func NewDocsUI(auth howdah.Authenticator, docsFS fs.FS) (*DocsUI, error) {
+	entries, err := fs.ReadDir(docsFS, ".")
 	if err != nil {
-		return nil, fmt.Errorf("read %q: %w", filename, err)
+		return nil, fmt.Errorf("list docs: %w", err)
 	}
 
 	md := goldmark.New(goldmark.WithExtensions(extension.Table))
+	docs := make(map[string]template.HTML)
 
-	var buf bytes.Buffer
+	for _, e := range entries {
+		base, ok := strings.CutSuffix(e.Name(), ".md")
+		if !ok {
+			continue
+		}
 
-	err = md.Convert(src, &buf)
-	if err != nil {
-		return nil, fmt.Errorf("render %q: %w", filename, err)
+		src, err := fs.ReadFile(docsFS, e.Name())
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", e.Name(), err)
+		}
+
+		var buf bytes.Buffer
+
+		err = md.Convert(src, &buf)
+		if err != nil {
+			return nil, fmt.Errorf("render %q: %w", e.Name(), err)
+		}
+
+		docs[base] = template.HTML(buf.String()) //nolint:gosec
 	}
 
-	return &DocsUI{
-		auth:    auth,
-		content: template.HTML(buf.String()), //nolint:gosec
-	}, nil
+	if _, ok := docs["index"]; !ok {
+		return nil, errors.New("docs: index.md is required")
+	}
+
+	return &DocsUI{auth: auth, docs: docs}, nil
 }
 
 func (d *DocsUI) RegisterRoutes(mux *howdah.PageMux) {
-	mux.HandleFunc("GET /docs/{$}", d.docsPage)
+	mux.HandleFunc("GET /docs/{$}", d.indexPage)
+	mux.HandleFunc("GET /docs/{name}", d.docPage)
 }
 
 func (d *DocsUI) MenuHook(hooks *howdah.MenuHooks) {
@@ -83,19 +102,39 @@ type docsContents struct {
 	Body template.HTML
 }
 
-func (d *DocsUI) docsPage(
+func (d *DocsUI) indexPage(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	return d.render(ctx, w, r, "index")
+}
+
+func (d *DocsUI) docPage(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	return d.render(ctx, w, r, r.PathValue("name"))
+}
+
+func (d *DocsUI) render(
+	ctx context.Context, w http.ResponseWriter, r *http.Request, name string,
 ) (*howdah.Page, error) {
 	_, err := d.auth.RequireAuth(ctx, w, r)
 	if err != nil {
 		return nil, err
 	}
 
+	body, ok := d.docs[name]
+	if !ok {
+		return nil, howdah.NewHTTPError(
+			http.StatusNotFound, "Error", "Unknown document",
+			fmt.Errorf("unknown document %q", name),
+		)
+	}
+
 	return &howdah.Page{
 		Template: "docs.html",
 		Title:    howdah.TL("Documentation", "Documentation"),
 		Contents: docsContents{
-			Body: d.content,
+			Body: body,
 		},
 	}, nil
 }

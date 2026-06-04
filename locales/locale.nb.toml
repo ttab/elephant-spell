@@ -22,6 +22,24 @@ other = "Avvis og slett denne oppføringen?"
 [Edit]
 other = "Rediger"
 
+[FormsHelp2]
+other = "Koble en feil bøyning til riktig erstatning"
+
+[Incorrect]
+other = "Feil"
+
+[Correct]
+other = "Riktig"
+
+[Remove]
+other = "Fjern"
+
+[AddForm]
+other = "Legg til form"
+
+[TotalExpansions]
+other = "Totalt antall utvidelser"
+
 [Language]
 other = "Språk"
 

@@ -1,4 +1,5 @@
 {{with .Contents}}
+{{$c := .}}
 {{if .Flash}}
 <div class="entry-form-wrapper">
   <div class="flash-message {{.Flash.Type}}">{{tl .Flash.Message}}</div>
@@ -52,15 +53,44 @@
     <div class="form-group">
       <label for="common_mistakes">{{t "CommonMistakes" "Common mistakes"}}</label>
       <div class="help-text">{{t "CommonMistakesHelp" "One per line, supports {A|B} expansion"}}</div>
-      <textarea id="common_mistakes" name="common_mistakes" rows="4" {{if not .CanWrite}}disabled{{end}}>{{if .Entry}}{{range $i, $m := .Entry.CommonMistakes}}{{if $i}}
-{{end}}{{$m}}{{end}}{{end}}</textarea>
+      <code-input
+        template="spell-pattern"
+        id="common_mistakes"
+        name="common_mistakes"
+        rows="4"
+        placeholder="{Mohammar|Muammar} Gaddafi"
+        {{if not .CanWrite}}readonly{{end}}
+        data-validate-url="/dictionaries/{{.Language}}/_validate"
+        data-preview-target="#common-mistakes-preview"
+      >{{if .Entry}}{{range $i, $m := .Entry.CommonMistakes}}{{if $i}}
+{{end}}{{$m}}{{end}}{{end}}</code-input>
+      <div id="common-mistakes-preview" class="pattern-preview"></div>
     </div>
 
     <div class="form-group">
-      <label for="forms">{{t "Forms" "Forms"}}</label>
-      <div class="help-text">{{t "FormsHelp" "One per line: incorrect=correct"}}</div>
-      <textarea id="forms" name="forms" rows="4" {{if not .CanWrite}}disabled{{end}}>{{if .Entry}}{{range $k, $v := .Entry.Forms}}{{$k}}={{$v}}
-{{end}}{{end}}</textarea>
+      <label>{{t "Forms" "Forms"}}</label>
+      <div class="help-text">{{t "FormsHelp2" "Map an incorrect inflection to its correct replacement"}}</div>
+      <div id="forms-rows" class="forms-rows">
+        {{if .Entry}}{{range $k, $v := .Entry.Forms}}
+        <div class="forms-row">
+          <input type="text" name="forms_incorrect" value="{{$k}}" placeholder="{{t "Incorrect" "Incorrect"}}" {{if not $c.CanWrite}}disabled{{end}}>
+          <span class="forms-arrow">→</span>
+          <input type="text" name="forms_correct" value="{{$v}}" placeholder="{{t "Correct" "Correct"}}" {{if not $c.CanWrite}}disabled{{end}}>
+          {{if $c.CanWrite}}<button type="button" class="btn btn-sm forms-row-remove" data-row-remove aria-label="{{t "Remove" "Remove"}}">×</button>{{end}}
+        </div>
+        {{end}}{{end}}
+      </div>
+      {{if .CanWrite}}
+      <button type="button" class="btn btn-sm" data-add-form-row>+ {{t "AddForm" "Add form"}}</button>
+      <template id="forms-row-template">
+        <div class="forms-row">
+          <input type="text" name="forms_incorrect" placeholder="{{t "Incorrect" "Incorrect"}}">
+          <span class="forms-arrow">→</span>
+          <input type="text" name="forms_correct" placeholder="{{t "Correct" "Correct"}}">
+          <button type="button" class="btn btn-sm forms-row-remove" data-row-remove aria-label="{{t "Remove" "Remove"}}">×</button>
+        </div>
+      </template>
+      {{end}}
     </div>
 
     {{if .CanWrite}}

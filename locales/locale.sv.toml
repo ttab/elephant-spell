@@ -22,6 +22,24 @@ other = "Avvisa och ta bort posten?"
 [Edit]
 other = "Redigera"
 
+[FormsHelp2]
+other = "Koppla en felaktig böjning till dess korrekta ersättning"
+
+[Incorrect]
+other = "Felaktig"
+
+[Correct]
+other = "Korrekt"
+
+[Remove]
+other = "Ta bort"
+
+[AddForm]
+other = "Lägg till form"
+
+[TotalExpansions]
+other = "Totalt antal expansioner"
+
 [Language]
 other = "Språk"
 

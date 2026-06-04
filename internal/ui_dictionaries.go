@@ -66,6 +66,7 @@ func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("GET /dictionaries/{language}/new", d.newEntryPage)
 	mux.HandleFunc("GET /dictionaries/{language}/{text}", d.entryPage)
 	mux.HandleFunc("POST /dictionaries/{language}/_new", d.saveNewEntry)
+	mux.HandleFunc("POST /dictionaries/{language}/_validate", d.validateMistakes)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}", d.saveEntry)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}/delete", d.deleteEntry)
 	mux.HandleFunc("GET /moderation/{$}", d.moderationRedirect)
@@ -634,24 +635,9 @@ func (d *DictionariesUI) setEntryFromForm(
 		}
 	}
 
-	forms := make(map[string]string)
-
-	formsRaw := strings.TrimSpace(r.FormValue("forms"))
-	if formsRaw != "" {
-		for _, line := range strings.Split(formsRaw, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-
-			k, v, ok := strings.Cut(line, "=")
-			if !ok {
-				continue
-			}
-
-			forms[strings.TrimSpace(k)] = strings.TrimSpace(v)
-		}
-	}
+	// Forms are submitted as parallel arrays of incorrect/correct inputs, one
+	// pair per row in the form editor.
+	forms := parseForms(r.Form)
 
 	_, err := d.dicts.SetEntry(ctx, &spell.SetEntryRequest{
 		Entry: &spell.CustomEntry{
@@ -669,6 +655,97 @@ func (d *DictionariesUI) setEntryFromForm(
 	}
 
 	return nil
+}
+
+// patternLine is the validation result for a single common-mistakes line.
+type patternLine struct {
+	Line  string
+	Count int
+	Error string
+}
+
+type patternPreviewContents struct {
+	Results []patternLine
+	Total   int
+}
+
+// validateMistakes expands the submitted common-mistakes patterns server-side
+// and returns a preview of how many combinations each line yields, plus any
+// brace errors. It reuses the canonical Expand logic so the preview can't drift
+// from what the spellchecker actually does.
+func (d *DictionariesUI) validateMistakes(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	_, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	err = r.ParseForm()
+	if err != nil {
+		return nil, howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid form data",
+			fmt.Errorf("parse form: %w", err),
+		)
+	}
+
+	var (
+		results []patternLine
+		total   int
+	)
+
+	for _, line := range strings.Split(r.FormValue("common_mistakes"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		res := patternLine{Line: line}
+
+		expanded, err := Expand(line)
+		if err != nil {
+			res.Error = err.Error()
+		} else {
+			res.Count = len(expanded)
+			total += len(expanded)
+		}
+
+		results = append(results, res)
+	}
+
+	return &howdah.Page{
+		Template: "pattern_preview.html",
+		Contents: patternPreviewContents{
+			Results: results,
+			Total:   total,
+		},
+	}, nil
+}
+
+// parseForms pairs the parallel forms_incorrect/forms_correct inputs from the
+// entry form into an incorrect→correct map, skipping rows where either side is
+// blank.
+func parseForms(form url.Values) map[string]string {
+	forms := make(map[string]string)
+
+	incorrect := form["forms_incorrect"]
+	correct := form["forms_correct"]
+
+	for i := range incorrect {
+		k := strings.TrimSpace(incorrect[i])
+		if k == "" || i >= len(correct) {
+			continue
+		}
+
+		v := strings.TrimSpace(correct[i])
+		if v == "" {
+			continue
+		}
+
+		forms[k] = v
+	}
+
+	return forms
 }
 
 func (d *DictionariesUI) listEntries(

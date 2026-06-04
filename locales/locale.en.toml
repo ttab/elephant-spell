@@ -22,6 +22,24 @@ other = "Reject and delete this entry?"
 [Edit]
 other = "Edit"
 
+[FormsHelp2]
+other = "Map an incorrect inflection to its correct replacement"
+
+[Incorrect]
+other = "Incorrect"
+
+[Correct]
+other = "Correct"
+
+[Remove]
+other = "Remove"
+
+[AddForm]
+other = "Add form"
+
+[TotalExpansions]
+other = "Total expansions"
+
 [Language]
 other = "Language"
 

@@ -25,7 +25,12 @@
       (function(){var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)})();
     </script>
   </head>
-  <body>
+  <!-- hx-history="false": the code-input editors transform their DOM at
+       runtime, so htmx's serialized history snapshot captures the already
+       initialized markup (with the code-input_loaded class). Restoring that on
+       back/forward leaves a dead editor. Opt out of the snapshot cache so htmx
+       re-fetches a clean page from the server instead. -->
+  <body hx-history="false">
     <header class="app-header">
       <div class="app-header-inner">
         <a href="/" class="app-title">Elephant Spell</a>

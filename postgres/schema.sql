@@ -58,7 +58,8 @@ CREATE TABLE public.eventlog (
     language text NOT NULL,
     entry text NOT NULL,
     deleted boolean DEFAULT false NOT NULL,
-    created timestamp with time zone DEFAULT now() NOT NULL
+    created timestamp with time zone DEFAULT now() NOT NULL,
+    kind text DEFAULT 'entry'::text NOT NULL
 );
 
 
@@ -85,6 +86,24 @@ CREATE TABLE public.job_lock (
     holder text NOT NULL,
     touched timestamp with time zone NOT NULL,
     iteration bigint NOT NULL
+);
+
+
+--
+-- Name: rule; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.rule (
+    language text NOT NULL,
+    name text NOT NULL,
+    status text NOT NULL,
+    description text NOT NULL,
+    level public.entry_level DEFAULT 'error'::public.entry_level NOT NULL,
+    pattern text NOT NULL,
+    replacement text NOT NULL,
+    data jsonb,
+    updated timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by text DEFAULT ''::text NOT NULL
 );
 
 
@@ -119,6 +138,14 @@ ALTER TABLE ONLY public.eventlog
 
 ALTER TABLE ONLY public.job_lock
     ADD CONSTRAINT job_lock_pkey PRIMARY KEY (name);
+
+
+--
+-- Name: rule rule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.rule
+    ADD CONSTRAINT rule_pkey PRIMARY KEY (language, name);
 
 
 --

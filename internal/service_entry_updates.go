@@ -43,7 +43,46 @@ func (a *Application) preloadEntries(ctx context.Context) error {
 				continue
 			}
 
-			a.applyEntry(ctx, spell, row)
+			spell.AddPhrase(entryAsPhrase(row))
+		}
+
+		offset += limit
+	}
+}
+
+// preloadRules loads every current rule into its language's spellchecker, the
+// startup baseline before the eventlog takes over.
+func (a *Application) preloadRules(ctx context.Context) error {
+	var (
+		limit  int64 = 200
+		offset int64
+	)
+
+	for {
+		rows, err := a.q.ListRules(ctx, postgres.ListRulesParams{
+			Limit:  limit,
+			Offset: offset,
+		})
+		if err != nil {
+			return fmt.Errorf("list rules: %w", err)
+		}
+
+		if len(rows) == 0 {
+			return nil
+		}
+
+		for _, row := range rows {
+			spell, ok := a.languages[row.Language]
+			if !ok {
+				continue
+			}
+
+			err := spell.AddRule(ruleDefFromRule(row))
+			if err != nil {
+				a.logger.ErrorContext(ctx, "skip invalid rule",
+					"rule", row.Name, "language", row.Language,
+					elephantine.LogKeyError, err)
+			}
 		}
 
 		offset += limit
@@ -94,9 +133,10 @@ func (a *Application) drainEventlog(
 }
 
 // applyEvent brings the relevant spellchecker in line with a single eventlog
-// entry. Deletes remove the phrase; for upserts the current entry is read and
-// added — and if it has since been removed, the phrase is dropped too, so
-// replaying events is idempotent regardless of ordering.
+// entry, routing by kind to the word or rule store. Deletes remove the item;
+// for upserts the current row is read and added — and if it has since been
+// removed, the item is dropped too, so replaying events is idempotent
+// regardless of ordering.
 func (a *Application) applyEvent(
 	ctx context.Context, e postgres.Eventlog,
 ) error {
@@ -105,9 +145,18 @@ func (a *Application) applyEvent(
 		return nil
 	}
 
+	if e.Kind == eventKindRule {
+		return a.applyRuleEvent(ctx, spell, e)
+	}
+
+	return a.applyEntryEvent(ctx, spell, e)
+}
+
+func (a *Application) applyEntryEvent(
+	ctx context.Context, s *Spellcheck, e postgres.Eventlog,
+) error {
 	if e.Deleted {
-		spell.RemovePhrase(e.Entry)
-		spell.RemoveRule(e.Entry)
+		s.RemovePhrase(e.Entry)
 
 		return nil
 	}
@@ -117,58 +166,69 @@ func (a *Application) applyEvent(
 		Entry:    e.Entry,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		spell.RemovePhrase(e.Entry)
-		spell.RemoveRule(e.Entry)
+		s.RemovePhrase(e.Entry)
 
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("read entry from database: %w", err)
 	}
 
-	a.applyEntry(ctx, spell, entry)
+	s.AddPhrase(entryAsPhrase(entry))
 
 	return nil
 }
 
-// applyEntry registers an entry with its spellchecker as either a pattern rule
-// or a plain word/phrase, clearing the other representation so a change of kind
-// doesn't leave stale data. A rule that fails to compile is logged and skipped
-// rather than stalling the eventlog.
-func (a *Application) applyEntry(
-	ctx context.Context, s *Spellcheck, e postgres.Entry,
-) {
-	if e.Data != nil && e.Data.Rule != nil {
-		s.RemovePhrase(e.Entry)
+func (a *Application) applyRuleEvent(
+	ctx context.Context, s *Spellcheck, e postgres.Eventlog,
+) error {
+	if e.Deleted {
+		s.RemoveRule(e.Entry)
 
-		err := s.AddRule(ruleDefFromEntry(e))
-		if err != nil {
-			a.logger.ErrorContext(ctx, "skip invalid rule entry",
-				"entry", e.Entry, "language", e.Language,
-				elephantine.LogKeyError, err)
-		}
-
-		return
+		return nil
 	}
 
-	s.RemoveRule(e.Entry)
-	s.AddPhrase(entryAsPhrase(e))
+	row, err := a.q.GetRule(ctx, postgres.GetRuleParams{
+		Language: e.Language,
+		Name:     e.Entry,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		s.RemoveRule(e.Entry)
+
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("read rule from database: %w", err)
+	}
+
+	// A rule that fails to compile is logged and skipped rather than stalling
+	// the eventlog; patterns are validated on write so this is defensive.
+	err = s.AddRule(ruleDefFromRule(row))
+	if err != nil {
+		a.logger.ErrorContext(ctx, "skip invalid rule",
+			"rule", row.Name, "language", row.Language,
+			elephantine.LogKeyError, err)
+	}
+
+	return nil
 }
 
-func ruleDefFromEntry(e postgres.Entry) RuleDef {
-	r := e.Data.Rule
-
-	return RuleDef{
-		Name:        e.Entry,
+func ruleDefFromRule(r postgres.Rule) RuleDef {
+	def := RuleDef{
+		Name:        r.Name,
 		Pattern:     r.Pattern,
 		Replacement: r.Replacement,
-		Description: e.Description,
-		Level:       e.Level,
-		Status:      e.Status,
-		Before:      r.Before,
-		After:       r.After,
-		NotBefore:   r.NotBefore,
-		NotAfter:    r.NotAfter,
+		Description: r.Description,
+		Level:       r.Level,
+		Status:      r.Status,
 	}
+
+	if r.Data != nil {
+		def.Before = r.Data.Before
+		def.After = r.Data.After
+		def.NotBefore = r.Data.NotBefore
+		def.NotAfter = r.Data.NotAfter
+	}
+
+	return def
 }
 
 func entryAsPhrase(e postgres.Entry) Phrase {

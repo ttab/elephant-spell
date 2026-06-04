@@ -55,6 +55,7 @@ const (
 var (
 	_ spell.Check        = &Application{}
 	_ spell.Dictionaries = &Application{}
+	_ spell.Rules        = &Application{}
 )
 
 type Parameters struct {
@@ -225,9 +226,11 @@ func (a *Application) Run(ctx context.Context) error {
 
 	checkServer := spell.NewCheckServer(a, opts.ServerOptions())
 	dictServer := spell.NewDictionariesServer(a, opts.ServerOptions())
+	rulesServer := spell.NewRulesServer(a, opts.ServerOptions())
 
 	server.RegisterAPI(checkServer, opts)
 	server.RegisterAPI(dictServer, opts)
+	server.RegisterAPI(rulesServer, opts)
 
 	err = a.setupUI(server.Mux)
 	if err != nil {
@@ -316,6 +319,11 @@ func (a *Application) runEntryUpdater(ctx context.Context) error {
 	err = a.preloadEntries(ctx)
 	if err != nil {
 		return fmt.Errorf("preload entries: %w", err)
+	}
+
+	err = a.preloadRules(ctx)
+	if err != nil {
+		return fmt.Errorf("preload rules: %w", err)
 	}
 
 	// Catch up on anything written during startup before settling into the
@@ -446,7 +454,7 @@ func (a *Application) DeleteEntry(
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	err = a.recordEntryChange(ctx, q, tx, req.Language, req.Text, true)
+	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record entry change: %w", err)
 	}
@@ -492,13 +500,11 @@ func (a *Application) GetEntry(
 	var (
 		forms         map[string]string
 		caseSensitive bool
-		rule          *spell.Rule
 	)
 
 	if row.Data != nil {
 		forms = row.Data.Forms
 		caseSensitive = row.Data.CaseSensitive
-		rule = ruleToRPC(row.Data.Rule)
 	}
 
 	var updated string
@@ -518,7 +524,6 @@ func (a *Application) GetEntry(
 			Updated:        updated,
 			UpdatedBy:      row.UpdatedBy,
 			CaseSensitive:  caseSensitive,
-			Rule:           rule,
 		},
 	}
 
@@ -539,16 +544,40 @@ func (a *Application) ListDictionaries(
 		return nil, twirp.InternalErrorf("read from database: %w", err)
 	}
 
-	res := spell.ListDictionariesResponse{
-		Dictionaries: make([]*spell.CustomDictionary, len(rows)),
+	ruleRows, err := a.q.ListRuleCounts(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("read rule counts: %w", err)
 	}
 
-	for i, row := range rows {
-		res.Dictionaries[i] = &spell.CustomDictionary{
-			Language:     row.Language,
-			EntryCount:   row.Entries,
-			PendingCount: row.Pending,
+	// Merge per-language word and rule counts into one entry per language.
+	byLang := make(map[string]*spell.CustomDictionary)
+
+	dict := func(lang string) *spell.CustomDictionary {
+		d, ok := byLang[lang]
+		if !ok {
+			d = &spell.CustomDictionary{Language: lang}
+			byLang[lang] = d
 		}
+
+		return d
+	}
+
+	for _, row := range rows {
+		d := dict(row.Language)
+		d.EntryCount = row.Entries
+		d.PendingCount = row.Pending
+	}
+
+	for _, row := range ruleRows {
+		d := dict(row.Language)
+		d.RuleCount = row.Rules
+		d.RulePendingCount = row.Pending
+	}
+
+	var res spell.ListDictionariesResponse
+
+	for _, d := range byLang {
+		res.Dictionaries = append(res.Dictionaries, d)
 	}
 
 	return &res, nil
@@ -605,13 +634,11 @@ func (a *Application) ListEntries(
 		var (
 			forms         map[string]string
 			caseSensitive bool
-			rule          *spell.Rule
 		)
 
 		if row.Data != nil {
 			forms = row.Data.Forms
 			caseSensitive = row.Data.CaseSensitive
-			rule = ruleToRPC(row.Data.Rule)
 		}
 
 		var updated string
@@ -630,7 +657,6 @@ func (a *Application) ListEntries(
 			Updated:        updated,
 			UpdatedBy:      row.UpdatedBy,
 			CaseSensitive:  caseSensitive,
-			Rule:           rule,
 		}
 	}
 
@@ -673,15 +699,6 @@ func (a *Application) SetEntry(
 		return nil, err
 	}
 
-	// Validate the rule pattern up front so a broken pattern can't be stored.
-	if req.Entry.Rule != nil {
-		_, err := compileRule(RuleDef{Pattern: req.Entry.Rule.Pattern})
-		if err != nil {
-			return nil, twirp.InvalidArgumentError(
-				"entry.rule.pattern", err.Error())
-		}
-	}
-
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return nil, twirp.InternalErrorf("start transaction: %w", err)
@@ -701,7 +718,6 @@ func (a *Application) SetEntry(
 		Data: &postgres.EntryData{
 			Forms:         req.Entry.Forms,
 			CaseSensitive: req.Entry.CaseSensitive,
-			Rule:          ruleFromRPC(req.Entry.Rule),
 		},
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedBy: auth.Claims.Subject,
@@ -710,7 +726,7 @@ func (a *Application) SetEntry(
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	err = a.recordEntryChange(ctx, q, tx, req.Entry.Language, req.Entry.Text, false)
+	err = a.recordChange(ctx, q, tx, req.Entry.Language, req.Entry.Text, false, eventKindEntry)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record entry change: %w", err)
 	}
@@ -770,7 +786,7 @@ func (a *Application) SetEntryStatus(
 		return nil, twirp.NotFoundError("entry does not exist")
 	}
 
-	err = a.recordEntryChange(ctx, q, tx, req.Language, req.Text, false)
+	err = a.recordChange(ctx, q, tx, req.Language, req.Text, false, eventKindEntry)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record entry change: %w", err)
 	}
@@ -783,34 +799,38 @@ func (a *Application) SetEntryStatus(
 	return &spell.SetEntryStatusResponse{}, nil
 }
 
-func ruleFromRPC(r *spell.Rule) *postgres.EntryRule {
-	if r == nil {
-		return nil
+// ruleToRPC converts a stored rule row to its RPC representation.
+func ruleToRPC(r postgres.Rule) (*spell.Rule, error) {
+	level, err := entryLevelToRPC(r.Level)
+	if err != nil {
+		return nil, err
 	}
 
-	return &postgres.EntryRule{
+	var updated string
+	if r.Updated.Valid {
+		updated = r.Updated.Time.Format(time.RFC3339)
+	}
+
+	out := &spell.Rule{
+		Language:    r.Language,
+		Name:        r.Name,
+		Status:      r.Status,
+		Description: r.Description,
+		Level:       level,
 		Pattern:     r.Pattern,
 		Replacement: r.Replacement,
-		Before:      r.Before,
-		After:       r.After,
-		NotBefore:   r.NotBefore,
-		NotAfter:    r.NotAfter,
-	}
-}
-
-func ruleToRPC(r *postgres.EntryRule) *spell.Rule {
-	if r == nil {
-		return nil
+		Updated:     updated,
+		UpdatedBy:   r.UpdatedBy,
 	}
 
-	return &spell.Rule{
-		Pattern:     r.Pattern,
-		Replacement: r.Replacement,
-		Before:      r.Before,
-		After:       r.After,
-		NotBefore:   r.NotBefore,
-		NotAfter:    r.NotAfter,
+	if r.Data != nil {
+		out.Before = r.Data.Before
+		out.After = r.Data.After
+		out.NotBefore = r.Data.NotBefore
+		out.NotAfter = r.Data.NotAfter
 	}
+
+	return out, nil
 }
 
 func entryLevelFromRPC(level spell.CorrectionLevel) (postgres.EntryLevel, error) {
@@ -908,18 +928,25 @@ func (a *Application) Suggestions(
 	}, nil
 }
 
-// recordEntryChange appends an entry change to the eventlog and wakes the
-// consumer. It must run inside the same transaction as the entry write so the
-// change and its event commit atomically.
+// eventKind values distinguish dictionary-word changes from rule changes in the
+// eventlog so the consumer applies each to the right store.
+const (
+	eventKindEntry = "entry"
+	eventKindRule  = "rule"
+)
+
+// recordChange appends a change to the eventlog and wakes the consumer. It must
+// run inside the same transaction as the write so the change and its event
+// commit atomically.
 //
 // The exclusive table lock serialises eventlog writers: a writer holds it
 // until commit, so the next writer cannot draw its event id until this event
 // is committed and visible. That keeps commit order equal to id order, which
 // the log poller relies on to never skip an event. The published id is only a
 // wake-up — the consumer reads all events after its own cursor.
-func (a *Application) recordEntryChange(
+func (a *Application) recordChange(
 	ctx context.Context, q *postgres.Queries, db pg.DBExec,
-	language, entry string, deleted bool,
+	language, name string, deleted bool, kind string,
 ) error {
 	err := q.LockEventlog(ctx)
 	if err != nil {
@@ -928,8 +955,9 @@ func (a *Application) recordEntryChange(
 
 	id, err := q.InsertEvent(ctx, postgres.InsertEventParams{
 		Language: language,
-		Entry:    entry,
+		Entry:    name,
 		Deleted:  deleted,
+		Kind:     kind,
 	})
 	if err != nil {
 		return fmt.Errorf("append eventlog entry: %w", err)

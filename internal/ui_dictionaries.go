@@ -104,37 +104,12 @@ type uiEntry struct {
 	Updated        string
 	UpdatedBy      string
 	CaseSensitive  bool
-	Rule           *uiRule
-}
-
-// uiRule mirrors a pattern rule for the template, with guard lists flattened to
-// comma-separated strings for the text inputs.
-type uiRule struct {
-	Pattern     string
-	Replacement string
-	Before      string
-	After       string
-	NotBefore   string
-	NotAfter    string
 }
 
 func customEntryToUI(e *spell.CustomEntry) uiEntry {
 	level := "error"
 	if e.Level == spell.CorrectionLevel_LEVEL_SUGGESTION {
 		level = "suggestion"
-	}
-
-	var rule *uiRule
-
-	if e.Rule != nil {
-		rule = &uiRule{
-			Pattern:     e.Rule.Pattern,
-			Replacement: e.Rule.Replacement,
-			Before:      strings.Join(e.Rule.Before, ", "),
-			After:       strings.Join(e.Rule.After, ", "),
-			NotBefore:   strings.Join(e.Rule.NotBefore, ", "),
-			NotAfter:    strings.Join(e.Rule.NotAfter, ", "),
-		}
 	}
 
 	return uiEntry{
@@ -147,7 +122,6 @@ func customEntryToUI(e *spell.CustomEntry) uiEntry {
 		Updated:        e.Updated,
 		UpdatedBy:      e.UpdatedBy,
 		CaseSensitive:  e.CaseSensitive,
-		Rule:           rule,
 	}
 }
 
@@ -668,22 +642,6 @@ func (d *DictionariesUI) setEntryFromForm(
 	// pair per row in the form editor.
 	forms := parseForms(r.Form)
 
-	var rule *spell.Rule
-
-	if r.FormValue("is_rule") == "on" {
-		pattern := strings.TrimSpace(r.FormValue("rule_pattern"))
-		if pattern != "" {
-			rule = &spell.Rule{
-				Pattern:     pattern,
-				Replacement: strings.TrimSpace(r.FormValue("rule_replacement")),
-				Before:      splitCommaList(r.FormValue("rule_before")),
-				After:       splitCommaList(r.FormValue("rule_after")),
-				NotBefore:   splitCommaList(r.FormValue("rule_not_before")),
-				NotAfter:    splitCommaList(r.FormValue("rule_not_after")),
-			}
-		}
-	}
-
 	_, err := d.dicts.SetEntry(ctx, &spell.SetEntryRequest{
 		Entry: &spell.CustomEntry{
 			Language:       lang,
@@ -694,7 +652,6 @@ func (d *DictionariesUI) setEntryFromForm(
 			Level:          level,
 			Forms:          forms,
 			CaseSensitive:  r.FormValue("case_sensitive") == "on",
-			Rule:           rule,
 		},
 	})
 	if err != nil {
@@ -767,20 +724,6 @@ func (d *DictionariesUI) validateMistakes(
 			Total:   total,
 		},
 	}, nil
-}
-
-// splitCommaList splits a comma-separated input into trimmed, non-empty values.
-func splitCommaList(s string) []string {
-	var out []string
-
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			out = append(out, part)
-		}
-	}
-
-	return out
 }
 
 // parseForms pairs the parallel forms_incorrect/forms_correct inputs from the

@@ -1275,11 +1275,12 @@ code-input.code-input-line {
 /* The textarea/pre inherit a percentage min-height (calc(100% - padding)) that,
    inside the grid, resolves against a blown-up containing block and overrides
    code-input's own one-line height — leaving the textarea ~100px tall so it
-   overflowed the box and overlapped the next field. Pin it so a single line
-   fits the 44px box and the typing/highlight layers line up. */
+   overflowed the box and overlapped the next field. Pin it to a single line so
+   it fills the 44px box whether empty (code-input auto-sizes it to 0) or not,
+   and the typing/highlight layers line up. */
 code-input.code-input-line textarea,
 code-input.code-input-line pre {
-  min-height: 0 !important;
+  min-height: 1.5em !important;
   /* the wrapping code-input draws the field border; the global input/textarea
      styling otherwise gives the inner textarea a second, offset border. */
   border: 0 !important;

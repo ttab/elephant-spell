@@ -68,16 +68,16 @@ other = "Context guards"
 other = "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."
 
 [RuleNotBefore]
-other = "skip if preceded by..."
+other = "Skip if preceded by"
 
 [RuleNotAfter]
-other = "skip if followed by..."
+other = "Skip if followed by"
 
 [RuleBefore]
-other = "only if preceded by..."
+other = "Only if preceded by"
 
 [RuleAfter]
-other = "only if followed by..."
+other = "Only if followed by"
 
 [SampleInput]
 other = "Sample input"

@@ -59,10 +59,24 @@
     <div class="form-group rule-guards">
       <label>{{t "RuleGuards" "Context guards"}}</label>
       <div class="help-text">{{t "RuleGuardsHelp" "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."}}</div>
-      <input type="text" name="not_before" value="{{if .Rule}}{{.Rule.NotBefore}}{{end}}" placeholder="{{t "RuleNotBefore" "skip if preceded by..."}}" {{if not .CanWrite}}disabled{{end}}>
-      <input type="text" name="not_after" value="{{if .Rule}}{{.Rule.NotAfter}}{{end}}" placeholder="{{t "RuleNotAfter" "skip if followed by..."}}" {{if not .CanWrite}}disabled{{end}}>
-      <input type="text" name="before" value="{{if .Rule}}{{.Rule.Before}}{{end}}" placeholder="{{t "RuleBefore" "only if preceded by..."}}" {{if not .CanWrite}}disabled{{end}}>
-      <input type="text" name="after" value="{{if .Rule}}{{.Rule.After}}{{end}}" placeholder="{{t "RuleAfter" "only if followed by..."}}" {{if not .CanWrite}}disabled{{end}}>
+      <div class="guard-rows">
+        <div class="guard-row">
+          <label for="guard_not_before">{{t "RuleNotBefore" "Skip if preceded by"}}</label>
+          <input type="text" id="guard_not_before" name="not_before" value="{{if .Rule}}{{.Rule.NotBefore}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+        <div class="guard-row">
+          <label for="guard_not_after">{{t "RuleNotAfter" "Skip if followed by"}}</label>
+          <input type="text" id="guard_not_after" name="not_after" value="{{if .Rule}}{{.Rule.NotAfter}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+        <div class="guard-row">
+          <label for="guard_before">{{t "RuleBefore" "Only if preceded by"}}</label>
+          <input type="text" id="guard_before" name="before" value="{{if .Rule}}{{.Rule.Before}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+        <div class="guard-row">
+          <label for="guard_after">{{t "RuleAfter" "Only if followed by"}}</label>
+          <input type="text" id="guard_after" name="after" value="{{if .Rule}}{{.Rule.After}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+      </div>
     </div>
 
     <div class="form-group">

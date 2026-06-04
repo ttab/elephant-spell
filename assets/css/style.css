@@ -1466,8 +1466,41 @@ button.pattern-preview-total:hover .pattern-preview-view {
 }
 
 /* rule editor: sample test */
-.rule-guards input + input {
-  margin-top: 8px;
+/* Context-guard rows: label to the left of the input. The grid's auto column
+   sizes to the widest label, so every input left-aligns. display:contents lets
+   each .guard-row stay a semantic pair while its label/input participate in the
+   shared grid. */
+.guard-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.guard-row {
+  display: contents;
+}
+
+.guard-rows label {
+  margin-bottom: 0;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+/* On narrow screens stack the label above its input. */
+@media (max-width: 768px) {
+  .guard-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .guard-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 
 .rule-test-row {

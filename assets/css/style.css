@@ -1280,6 +1280,10 @@ code-input.code-input-line {
 code-input.code-input-line textarea,
 code-input.code-input-line pre {
   min-height: 0 !important;
+  /* the wrapping code-input draws the field border; the global input/textarea
+     styling otherwise gives the inner textarea a second, offset border. */
+  border: 0 !important;
+  border-radius: 0 !important;
 }
 
 /* autocomplete popup */

@@ -19,7 +19,7 @@
 
     <div class="form-group">
       <label for="sc-text">{{t "SpellcheckText" "Text"}}</label>
-      <textarea id="sc-text" name="text" rows="8" placeholder="{{t "SpellcheckPlaceholder" "Mellan 12-15 personer deltog."}}">{{.Contents.Input}}</textarea>
+      <textarea id="sc-text" name="text" rows="8" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="{{t "SpellcheckPlaceholder" "Mellan 12-15 personer deltog."}}">{{.Contents.Input}}</textarea>
     </div>
 
     <div class="form-group spellcheck-options">

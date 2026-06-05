@@ -194,6 +194,17 @@ func resolveLongest(cands []candidateMatch) []bool {
 	return keep
 }
 
+// hasSpan reports whether spans already contains a span with the same offsets.
+func hasSpan(spans []*spell.TextSpan, s *spell.TextSpan) bool {
+	for _, e := range spans {
+		if e.Start == s.Start && e.End == s.End {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ruleSuggestions returns the suggestions produced by matching the rules
 // against a phrase, used for on-demand suggestion lookups. The caller must hold
 // at least a read lock.
@@ -514,7 +525,7 @@ func (s *Spellcheck) Check(
 	// overlaps it, so e.g. a "Mexico City" casing correction takes precedence
 	// over the "Mexico"→"Mexiko" rule on the same span. Survivors are reported
 	// in reading order — entries first, then rules — deduplicated by text
-	// within each group (the response carries no offsets).
+	// (the response carries the spans, not offsets in the text itself).
 	combined := make([]candidateMatch, 0,
 		len(validCands)+len(entryCands)+len(ruleCands))
 	combined = append(combined, validCands...)
@@ -526,12 +537,14 @@ func (s *Spellcheck) Check(
 	entryStart := len(validCands)
 	ruleStart := entryStart + len(entryCands)
 
-	// Emit survivors in reading order, one entry per distinct text within each
-	// group, collecting the span of every occurrence so the client can act on
-	// the exact positions rather than searching for the text.
-	emit := func(lo, hi int) {
-		byText := make(map[string]*spell.MisspelledEntry)
+	// Emit survivors in reading order, one entry per distinct text, collecting
+	// the span of every occurrence so the client can act on the exact positions
+	// rather than searching for the text. The map is shared across the entry
+	// and rule groups so a text matched by both a dictionary entry and a rule is
+	// reported once, with the union of their spans.
+	byText := make(map[string]*spell.MisspelledEntry)
 
+	emit := func(lo, hi int) {
 		for i := lo; i < hi; i++ {
 			if !keep[i] {
 				continue
@@ -546,15 +559,18 @@ func (s *Spellcheck) Check(
 				End:   int64(utf8.RuneCountInString(source[:c.end])),
 			}
 
-			if e, ok := byText[c.entry.Text]; ok {
-				e.Spans = append(e.Spans, span)
+			e, ok := byText[c.entry.Text]
+			if !ok {
+				c.entry.Spans = append(c.entry.Spans, span)
+				byText[c.entry.Text] = c.entry
+				res.Entries = append(res.Entries, c.entry)
 
 				continue
 			}
 
-			c.entry.Spans = append(c.entry.Spans, span)
-			byText[c.entry.Text] = c.entry
-			res.Entries = append(res.Entries, c.entry)
+			if !hasSpan(e.Spans, span) {
+				e.Spans = append(e.Spans, span)
+			}
 		}
 	}
 

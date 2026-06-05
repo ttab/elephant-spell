@@ -1,4 +1,4 @@
-{{with .Contents}}
+{{define "pattern_preview_body"}}
 {{if .Results}}
 <ul class="pattern-preview-list">
   {{range .Results}}
@@ -18,3 +18,5 @@
 {{end}}
 {{end}}
 {{end}}
+
+{{with .Contents}}{{template "pattern_preview_body" .}}{{end}}

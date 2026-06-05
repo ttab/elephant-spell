@@ -73,7 +73,7 @@
         data-preview-target="#common-mistakes-preview"
       >{{if .Entry}}{{range $i, $m := .Entry.CommonMistakes}}{{if $i}}
 {{end}}{{$m}}{{end}}{{end}}</code-input>
-      <div id="common-mistakes-preview" class="pattern-preview"></div>
+      <div id="common-mistakes-preview" class="pattern-preview">{{if .Entry}}{{template "pattern_preview_body" (expandPreview .Entry.CommonMistakes)}}{{end}}</div>
     </div>
 
     <div class="form-group">

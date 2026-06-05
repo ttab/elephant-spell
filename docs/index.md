@@ -6,9 +6,9 @@ own section of the admin UI:
 
 - **[Dictionaries](/docs/dictionaries)** — words and phrases: corrections for
   misspellings and alternative spellings, inflected forms, and case handling.
-- **[Rules](/docs/rules)** — token patterns that catch errors which can't be
-  listed as fixed strings, such as number ranges, gaps between words, and
-  context-dependent corrections.
+- **[Rules](/docs/rules)** — patterns with placeholders that catch errors which
+  can't be listed as fixed strings, such as number ranges, gaps between words,
+  and context-dependent corrections.
 
 ## Moderation
 

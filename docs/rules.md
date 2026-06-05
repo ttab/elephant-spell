@@ -1,9 +1,9 @@
 # Pattern rules
 
-A **pattern rule** matches a sequence of *tokens* rather than literal text. This
-catches errors that can't be enumerated as fixed strings — number ranges, words
-with other words in between, and corrections that depend on the surrounding
-words. For plain words, phrases and inflected forms see
+A **pattern rule** matches text against a small pattern language instead of
+listing fixed strings. This catches errors that can't be enumerated — number
+ranges, words with other words in between, and corrections that depend on the
+surrounding words. For plain words, phrases and inflected forms see
 [Dictionaries](/docs/dictionaries).
 
 Rules are managed in the **Rules** section of the admin UI, separately from
@@ -13,12 +13,12 @@ dictionary words.
 
 | Field | Description |
 |-------|-------------|
-| **Name** | Identifies the rule (its key, together with the language). |
+| **Name** | A human-readable label for the rule. Rules are keyed by a sequential id, not the name, so the name need not be unique. |
 | **Status** | `accepted` or `pending`, like dictionary words. Both are active; pending rules are flagged and worked through in the moderation queue. |
 | **Description** | Optional explanation shown to editors as context for the correction. |
 | **Correction level** | `error` flags a match as wrong, `suggestion` offers a softer recommendation. |
-| **Pattern** | The token pattern to match (see the DSL below). |
-| **Replacement** | The suggested correction, referencing captured tokens as `{1}`, `{2}`, … |
+| **Pattern** | The pattern to match (see the DSL below). |
+| **Replacement** | The suggested correction, referencing captured placeholders as `{1}`, `{2}`, … |
 | **Context guards** | Optional limits on the words next to a match (see below). |
 
 ## Pattern DSL

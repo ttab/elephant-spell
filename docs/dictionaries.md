@@ -1,7 +1,7 @@
 # Dictionary words
 
 Dictionary words extend the built-in hunspell dictionaries with
-organisation-specific words, phrases, and common-mistake corrections. For token
+organisation-specific words, phrases, and common-mistake corrections. For
 patterns (number ranges, gaps between words, context-dependent corrections) see
 [Rules](/docs/rules).
 

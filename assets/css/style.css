@@ -231,6 +231,7 @@ body {
 .icon-sun  { width: 18px; height: 18px; -webkit-mask-image: url('/assets/icons/sun.svg'); mask-image: url('/assets/icons/sun.svg'); }
 .icon-moon { width: 18px; height: 18px; -webkit-mask-image: url('/assets/icons/moon.svg'); mask-image: url('/assets/icons/moon.svg'); }
 .icon-menu { width: 18px; height: 18px; -webkit-mask-image: url('/assets/icons/menu.svg'); mask-image: url('/assets/icons/menu.svg'); }
+.icon-pen  { width: 15px; height: 15px; -webkit-mask-image: url('/assets/icons/pen.svg'); mask-image: url('/assets/icons/pen.svg'); }
 
 /* Show sun in dark mode, moon in light mode */
 .theme-toggle .icon-sun { display: none; }
@@ -523,6 +524,25 @@ body {
 .entry-form-header h2 {
   font-size: 16px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.entry-rename-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+
+.entry-rename-btn:hover {
+  color: var(--color-primary);
+  background: var(--color-bg);
 }
 
 .entry-form {

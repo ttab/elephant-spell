@@ -300,3 +300,30 @@ other = "Förslag:"
 
 [Menu]
 other = "Meny"
+
+[RenameEntry]
+other = "Byt namn på ord"
+
+[NewText]
+other = "Ny text"
+
+[Rename]
+other = "Byt namn"
+
+[RenameHelp]
+other = "Byt namn på ordet och behåll dess vanliga misstag, former och inställningar."
+
+[EntryRenamed]
+other = "Ordet bytte namn"
+
+[RenameUnchanged]
+other = "Ange en annan text"
+
+[RenameConflict]
+other = "Det finns redan ett ord med den texten"
+
+[RenameGone]
+other = "Ordet finns inte längre"
+
+[RenameFailed]
+other = "Kunde inte byta namn på ordet"

@@ -33,6 +33,14 @@ WHERE language = @language AND entry = @entry;
 DELETE FROM entry
 WHERE language = @language AND entry = @entry;
 
+-- RenameEntry changes an entry's text (its key), keeping the rest of its data.
+-- It reports the number of rows affected so the caller can tell whether the
+-- entry existed.
+-- name: RenameEntry :execrows
+UPDATE entry
+SET entry = @new_entry, updated = @updated, updated_by = @updated_by
+WHERE language = @language AND entry = @entry;
+
 -- name: ListEntries :many
 SELECT language, entry, status, description, common_mistakes, level, data,
        updated, updated_by

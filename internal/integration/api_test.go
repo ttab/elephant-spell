@@ -86,6 +86,70 @@ func TestAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("rename_entry", func(t *testing.T) {
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language:       "sv-se",
+				Text:           "Faroe",
+				Status:         "accepted",
+				Level:          spellapi.CorrectionLevel_LEVEL_ERROR,
+				CommonMistakes: []string{"Färö"},
+				CaseSensitive:  true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("set entry: %v", err)
+		}
+
+		_, err = stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language: "sv-se", Text: "Iceland", Status: "accepted",
+			},
+		})
+		if err != nil {
+			t.Fatalf("set conflicting entry: %v", err)
+		}
+
+		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
+			Language: "sv-se", Text: "Faroe", NewText: "Faroes",
+		})
+		if err != nil {
+			t.Fatalf("rename: %v", err)
+		}
+
+		// The renamed entry exists and kept its data.
+		got, err := stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+			Language: "sv-se", Text: "Faroes",
+		})
+		if err != nil {
+			t.Fatalf("get renamed: %v", err)
+		}
+
+		if !got.Entry.CaseSensitive || len(got.Entry.CommonMistakes) != 1 {
+			t.Errorf("rename did not preserve data: %+v", got.Entry)
+		}
+
+		// The old text is gone.
+		_, err = stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+			Language: "sv-se", Text: "Faroe",
+		})
+		if err == nil {
+			t.Error("old entry text should no longer exist")
+		}
+
+		// Renaming onto an existing text conflicts.
+		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
+			Language: "sv-se", Text: "Faroes", NewText: "Iceland",
+		})
+		assertTwirpCode(t, err, twirp.AlreadyExists)
+
+		// Renaming a missing entry is a not-found.
+		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
+			Language: "sv-se", Text: "Nonexistent", NewText: "Whatever",
+		})
+		assertTwirpCode(t, err, twirp.NotFound)
+	})
+
 	t.Run("spellcheck_flow_through_eventlog", func(t *testing.T) {
 		const (
 			entry   = "Gaddafi"

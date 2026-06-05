@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -74,6 +75,8 @@ func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("POST /dictionaries/{language}/_expansions", d.listExpansions)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}", d.saveEntry)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}/delete", d.deleteEntry)
+	mux.HandleFunc("GET /dictionaries/{language}/{text}/rename", d.renameEntryForm)
+	mux.HandleFunc("POST /dictionaries/{language}/{text}/rename", d.renameEntry)
 	mux.HandleFunc("GET /moderation/{$}", d.moderationRedirect)
 	mux.HandleFunc("GET /moderation/{language}/{$}", d.moderationPage)
 	mux.HandleFunc("POST /moderation/{language}/{kind}/{ident}/accept", d.moderationAccept)
@@ -153,6 +156,7 @@ type dictionariesContents struct {
 	Entry       *uiEntry
 	ActiveEntry string
 	NewEntry    bool
+	Rename      bool
 	Count       int
 	Flash       *flashMessage
 	CanWrite    bool
@@ -627,6 +631,168 @@ func (d *DictionariesUI) deleteEntry(
 	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/")
 
 	return d.entryDetailResponse(ctx, svcCtx, lang, "", nil)
+}
+
+// renameEntryForm shows the simple rename form for an entry.
+func (d *DictionariesUI) renameEntryForm(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	ctx, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if !hasWriteScope(ctx) {
+		return nil, forbiddenScope()
+	}
+
+	lang := r.PathValue("language")
+	text := r.PathValue("text")
+
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
+	if err != nil {
+		return nil, howdah.InternalHTTPError(err)
+	}
+
+	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
+		Language: lang, Text: text,
+	})
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	entry := customEntryToUI(res.Entry)
+
+	if isHtmx(r) {
+		return &howdah.Page{
+			Template: "entry_rename.html",
+			Contents: dictionariesContents{
+				Language: lang, Entry: &entry, ActiveEntry: text,
+				Rename: true, CanWrite: true,
+			},
+		}, nil
+	}
+
+	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	count, err := d.entryCount(ctx, lang)
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	return &howdah.Page{
+		Template: "dictionaries.html",
+		Title:    howdah.TLiteral(text + " – Dictionaries"),
+		Contents: dictionariesContents{
+			Languages:   d.languages,
+			Language:    lang,
+			Entries:     entries,
+			Count:       count,
+			Entry:       &entry,
+			ActiveEntry: text,
+			Rename:      true,
+			CanWrite:    true,
+			HasMore:     hasMore,
+		},
+	}, nil
+}
+
+// renameEntry applies a rename and, on success, swaps in the renamed entry's
+// detail. On a validation or conflict error it re-renders the rename form with
+// a message instead of an error page.
+func (d *DictionariesUI) renameEntry(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (_ *howdah.Page, outErr error) {
+	ctx, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if !hasWriteScope(ctx) {
+		return nil, forbiddenScope()
+	}
+
+	lang := r.PathValue("language")
+	text := r.PathValue("text")
+
+	err = r.ParseForm()
+	if err != nil {
+		return nil, howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid form data",
+			fmt.Errorf("parse form: %w", err))
+	}
+
+	newText := strings.TrimSpace(r.FormValue("new_text"))
+
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
+	if err != nil {
+		return nil, howdah.InternalHTTPError(err)
+	}
+
+	if newText == "" || newText == text {
+		return d.renameFormWithFlash(svcCtx, lang, text, &flashMessage{
+			Type:    "error",
+			Message: howdah.TL("RenameUnchanged", "Enter a different text"),
+		})
+	}
+
+	_, err = d.dicts.RenameEntry(svcCtx, &spell.RenameEntryRequest{
+		Language: lang, Text: text, NewText: newText,
+	})
+	if err != nil {
+		return d.renameFormWithFlash(svcCtx, lang, text, &flashMessage{
+			Type:    "error",
+			Message: renameErrorMessage(err),
+		})
+	}
+
+	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(newText))
+
+	return d.entryDetailResponse(ctx, svcCtx, lang, newText, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("EntryRenamed", "Entry renamed"),
+	})
+}
+
+// renameFormWithFlash re-renders the rename form for an entry with a message.
+func (d *DictionariesUI) renameFormWithFlash(
+	svcCtx context.Context, lang, text string, flash *flashMessage,
+) (*howdah.Page, error) {
+	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
+		Language: lang, Text: text,
+	})
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	entry := customEntryToUI(res.Entry)
+
+	return &howdah.Page{
+		Template: "entry_rename.html",
+		Contents: dictionariesContents{
+			Language: lang, Entry: &entry, ActiveEntry: text,
+			Rename: true, CanWrite: true, Flash: flash,
+		},
+	}, nil
+}
+
+// renameErrorMessage maps a rename RPC error to an editor-facing message.
+func renameErrorMessage(err error) howdah.TextLabel {
+	var twerr twirp.Error
+	if errors.As(err, &twerr) {
+		switch twerr.Code() {
+		case twirp.AlreadyExists:
+			return howdah.TL("RenameConflict",
+				"An entry with that text already exists")
+		case twirp.NotFound:
+			return howdah.TL("RenameGone", "The entry no longer exists")
+		}
+	}
+
+	return howdah.TL("RenameFailed", "Could not rename the entry")
 }
 
 func (d *DictionariesUI) setEntryFromForm(

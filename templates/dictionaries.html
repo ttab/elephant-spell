@@ -50,7 +50,9 @@
   </div>
   <div class="panel-right">
     <div id="entry-detail">
-      {{if .Contents.Entry}}
+      {{if .Contents.Rename}}
+        {{template "entry_rename.html" .}}
+      {{else if .Contents.Entry}}
         {{template "entry_form.html" .}}
       {{else if .Contents.NewEntry}}
         {{template "entry_form.html" .}}

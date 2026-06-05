@@ -1339,6 +1339,8 @@ body {
   background: var(--color-border-light);
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
+  /* break long expansion patterns ({A|B|…}) so a chip can't overflow the card */
+  overflow-wrap: anywhere;
 }
 
 .mod-card-guards {

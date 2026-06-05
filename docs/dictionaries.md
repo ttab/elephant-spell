@@ -31,10 +31,46 @@ An entry can be limited by the words immediately next to a match, the same way
   one of these.
 
 This keeps simple word-with-context corrections in the dictionary instead of
-needing a pattern rule. For example, an entry correcting `Mexico` → `Mexiko` can
-*skip if followed by* `City`, so "Mexico City" is left alone while a stray
-"Mexico" is still flagged. Guards respect the entry's case sensitivity, and
-because the match has already been located they cost nothing extra to evaluate.
+needing a pattern rule. Guards respect the entry's case sensitivity, and because
+the match has already been located they cost nothing extra to evaluate.
+
+### Example: Mexiko (the country) vs Mexico City (the city)
+
+In Swedish the country is spelled **Mexiko**, but the city keeps its English
+form **Mexico City**. Two case-sensitive entries handle both without stepping on
+each other:
+
+**Entry 1 — the country** (text `Mexiko`)
+
+| Field | Value |
+|---|---|
+| Common mistakes | `Mexico` |
+| Skip if followed by | `City`, `Citys` |
+
+A stray "Mexico" is corrected to "Mexiko" — *except* when followed by "City" or
+"Citys", where "Mexico" is correct because it is part of the city name.
+
+**Entry 2 — the city** (text `Mexico City`)
+
+| Field | Value |
+|---|---|
+| Common mistakes | `Mexiko City` |
+| Forms | `Mexiko Citys` → `Mexico Citys` |
+
+This corrects an over-Swedishified "Mexiko City" back to "Mexico City".
+
+Putting it together:
+
+| Input | Result |
+|---|---|
+| `Mexico` | → `Mexiko` (country) |
+| `Mexico City` | left alone — the *skip if followed by* guard suppresses the country correction |
+| `Mexiko City` | → `Mexico City` (the city entry's `Mexiko City` common mistake) |
+| `mexiko` | → `Mexiko` (case-sensitive entries still correct leading-letter miscasings) |
+
+Both entries are case-sensitive, so "Mexico"/"Mexiko" only match as the proper
+nouns — and because they are case-sensitive they also flag miscasings like
+"mexiko" and suggest the exact casing.
 
 ## Common mistakes and pattern expansion
 

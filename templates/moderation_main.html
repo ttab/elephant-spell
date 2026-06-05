@@ -15,6 +15,7 @@
       <span class="mod-card-text">{{.Name}}</span>
       <span class="mod-card-kind">{{if .IsRule}}{{t "RuleKind" "Rule"}}{{else}}{{t "WordKind" "Word"}}{{end}}</span>
       <span class="mod-card-level level-{{.Level}}">{{if eq .Level "suggestion"}}{{t "Suggestion" "Suggestion"}}{{else}}{{t "Error" "Error"}}{{end}}</span>
+      {{if .CaseSensitive}}<span class="mod-card-cs">{{t "CaseSensitive" "Case sensitive"}}</span>{{end}}
     </div>
     {{if .Description}}<p class="mod-card-desc">{{.Description}}</p>{{end}}
     {{if .IsRule}}
@@ -35,6 +36,19 @@
       <div class="mod-chips">{{range $k, $v := .Forms}}<span class="chip">{{$k}} → {{$v}}</span>{{end}}</div>
     </div>
     {{end}}
+    {{end}}
+    {{if .Guards}}
+    <div class="mod-card-section">
+      <span class="mod-card-label">{{t "RuleGuards" "Context guards"}}</span>
+      <div class="mod-card-guards">
+        {{range .Guards}}
+        <div class="mod-guard">
+          <span class="mod-guard-label">{{t .Key .Default}}</span>
+          <div class="mod-chips">{{range .Words}}<span class="chip">{{.}}</span>{{end}}</div>
+        </div>
+        {{end}}
+      </div>
+    </div>
     {{end}}
     <div class="mod-card-foot">
       <div class="mod-card-meta">

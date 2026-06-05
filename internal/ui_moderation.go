@@ -36,6 +36,7 @@ type moderationItem struct {
 	Ident          string // entry text, or rule id, used in action URLs
 	Name           string // entry text or rule label
 	Level          string
+	CaseSensitive  bool
 	Description    string
 	Updated        string
 	UpdatedBy      string
@@ -43,10 +44,41 @@ type moderationItem struct {
 	Forms          map[string]string // word only
 	Pattern        string            // rule only
 	Replacement    string            // rule only
+	Before         []string
+	After          []string
+	NotBefore      []string
+	NotAfter       []string
 }
 
 func (m moderationItem) IsRule() bool {
 	return m.Kind == "rule"
+}
+
+// guardDisplay is one configured context guard for the moderation card: a label
+// (translation key + default) and the words it lists.
+type guardDisplay struct {
+	Key     string
+	Default string
+	Words   []string
+}
+
+// Guards returns the configured context guards in display order, omitting the
+// empty ones.
+func (m moderationItem) Guards() []guardDisplay {
+	var out []guardDisplay
+
+	add := func(key, def string, words []string) {
+		if len(words) > 0 {
+			out = append(out, guardDisplay{Key: key, Default: def, Words: words})
+		}
+	}
+
+	add("RuleNotBefore", "Skip if preceded by", m.NotBefore)
+	add("RuleNotAfter", "Skip if followed by", m.NotAfter)
+	add("RuleBefore", "Only if preceded by", m.Before)
+	add("RuleAfter", "Only if followed by", m.After)
+
+	return out
 }
 
 type moderationContents struct {
@@ -124,25 +156,35 @@ func (d *DictionariesUI) moderationData(
 			Ident:          e.Text,
 			Name:           e.Text,
 			Level:          levelString(e.Level),
+			CaseSensitive:  e.CaseSensitive,
 			Description:    e.Description,
 			Updated:        e.Updated,
 			UpdatedBy:      e.UpdatedBy,
 			CommonMistakes: e.CommonMistakes,
 			Forms:          e.Forms,
+			Before:         e.Before,
+			After:          e.After,
+			NotBefore:      e.NotBefore,
+			NotAfter:       e.NotAfter,
 		})
 	}
 
 	for _, r := range rules.Rules {
 		items = append(items, moderationItem{
-			Kind:        "rule",
-			Ident:       strconv.FormatInt(r.Id, 10),
-			Name:        r.Name,
-			Level:       levelString(r.Level),
-			Description: r.Description,
-			Updated:     r.Updated,
-			UpdatedBy:   r.UpdatedBy,
-			Pattern:     r.Pattern,
-			Replacement: r.Replacement,
+			Kind:          "rule",
+			Ident:         strconv.FormatInt(r.Id, 10),
+			Name:          r.Name,
+			Level:         levelString(r.Level),
+			CaseSensitive: r.CaseSensitive,
+			Description:   r.Description,
+			Updated:       r.Updated,
+			UpdatedBy:     r.UpdatedBy,
+			Pattern:       r.Pattern,
+			Replacement:   r.Replacement,
+			Before:        r.Before,
+			After:         r.After,
+			NotBefore:     r.NotBefore,
+			NotAfter:      r.NotAfter,
 		})
 	}
 

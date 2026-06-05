@@ -842,6 +842,15 @@ body {
   line-height: 1.65;
 }
 
+.docs-content a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.docs-content a:hover {
+  color: var(--color-primary-hover);
+}
+
 .docs-content table {
   width: 100%;
   border-collapse: collapse;

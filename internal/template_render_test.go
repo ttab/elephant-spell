@@ -22,13 +22,14 @@ func renderEntryForm(t *testing.T, contents dictionariesContents) string {
 
 			return ""
 		},
-		"tl":         func(_ ...any) string { return "" },
-		"td":         func(_ ...any) string { return "" },
-		"pathEscape": url.PathEscape,
+		"tl":            func(_ ...any) string { return "" },
+		"td":            func(_ ...any) string { return "" },
+		"pathEscape":    url.PathEscape,
+		"expandPreview": mistakesPreview,
 	}
 
 	tpl, err := template.New("entry_form.html").Funcs(funcs).
-		ParseFiles("../templates/entry_form.html")
+		ParseFiles("../templates/entry_form.html", "../templates/pattern_preview.html")
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
 	}
@@ -241,6 +242,9 @@ func TestEntryFormRender(t *testing.T) {
 			`name="forms_incorrect" value="kriminalvårdsanstalten"`,
 			`name="forms_correct" value="fängelset"`,
 			"{a|b} c",
+			// the expansion preview is computed at load, without editing
+			"Total expansions",
+			"pattern-preview-list",
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("entry form missing %q", want)

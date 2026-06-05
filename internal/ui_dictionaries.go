@@ -55,9 +55,10 @@ func NewDictionariesUI(
 
 func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
 	return template.FuncMap{
-		"pathEscape": url.PathEscape,
-		"add":        func(a, b int64) int64 { return a + b },
-		"subtract":   func(a, b int64) int64 { return a - b },
+		"pathEscape":    url.PathEscape,
+		"add":           func(a, b int64) int64 { return a + b },
+		"subtract":      func(a, b int64) int64 { return a - b },
+		"expandPreview": mistakesPreview,
 	}
 }
 
@@ -711,12 +712,24 @@ func (d *DictionariesUI) validateMistakes(
 		)
 	}
 
+	return &howdah.Page{
+		Template: "pattern_preview.html",
+		Contents: mistakesPreview(
+			strings.Split(r.FormValue("common_mistakes"), "\n")),
+	}, nil
+}
+
+// mistakesPreview expands each common-mistakes line and reports how many
+// combinations it yields, plus any brace errors. Shared by the live validation
+// endpoint and the form's at-load preview so they can't drift from what the
+// spellchecker actually does.
+func mistakesPreview(lines []string) patternPreviewContents {
 	var (
 		results []patternLine
 		total   int
 	)
 
-	for _, line := range strings.Split(r.FormValue("common_mistakes"), "\n") {
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -735,13 +748,7 @@ func (d *DictionariesUI) validateMistakes(
 		results = append(results, res)
 	}
 
-	return &howdah.Page{
-		Template: "pattern_preview.html",
-		Contents: patternPreviewContents{
-			Results: results,
-			Total:   total,
-		},
-	}, nil
+	return patternPreviewContents{Results: results, Total: total}
 }
 
 // parseForms pairs the parallel forms_incorrect/forms_correct inputs from the

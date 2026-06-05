@@ -1577,6 +1577,10 @@ button.pattern-preview-total:hover .pattern-preview-view {
 
 /* expansion modal */
 .modal {
+  /* centre in the viewport regardless of UA dialog defaults */
+  position: fixed;
+  inset: 0;
+  margin: auto;
   width: min(560px, 92vw);
   max-height: 80vh;
   padding: 0;

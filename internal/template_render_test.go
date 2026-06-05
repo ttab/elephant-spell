@@ -205,6 +205,52 @@ func TestRuleFormRender(t *testing.T) {
 	})
 }
 
+func TestEntryRenameRender(t *testing.T) {
+	funcs := template.FuncMap{
+		"t": func(args ...string) string {
+			if len(args) > 0 {
+				return args[len(args)-1]
+			}
+
+			return ""
+		},
+		"tl":         func(_ ...any) string { return "" },
+		"pathEscape": url.PathEscape,
+	}
+
+	tpl, err := template.New("entry_rename.html").Funcs(funcs).
+		ParseFiles("../templates/entry_rename.html")
+	if err != nil {
+		t.Fatalf("parse template: %v", err)
+	}
+
+	var buf bytes.Buffer
+
+	err = tpl.ExecuteTemplate(&buf, "entry_rename.html", struct {
+		Contents dictionariesContents
+	}{Contents: dictionariesContents{
+		Language: "sv-se",
+		Rename:   true,
+		CanWrite: true,
+		Entry:    &uiEntry{Entry: "Mexico City"},
+	}})
+	if err != nil {
+		t.Fatalf("execute template: %v", err)
+	}
+
+	out := buf.String()
+
+	for _, want := range []string{
+		`name="new_text"`,
+		`value="Mexico City"`,
+		"/sv-se/Mexico%20City/rename",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rename form missing %q", want)
+		}
+	}
+}
+
 func TestEntryFormRender(t *testing.T) {
 	t.Run("new entry", func(t *testing.T) {
 		out := renderEntryForm(t, dictionariesContents{

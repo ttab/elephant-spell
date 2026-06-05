@@ -1,0 +1,31 @@
+{{with .Contents}}
+{{if .Flash}}
+<div class="entry-form-wrapper">
+  <div class="flash-message {{.Flash.Type}}">{{tl .Flash.Message}}</div>
+</div>
+{{end}}
+<div class="entry-form-wrapper">
+  <div class="entry-form-header">
+    <a class="btn btn-sm mobile-back" href="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}"
+       hx-get="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}" hx-target="#entry-detail" hx-push-url="true">← {{t "Back" "Back"}}</a>
+    <h2>{{t "RenameEntry" "Rename entry"}}</h2>
+  </div>
+  <form
+    class="entry-form"
+    hx-post="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/rename"
+    hx-target="#entry-detail"
+  >
+    <div class="form-group">
+      <label for="new_text">{{t "NewText" "New text"}}</label>
+      <div class="help-text">{{t "RenameHelp" "Rename the entry, keeping its common mistakes, forms and settings."}}</div>
+      <input type="text" id="new_text" name="new_text" value="{{.Entry.Entry}}" required autocomplete="off" spellcheck="false">
+    </div>
+    <div class="form-actions">
+      <a class="btn btn-sm" href="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}"
+         hx-get="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}" hx-target="#entry-detail" hx-push-url="true">{{t "Cancel" "Cancel"}}</a>
+      <div class="spacer"></div>
+      <button type="submit" class="btn btn-primary">{{t "Rename" "Rename"}}</button>
+    </div>
+  </form>
+</div>
+{{end}}

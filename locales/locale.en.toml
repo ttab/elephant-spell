@@ -300,3 +300,30 @@ other = "Suggestions:"
 
 [Menu]
 other = "Menu"
+
+[RenameEntry]
+other = "Rename entry"
+
+[NewText]
+other = "New text"
+
+[Rename]
+other = "Rename"
+
+[RenameHelp]
+other = "Rename the entry, keeping its common mistakes, forms and settings."
+
+[EntryRenamed]
+other = "Entry renamed"
+
+[RenameUnchanged]
+other = "Enter a different text"
+
+[RenameConflict]
+other = "An entry with that text already exists"
+
+[RenameGone]
+other = "The entry no longer exists"
+
+[RenameFailed]
+other = "Could not rename the entry"

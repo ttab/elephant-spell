@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -477,6 +478,88 @@ func (a *Application) DeleteEntry(
 	}
 
 	return &spell.DeleteEntryResponse{}, nil
+}
+
+// RenameEntry implements spell.Dictionaries.
+func (a *Application) RenameEntry(
+	ctx context.Context, req *spell.RenameEntryRequest,
+) (_ *spell.RenameEntryResponse, outErr error) {
+	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	if err != nil {
+		return nil, err //nolint: wrapcheck
+	}
+
+	if req.Language == "" {
+		return nil, twirp.RequiredArgumentError("language")
+	}
+
+	if req.Text == "" {
+		return nil, twirp.RequiredArgumentError("text")
+	}
+
+	if req.NewText == "" {
+		return nil, twirp.RequiredArgumentError("new_text")
+	}
+
+	if req.NewText == req.Text {
+		return nil, twirp.InvalidArgumentError("new_text",
+			"must differ from the current text")
+	}
+
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("start transaction: %w", err)
+	}
+
+	defer pg.Rollback(tx, &outErr)
+
+	q := a.q.WithTx(tx)
+
+	// Refuse to clobber an existing entry with the target text.
+	_, err = q.GetEntry(ctx, postgres.GetEntryParams{
+		Language: req.Language,
+		Entry:    req.NewText,
+	})
+	if err == nil {
+		return nil, twirp.NewError(twirp.AlreadyExists,
+			"an entry with that text already exists")
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, twirp.InternalErrorf("read from database: %w", err)
+	}
+
+	affected, err := q.RenameEntry(ctx, postgres.RenameEntryParams{
+		Language:  req.Language,
+		Entry:     req.Text,
+		NewEntry:  req.NewText,
+		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedBy: auth.Claims.Subject,
+	})
+	if err != nil {
+		return nil, twirp.InternalErrorf("write to database: %w", err)
+	}
+
+	if affected == 0 {
+		return nil, twirp.NotFoundError("entry does not exist")
+	}
+
+	// A rename is a remove of the old text plus an add of the new one, so the
+	// listener clears the stale phrase and loads the renamed one.
+	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
+	if err != nil {
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
+	}
+
+	err = a.recordChange(ctx, q, tx, req.Language, req.NewText, false, eventKindEntry)
+	if err != nil {
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("commit changes: %w", err)
+	}
+
+	return &spell.RenameEntryResponse{}, nil
 }
 
 // GetEntry implements spell.Dictionaries.

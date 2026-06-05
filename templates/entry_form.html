@@ -13,7 +13,10 @@
 <div class="entry-form-wrapper">
   <div class="entry-form-header">
     <a class="btn btn-sm mobile-back" href="/dictionaries/{{.Language}}/">← {{t "Back" "Back"}}</a>
-    <h2>{{if .NewEntry}}{{t "NewEntry" "New entry"}}{{else}}{{.Entry.Entry}}{{end}}</h2>
+    <h2>{{if .NewEntry}}{{t "NewEntry" "New entry"}}{{else}}{{.Entry.Entry}}{{if .CanWrite}}<a class="entry-rename-btn" title="{{t "RenameEntry" "Rename entry"}}"
+        href="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/rename"
+        hx-get="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/rename"
+        hx-target="#entry-detail" hx-push-url="true"><span class="icon icon-pen"></span></a>{{end}}{{end}}</h2>
   </div>
   <form
     class="entry-form"

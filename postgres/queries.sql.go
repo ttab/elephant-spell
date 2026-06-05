@@ -433,6 +433,37 @@ func (q *Queries) ReadEventlog(ctx context.Context, arg ReadEventlogParams) ([]E
 	return items, nil
 }
 
+const renameEntry = `-- name: RenameEntry :execrows
+UPDATE entry
+SET entry = $1, updated = $2, updated_by = $3
+WHERE language = $4 AND entry = $5
+`
+
+type RenameEntryParams struct {
+	NewEntry  string
+	Updated   pgtype.Timestamptz
+	UpdatedBy string
+	Language  string
+	Entry     string
+}
+
+// RenameEntry changes an entry's text (its key), keeping the rest of its data.
+// It reports the number of rows affected so the caller can tell whether the
+// entry existed.
+func (q *Queries) RenameEntry(ctx context.Context, arg RenameEntryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameEntry,
+		arg.NewEntry,
+		arg.Updated,
+		arg.UpdatedBy,
+		arg.Language,
+		arg.Entry,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setEntry = `-- name: SetEntry :exec
 INSERT INTO entry(
        language, entry, status, description, common_mistakes, level, data,

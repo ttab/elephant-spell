@@ -297,3 +297,6 @@ other = "No suggestions"
 
 [SuggestionsLabel]
 other = "Suggestions:"
+
+[Menu]
+other = "Menu"

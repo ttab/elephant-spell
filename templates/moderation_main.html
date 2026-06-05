@@ -12,7 +12,7 @@
   {{range .Contents.Items}}
   <div class="mod-card">
     <div class="mod-card-head">
-      <span class="mod-card-text">{{.Name}}</span>
+      <a class="mod-card-text" href="{{if .IsRule}}/rules/{{$.Contents.Language}}/{{.Ident}}{{else}}/dictionaries/{{$.Contents.Language}}/{{pathEscape .Name}}{{end}}">{{.Name}}</a>
       <span class="mod-card-kind">{{if .IsRule}}{{t "RuleKind" "Rule"}}{{else}}{{t "WordKind" "Word"}}{{end}}</span>
       <span class="mod-card-level level-{{.Level}}">{{if eq .Level "suggestion"}}{{t "Suggestion" "Suggestion"}}{{else}}{{t "Error" "Error"}}{{end}}</span>
       {{if .CaseSensitive}}<span class="mod-card-cs">{{t "CaseSensitive" "Case sensitive"}}</span>{{end}}

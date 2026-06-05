@@ -1285,6 +1285,17 @@ body {
   color: var(--color-text-secondary);
 }
 
+.mod-card-cs {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
 .level-error {
   background: var(--color-warning-bg);
   color: var(--color-warning-text);
@@ -1328,6 +1339,23 @@ body {
   background: var(--color-border-light);
   color: var(--color-text-secondary);
   font-family: var(--font-mono);
+}
+
+.mod-card-guards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mod-guard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mod-guard-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
 }
 
 .mod-card-foot {

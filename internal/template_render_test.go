@@ -252,6 +252,23 @@ func TestEntryFormRender(t *testing.T) {
 		}
 	})
 
+	t.Run("literal-only mistakes show no preview", func(t *testing.T) {
+		out := renderEntryForm(t, dictionariesContents{
+			Language: "sv-se",
+			CanWrite: true,
+			Entry: &uiEntry{
+				Entry:          "fängelse",
+				Level:          "error",
+				CommonMistakes: []string{"kriminalvårdsanstalt", "fängelsre"},
+			},
+		})
+
+		if strings.Contains(out, "pattern-preview-list") ||
+			strings.Contains(out, "Total expansions") {
+			t.Error("literal-only common mistakes should not render a preview")
+		}
+	})
+
 	t.Run("read-only hides editing controls", func(t *testing.T) {
 		out := renderEntryForm(t, dictionariesContents{
 			Language: "sv-se",

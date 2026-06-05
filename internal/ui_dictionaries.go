@@ -692,6 +692,19 @@ type patternPreviewContents struct {
 	Total   int
 }
 
+// HasExpansions reports whether the preview is worth showing — i.e. some line
+// actually expands to more than one combination, or has a brace error. When
+// every line is a plain literal the preview would just repeat the text field.
+func (p patternPreviewContents) HasExpansions() bool {
+	for _, r := range p.Results {
+		if r.Count > 1 || r.Error != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
 // validateMistakes expands the submitted common-mistakes patterns server-side
 // and returns a preview of how many combinations each line yields, plus any
 // brace errors. It reuses the canonical Expand logic so the preview can't drift

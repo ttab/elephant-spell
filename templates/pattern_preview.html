@@ -1,5 +1,5 @@
 {{define "pattern_preview_body"}}
-{{if .Results}}
+{{if .HasExpansions}}
 <ul class="pattern-preview-list">
   {{range .Results}}
   <li class="{{if .Error}}invalid{{end}}">

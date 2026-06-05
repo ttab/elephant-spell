@@ -73,7 +73,7 @@ func (d *DocsUI) MenuHook(hooks *howdah.MenuHooks) {
 			{
 				Title:  howdah.TL("Documentation", "Documentation"),
 				HREF:   "/docs/",
-				Weight: 20,
+				Weight: 30,
 			},
 		}
 	})

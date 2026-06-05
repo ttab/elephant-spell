@@ -65,7 +65,7 @@ func (d *SpellcheckUI) MenuHook(hooks *howdah.MenuHooks) {
 			{
 				Title:  howdah.TL("Spellcheck", "Spellcheck"),
 				HREF:   "/spellcheck/",
-				Weight: 5,
+				Weight: 25,
 			},
 		}
 	})

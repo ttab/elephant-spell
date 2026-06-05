@@ -39,6 +39,16 @@
           <a href="{{.HREF}}" {{if .Active}}class="active"{{end}}>{{tl .Title}}</a>
           {{end}}
         </nav>
+        <details class="dropdown app-nav-menu">
+          <summary class="header-action-btn" title="{{t "Menu" "Menu"}}">
+            <span class="icon icon-menu"></span>
+          </summary>
+          <ul class="dropdown-menu">
+            {{range .Menu}}
+            <li><a href="{{.HREF}}" {{if .Active}}class="active"{{end}}>{{tl .Title}}</a></li>
+            {{end}}
+          </ul>
+        </details>
         <div class="app-header-actions">
           <details class="dropdown lang-dropdown">
             <summary class="header-action-btn" title="{{t "Language" "Language"}}">

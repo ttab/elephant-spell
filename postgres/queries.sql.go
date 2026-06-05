@@ -55,6 +55,36 @@ func (q *Queries) GetEntry(ctx context.Context, arg GetEntryParams) (Entry, erro
 	return i, err
 }
 
+const getLastEventID = `-- name: GetLastEventID :one
+SELECT COALESCE(MAX(id), 0)::bigint AS id FROM eventlog
+`
+
+func (q *Queries) GetLastEventID(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, getLastEventID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertEvent = `-- name: InsertEvent :one
+INSERT INTO eventlog(language, entry, deleted)
+VALUES ($1, $2, $3)
+RETURNING id
+`
+
+type InsertEventParams struct {
+	Language string
+	Entry    string
+	Deleted  bool
+}
+
+func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertEvent, arg.Language, arg.Entry, arg.Deleted)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listDictionaries = `-- name: ListDictionaries :many
 SELECT language, COUNT(*) AS entries
 FROM entry
@@ -142,18 +172,73 @@ func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Ent
 	return items, nil
 }
 
-const notify = `-- name: Notify :exec
-SELECT pg_notify($1::text, $2::text)
+const lockEventlog = `-- name: LockEventlog :exec
+LOCK TABLE eventlog IN EXCLUSIVE MODE
 `
 
-type NotifyParams struct {
-	Channel string
-	Message string
+// LockEventlog takes an exclusive write lock on the eventlog table. Writers
+// must call this before inserting an event so that event commits are
+// serialised: a writer holds the lock until commit, so the next writer cannot
+// draw its id until the previous event is visible. This keeps commit order
+// equal to id order, which the log poller relies on to never skip an event.
+func (q *Queries) LockEventlog(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockEventlog)
+	return err
 }
 
-func (q *Queries) Notify(ctx context.Context, arg NotifyParams) error {
-	_, err := q.db.Exec(ctx, notify, arg.Channel, arg.Message)
-	return err
+const pruneEventlog = `-- name: PruneEventlog :execrows
+DELETE FROM eventlog WHERE created < $1
+`
+
+// PruneEventlog deletes events older than the cutoff. The eventlog is only a
+// delivery buffer for live consumers, not an audit trail: a restarting replica
+// reloads full state and resumes from the latest id, so events past the
+// consumer lag window are safe to drop.
+func (q *Queries) PruneEventlog(ctx context.Context, before pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneEventlog, before)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const readEventlog = `-- name: ReadEventlog :many
+SELECT id, language, entry, deleted, created
+FROM eventlog
+WHERE id > $1
+ORDER BY id
+LIMIT $2::bigint
+`
+
+type ReadEventlogParams struct {
+	After int64
+	Limit int64
+}
+
+func (q *Queries) ReadEventlog(ctx context.Context, arg ReadEventlogParams) ([]Eventlog, error) {
+	rows, err := q.db.Query(ctx, readEventlog, arg.After, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Eventlog
+	for rows.Next() {
+		var i Eventlog
+		if err := rows.Scan(
+			&i.ID,
+			&i.Language,
+			&i.Entry,
+			&i.Deleted,
+			&i.Created,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setEntry = `-- name: SetEntry :exec

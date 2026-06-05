@@ -1360,7 +1360,9 @@ body {
 
 .mod-card-foot {
   display: flex;
-  align-items: center;
+  /* bottom-align so the gap below the buttons matches the card's padding (the
+     two-line meta column would otherwise centre the buttons a few px high). */
+  align-items: flex-end;
   justify-content: space-between;
   gap: 8px;
   margin-top: auto;

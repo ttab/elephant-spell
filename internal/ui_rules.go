@@ -15,6 +15,11 @@ import (
 	"github.com/ttab/howdah"
 )
 
+// rulesPageSize is the rule list page size requested from the service. It is
+// sent explicitly so the "is there another page?" check (a full page implies
+// more) doesn't drift from the service-side default.
+const rulesPageSize = 100
+
 // RulesUI is the web UI for managing pattern rules, a separate section from the
 // dictionary words.
 type RulesUI struct {
@@ -329,6 +334,21 @@ func (d *RulesUI) rulePage(
 func (d *RulesUI) saveNewRule(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
+	return d.saveRuleForm(ctx, w, r, true)
+}
+
+func (d *RulesUI) saveRule(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	return d.saveRuleForm(ctx, w, r, false)
+}
+
+// saveRuleForm handles both rule creation (isNew) and updates: they share the
+// auth, form parsing and persistence path, differing only in id source, the
+// name-required guard, the pushed URL and the flash message.
+func (d *RulesUI) saveRuleForm(
+	ctx context.Context, w http.ResponseWriter, r *http.Request, isNew bool,
+) (*howdah.Page, error) {
 	ctx, err := d.auth.RequireAuth(ctx, w, r)
 	if err != nil {
 		return nil, err
@@ -340,15 +360,20 @@ func (d *RulesUI) saveNewRule(
 
 	lang := r.PathValue("language")
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err))
+	var id int64
+
+	if !isNew {
+		id, err = ruleIDParam(r)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	name := strings.TrimSpace(r.FormValue("name"))
-	if name == "" {
+	if err := parseForm(r); err != nil {
+		return nil, err
+	}
+
+	if isNew && strings.TrimSpace(r.FormValue("name")) == "" {
 		return &howdah.Page{
 			Template: "rule_form.html",
 			Contents: rulesContents{
@@ -366,61 +391,24 @@ func (d *RulesUI) saveNewRule(
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	id, err := d.setRuleFromForm(svcCtx, lang, 0, r)
+	id, err = d.setRuleFromForm(svcCtx, lang, id, r)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	idStr := strconv.FormatInt(id, 10)
-
-	w.Header().Set("HX-Push-Url", "/rules/"+lang+"/"+idStr)
-
-	return d.ruleDetailResponse(ctx, svcCtx, lang, id, &flashMessage{
-		Type:    "success",
-		Message: howdah.TL("RuleCreated", "Rule created"),
-	})
-}
-
-func (d *RulesUI) saveRule(
-	ctx context.Context, w http.ResponseWriter, r *http.Request,
-) (*howdah.Page, error) {
-	ctx, err := d.auth.RequireAuth(ctx, w, r)
-	if err != nil {
-		return nil, err
-	}
-
-	if !hasWriteScope(ctx) {
-		return nil, forbiddenScope()
-	}
-
-	lang := r.PathValue("language")
-
-	id, err := ruleIDParam(r)
-	if err != nil {
-		return nil, err
-	}
-
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err))
-	}
-
-	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
-	if err != nil {
-		return nil, howdah.InternalHTTPError(err)
-	}
-
-	_, err = d.setRuleFromForm(svcCtx, lang, id, r)
-	if err != nil {
-		return nil, twirpErrorToHTTP(err)
-	}
-
-	return d.ruleDetailResponse(ctx, svcCtx, lang, id, &flashMessage{
+	flash := &flashMessage{
 		Type:    "success",
 		Message: howdah.TL("RuleUpdated", "Rule updated"),
-	})
+	}
+
+	if isNew {
+		w.Header().Set("HX-Push-Url",
+			"/rules/"+lang+"/"+strconv.FormatInt(id, 10))
+
+		flash.Message = howdah.TL("RuleCreated", "Rule created")
+	}
+
+	return d.ruleDetailResponse(ctx, svcCtx, lang, id, flash)
 }
 
 func (d *RulesUI) deleteRule(
@@ -554,11 +542,8 @@ func (d *RulesUI) testRule(
 		return nil, err
 	}
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err))
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
 	sample := r.FormValue("sample")
@@ -618,6 +603,7 @@ func (d *RulesUI) listRules(
 		Language: lang,
 		Query:    query,
 		Page:     page,
+		PageSize: rulesPageSize,
 	})
 	if err != nil {
 		return nil, false, fmt.Errorf("list rules for %q page %d: %w",
@@ -629,7 +615,9 @@ func (d *RulesUI) listRules(
 		rules[i] = ruleToUI(r)
 	}
 
-	return rules, len(res.Rules) == 100, nil
+	// A full page implies there may be another; the request fixes the size so
+	// the boundary check stays in step with the service.
+	return rules, len(res.Rules) == rulesPageSize, nil
 }
 
 func (d *RulesUI) ruleCount(ctx context.Context, lang string) int {

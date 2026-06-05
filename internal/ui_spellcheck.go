@@ -129,11 +129,8 @@ func (d *SpellcheckUI) runCheck(
 		return nil, err
 	}
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err))
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
 	lang := r.FormValue("language")

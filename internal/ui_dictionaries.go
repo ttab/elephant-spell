@@ -239,6 +239,19 @@ func twirpErrorToHTTP(err error) error {
 	return howdah.NewHTTPError(status, "Error", tErr.Msg(), tErr)
 }
 
+// parseForm parses an HTTP request's form, returning a bad-request HTTP error on
+// failure so handlers can surface it directly.
+func parseForm(r *http.Request) error {
+	err := r.ParseForm()
+	if err != nil {
+		return howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid form data",
+			fmt.Errorf("parse form: %w", err))
+	}
+
+	return nil
+}
+
 func (d *DictionariesUI) keepalivePage(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
@@ -472,12 +485,8 @@ func (d *DictionariesUI) saveNewEntry(
 
 	lang := r.PathValue("language")
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err),
-		)
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
 	text := strings.TrimSpace(r.FormValue("text"))
@@ -572,12 +581,8 @@ func (d *DictionariesUI) saveEntry(
 	lang := r.PathValue("language")
 	text := r.PathValue("text")
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err),
-		)
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
 	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
@@ -883,12 +888,8 @@ func (d *DictionariesUI) validateMistakes(
 		return nil, err
 	}
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err),
-		)
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
 	return &howdah.Page{
@@ -984,12 +985,8 @@ func (d *DictionariesUI) listExpansions(
 		return nil, err
 	}
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err),
-		)
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
 	var (

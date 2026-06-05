@@ -16,22 +16,23 @@ import (
 // whole catch-up counts as a single FanOut.Polled call regardless of backlog.
 const eventBatchSize = 500
 
-// preloadEntries loads every current custom entry into its language's
-// spellchecker. It is the startup baseline for entries that predate the
-// eventlog; incremental changes are then applied from the log.
-func (a *Application) preloadEntries(ctx context.Context) error {
-	var (
-		limit  int64 = 200
-		offset int64
-	)
+// preloadPageSize is the batch size used when loading the startup baseline.
+const preloadPageSize = 200
+
+// preloadAll pages through a list query, applying process to every row, until
+// the source is exhausted. It is the shared startup-baseline loader for entries
+// and rules.
+func preloadAll[T any](
+	ctx context.Context,
+	fetch func(ctx context.Context, limit, offset int64) ([]T, error),
+	process func(row T),
+) error {
+	var offset int64
 
 	for {
-		rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
-			Limit:  limit,
-			Offset: offset,
-		})
+		rows, err := fetch(ctx, preloadPageSize, offset)
 		if err != nil {
-			return fmt.Errorf("list entries: %w", err)
+			return err
 		}
 
 		if len(rows) == 0 {
@@ -39,43 +40,59 @@ func (a *Application) preloadEntries(ctx context.Context) error {
 		}
 
 		for _, row := range rows {
+			process(row)
+		}
+
+		offset += preloadPageSize
+	}
+}
+
+// preloadEntries loads every current custom entry into its language's
+// spellchecker. It is the startup baseline for entries that predate the
+// eventlog; incremental changes are then applied from the log.
+func (a *Application) preloadEntries(ctx context.Context) error {
+	return preloadAll(ctx,
+		func(ctx context.Context, limit, offset int64) ([]postgres.Entry, error) {
+			rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
+				Limit:  limit,
+				Offset: offset,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list entries: %w", err)
+			}
+
+			return rows, nil
+		},
+		func(row postgres.Entry) {
 			spell, ok := a.languages[row.Language]
 			if !ok {
-				continue
+				return
 			}
 
 			spell.AddPhrase(entryAsPhrase(row))
-		}
-
-		offset += limit
-	}
+		},
+	)
 }
 
 // preloadRules loads every current rule into its language's spellchecker, the
 // startup baseline before the eventlog takes over.
 func (a *Application) preloadRules(ctx context.Context) error {
-	var (
-		limit  int64 = 200
-		offset int64
-	)
+	return preloadAll(ctx,
+		func(ctx context.Context, limit, offset int64) ([]postgres.Rule, error) {
+			rows, err := a.q.ListRules(ctx, postgres.ListRulesParams{
+				Limit:  limit,
+				Offset: offset,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list rules: %w", err)
+			}
 
-	for {
-		rows, err := a.q.ListRules(ctx, postgres.ListRulesParams{
-			Limit:  limit,
-			Offset: offset,
-		})
-		if err != nil {
-			return fmt.Errorf("list rules: %w", err)
-		}
-
-		if len(rows) == 0 {
-			return nil
-		}
-
-		for _, row := range rows {
+			return rows, nil
+		},
+		func(row postgres.Rule) {
 			spell, ok := a.languages[row.Language]
 			if !ok {
-				continue
+				return
 			}
 
 			err := spell.AddRule(ruleDefFromRule(row))
@@ -84,10 +101,8 @@ func (a *Application) preloadRules(ctx context.Context) error {
 					"rule", row.Name, "language", row.Language,
 					elephantine.LogKeyError, err)
 			}
-		}
-
-		offset += limit
-	}
+		},
+	)
 }
 
 // drainEventlog applies every event after the cursor to the spellcheckers and

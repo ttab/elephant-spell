@@ -168,6 +168,7 @@ func (a *Application) SetRule(
 
 	q := a.q.WithTx(tx)
 	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	data := ruleDataFromRPC(req.Rule)
 
 	id := req.Rule.Id
 
@@ -180,7 +181,7 @@ func (a *Application) SetRule(
 			Level:       level,
 			Pattern:     req.Rule.Pattern,
 			Replacement: req.Rule.Replacement,
-			Data:        ruleDataFromRPC(req.Rule),
+			Data:        data,
 			Updated:     now,
 			UpdatedBy:   auth.Claims.Subject,
 		})
@@ -196,7 +197,7 @@ func (a *Application) SetRule(
 			Level:       level,
 			Pattern:     req.Rule.Pattern,
 			Replacement: req.Rule.Replacement,
-			Data:        ruleDataFromRPC(req.Rule),
+			Data:        data,
 			Updated:     now,
 			UpdatedBy:   auth.Claims.Subject,
 		})

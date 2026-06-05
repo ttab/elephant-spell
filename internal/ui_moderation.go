@@ -283,53 +283,57 @@ func (d *DictionariesUI) moderationPage(
 func (d *DictionariesUI) moderationAccept(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
-	return d.moderate(ctx, w, r,
-		func(svcCtx context.Context, kind, lang, ident string) error {
-			if kind == "rule" {
-				id, err := strconv.ParseInt(ident, 10, 64)
-				if err != nil {
-					return err
-				}
-
-				_, err = d.rules.SetRuleStatus(svcCtx,
-					&spell.SetRuleStatusRequest{Id: id, Status: "accepted"})
-
-				return err
-			}
-
-			_, err := d.dicts.SetEntryStatus(svcCtx,
-				&spell.SetEntryStatusRequest{
-					Language: lang, Text: ident, Status: "accepted",
-				})
-
-			return err
-		})
+	return d.moderate(ctx, w, r, d.moderationAction("accepted"))
 }
 
 // moderationReject removes a pending word or rule.
 func (d *DictionariesUI) moderationReject(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
-	return d.moderate(ctx, w, r,
-		func(svcCtx context.Context, kind, lang, ident string) error {
-			if kind == "rule" {
-				id, err := strconv.ParseInt(ident, 10, 64)
-				if err != nil {
-					return err
-				}
+	return d.moderate(ctx, w, r, d.moderationAction(""))
+}
 
+// moderationAction builds the store action for a moderation decision, routing
+// by item kind. A non-empty status accepts the item with that status; an empty
+// status rejects (deletes) it.
+func (d *DictionariesUI) moderationAction(
+	status string,
+) func(svcCtx context.Context, kind, lang, ident string) error {
+	return func(svcCtx context.Context, kind, lang, ident string) error {
+		if kind == "rule" {
+			id, err := strconv.ParseInt(ident, 10, 64)
+			if err != nil {
+				return fmt.Errorf("parse rule id: %w", err)
+			}
+
+			if status == "" {
 				_, err = d.rules.DeleteRule(svcCtx,
 					&spell.DeleteRuleRequest{Id: id})
 
 				return err
 			}
 
+			_, err = d.rules.SetRuleStatus(svcCtx,
+				&spell.SetRuleStatusRequest{Id: id, Status: status})
+
+			return err
+		}
+
+		if status == "" {
 			_, err := d.dicts.DeleteEntry(svcCtx, &spell.DeleteEntryRequest{
 				Language: lang, Text: ident,
 			})
 
 			return err
-		})
+		}
+
+		_, err := d.dicts.SetEntryStatus(svcCtx,
+			&spell.SetEntryStatusRequest{
+				Language: lang, Text: ident, Status: status,
+			})
+
+		return err
+	}
 }
 
 // moderate runs a moderation action against the right store based on the item

@@ -1,4 +1,5 @@
 {{with .Contents}}
+{{$c := .}}
 {{if .Flash}}
 <div class="entry-form-wrapper">
   <div class="flash-message {{.Flash.Type}}">{{tl .Flash.Message}}</div>
@@ -12,7 +13,10 @@
 <div class="entry-form-wrapper">
   <div class="entry-form-header">
     <a class="btn btn-sm mobile-back" href="/dictionaries/{{.Language}}/">← {{t "Back" "Back"}}</a>
-    <h2>{{if .NewEntry}}{{t "NewEntry" "New entry"}}{{else}}{{.Entry.Entry}}{{end}}</h2>
+    <h2>{{if .NewEntry}}{{t "NewEntry" "New entry"}}{{else}}{{.Entry.Entry}}{{if .CanWrite}}<a class="entry-rename-btn" title="{{t "RenameEntry" "Rename entry"}}"
+        href="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/rename"
+        hx-get="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/rename"
+        hx-target="#entry-detail" hx-push-url="true"><span class="icon icon-pen"></span></a>{{end}}{{end}}</h2>
   </div>
   <form
     class="entry-form"
@@ -31,8 +35,9 @@
     <div class="form-group">
       <label for="status">{{t "Status" "Status"}}</label>
       <select id="status" name="status" required {{if not .CanWrite}}disabled{{end}}>
-        <option value="accepted" {{if and .Entry (eq .Entry.Status "accepted")}}selected{{end}}>{{t "Accepted" "Accepted"}}</option>
-        <option value="pending" {{if and .Entry (eq .Entry.Status "pending")}}selected{{end}}>{{t "Pending" "Pending"}}</option>
+        {{range .StatusOptions}}
+        <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{tl .Label}}</option>
+        {{end}}
       </select>
     </div>
 
@@ -50,17 +55,78 @@
     </div>
 
     <div class="form-group">
-      <label for="common_mistakes">{{t "CommonMistakes" "Common mistakes"}}</label>
-      <div class="help-text">{{t "CommonMistakesHelp" "One per line, supports {A|B} expansion"}}</div>
-      <textarea id="common_mistakes" name="common_mistakes" rows="4" {{if not .CanWrite}}disabled{{end}}>{{if .Entry}}{{range $i, $m := .Entry.CommonMistakes}}{{if $i}}
-{{end}}{{$m}}{{end}}{{end}}</textarea>
+      <label class="checkbox-label">
+        <input type="checkbox" name="case_sensitive" {{if and .Entry .Entry.CaseSensitive}}checked{{end}} {{if not .CanWrite}}disabled{{end}}>
+        {{t "CaseSensitive" "Case sensitive"}}
+      </label>
+      <div class="help-text">{{t "CaseSensitiveHelp" "Only match the exact casing. Enable for proper nouns; leave off for ordinary words so they are caught at the start of a sentence too."}}</div>
     </div>
 
     <div class="form-group">
-      <label for="forms">{{t "Forms" "Forms"}}</label>
-      <div class="help-text">{{t "FormsHelp" "One per line: incorrect=correct"}}</div>
-      <textarea id="forms" name="forms" rows="4" {{if not .CanWrite}}disabled{{end}}>{{if .Entry}}{{range $k, $v := .Entry.Forms}}{{$k}}={{$v}}
-{{end}}{{end}}</textarea>
+      <label for="common_mistakes">{{t "CommonMistakes" "Common mistakes"}}</label>
+      <div class="help-text">{{t "CommonMistakesHelp" "One per line, supports {A|B} expansion"}}</div>
+      <code-input
+        template="spell-pattern"
+        id="common_mistakes"
+        name="common_mistakes"
+        rows="4"
+        placeholder="{Mohammar|Muammar} Gaddafi"
+        {{if not .CanWrite}}readonly{{end}}
+        data-validate-url="/dictionaries/{{.Language}}/_validate"
+        data-expansions-url="/dictionaries/{{.Language}}/_expansions"
+        data-preview-target="#common-mistakes-preview"
+      >{{if .Entry}}{{range $i, $m := .Entry.CommonMistakes}}{{if $i}}
+{{end}}{{$m}}{{end}}{{end}}</code-input>
+      <div id="common-mistakes-preview" class="pattern-preview">{{if .Entry}}{{template "pattern_preview_body" (expandPreview .Entry.CommonMistakes)}}{{end}}</div>
+    </div>
+
+    <div class="form-group">
+      <label>{{t "Forms" "Forms"}}</label>
+      <div class="help-text">{{t "FormsHelp2" "Map an incorrect inflection to its correct replacement"}}</div>
+      <div id="forms-rows" class="forms-rows">
+        {{if .Entry}}{{range $k, $v := .Entry.Forms}}
+        <div class="forms-row">
+          <input type="text" name="forms_incorrect" value="{{$k}}" placeholder="{{t "Incorrect" "Incorrect"}}" {{if not $c.CanWrite}}disabled{{end}}>
+          <span class="forms-arrow">→</span>
+          <input type="text" name="forms_correct" value="{{$v}}" placeholder="{{t "Correct" "Correct"}}" {{if not $c.CanWrite}}disabled{{end}}>
+          {{if $c.CanWrite}}<button type="button" class="btn btn-sm forms-row-remove" data-row-remove aria-label="{{t "Remove" "Remove"}}">×</button>{{end}}
+        </div>
+        {{end}}{{end}}
+      </div>
+      {{if .CanWrite}}
+      <button type="button" class="btn btn-sm" data-add-form-row>+ {{t "AddForm" "Add form"}}</button>
+      <template id="forms-row-template">
+        <div class="forms-row">
+          <input type="text" name="forms_incorrect" placeholder="{{t "Incorrect" "Incorrect"}}">
+          <span class="forms-arrow">→</span>
+          <input type="text" name="forms_correct" placeholder="{{t "Correct" "Correct"}}">
+          <button type="button" class="btn btn-sm forms-row-remove" data-row-remove aria-label="{{t "Remove" "Remove"}}">×</button>
+        </div>
+      </template>
+      {{end}}
+    </div>
+
+    <div class="form-group rule-guards">
+      <label>{{t "RuleGuards" "Context guards"}}</label>
+      <div class="help-text">{{t "RuleGuardsHelp" "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."}}</div>
+      <div class="guard-rows">
+        <div class="guard-row">
+          <label for="guard_not_before">{{t "RuleNotBefore" "Skip if preceded by"}}</label>
+          <input type="text" id="guard_not_before" name="not_before" value="{{if .Entry}}{{.Entry.NotBefore}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+        <div class="guard-row">
+          <label for="guard_not_after">{{t "RuleNotAfter" "Skip if followed by"}}</label>
+          <input type="text" id="guard_not_after" name="not_after" value="{{if .Entry}}{{.Entry.NotAfter}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+        <div class="guard-row">
+          <label for="guard_before">{{t "RuleBefore" "Only if preceded by"}}</label>
+          <input type="text" id="guard_before" name="before" value="{{if .Entry}}{{.Entry.Before}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+        <div class="guard-row">
+          <label for="guard_after">{{t "RuleAfter" "Only if followed by"}}</label>
+          <input type="text" id="guard_after" name="after" value="{{if .Entry}}{{.Entry.After}}{{end}}" {{if not .CanWrite}}disabled{{end}}>
+        </div>
+      </div>
     </div>
 
     {{if .CanWrite}}

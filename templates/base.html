@@ -6,14 +6,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{tl .Title}} – Elephant Spell</title>
     <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/css/code-input.min.css">
+    <link rel="stylesheet" href="/assets/css/code-input-autocomplete.css">
     <link rel="stylesheet" href="/assets/css/style.css">
     <script src="/assets/js/htmx.min.js"></script>
+    <script>
+      // The code-input editor (and other web components) manage their own
+      // class/style at runtime. htmx's attribute settling would strip those
+      // when swapping in a form that reuses the same element id, breaking the
+      // editor on every navigation between entries, so disable it.
+      if (window.htmx) { htmx.config.attributesToSettle = []; }
+    </script>
+    <script src="/assets/js/code-input.min.js"></script>
+    <script src="/assets/js/code-input-autocomplete.min.js"></script>
+    <script src="/assets/js/spell-editor.js"></script>
     <script src="/assets/js/keepalive.js"></script>
     <script>
       (function(){var t=localStorage.getItem('theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)})();
     </script>
   </head>
-  <body>
+  <!-- hx-history="false": the code-input editors transform their DOM at
+       runtime, so htmx's serialized history snapshot captures the already
+       initialized markup (with the code-input_loaded class). Restoring that on
+       back/forward leaves a dead editor. Opt out of the snapshot cache so htmx
+       re-fetches a clean page from the server instead. -->
+  <body hx-history="false">
     <header class="app-header">
       <div class="app-header-inner">
         <a href="/" class="app-title">Elephant Spell</a>
@@ -22,6 +39,16 @@
           <a href="{{.HREF}}" {{if .Active}}class="active"{{end}}>{{tl .Title}}</a>
           {{end}}
         </nav>
+        <details class="dropdown app-nav-menu">
+          <summary class="header-action-btn" title="{{t "Menu" "Menu"}}">
+            <span class="icon icon-menu"></span>
+          </summary>
+          <ul class="dropdown-menu">
+            {{range .Menu}}
+            <li><a href="{{.HREF}}" {{if .Active}}class="active"{{end}}>{{tl .Title}}</a></li>
+            {{end}}
+          </ul>
+        </details>
         <div class="app-header-actions">
           <details class="dropdown lang-dropdown">
             <summary class="header-action-btn" title="{{t "Language" "Language"}}">
@@ -50,6 +77,13 @@
 
 {{define "footer"}}
     </main>
+    <dialog id="expansion-modal" class="modal">
+      <div class="modal-head">
+        <h3>{{t "Expansions" "Expansions"}}</h3>
+        <button type="button" class="modal-close" data-close-modal aria-label="{{t "Close" "Close"}}">×</button>
+      </div>
+      <div id="expansion-modal-body" class="modal-body"></div>
+    </dialog>
     <script>
       function cycleTheme() {
         var current = document.documentElement.getAttribute('data-theme');

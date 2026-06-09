@@ -26,6 +26,21 @@ func (q *Queries) DeleteEntry(ctx context.Context, arg DeleteEntryParams) error 
 	return err
 }
 
+const deleteRule = `-- name: DeleteRule :one
+DELETE FROM rule
+WHERE id = $1
+RETURNING language
+`
+
+// DeleteRule removes a rule and returns its language so the change can be
+// recorded for the right spellchecker.
+func (q *Queries) DeleteRule(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRow(ctx, deleteRule, id)
+	var language string
+	err := row.Scan(&language)
+	return language, err
+}
+
 const getEntry = `-- name: GetEntry :one
 SELECT language, entry, status, description, common_mistakes, level, data,
        updated, updated_by
@@ -66,9 +81,35 @@ func (q *Queries) GetLastEventID(ctx context.Context) (int64, error) {
 	return id, err
 }
 
+const getRule = `-- name: GetRule :one
+SELECT id, language, name, status, description, level, pattern, replacement,
+       data, updated, updated_by
+FROM rule
+WHERE id = $1
+`
+
+func (q *Queries) GetRule(ctx context.Context, id int64) (Rule, error) {
+	row := q.db.QueryRow(ctx, getRule, id)
+	var i Rule
+	err := row.Scan(
+		&i.ID,
+		&i.Language,
+		&i.Name,
+		&i.Status,
+		&i.Description,
+		&i.Level,
+		&i.Pattern,
+		&i.Replacement,
+		&i.Data,
+		&i.Updated,
+		&i.UpdatedBy,
+	)
+	return i, err
+}
+
 const insertEvent = `-- name: InsertEvent :one
-INSERT INTO eventlog(language, entry, deleted)
-VALUES ($1, $2, $3)
+INSERT INTO eventlog(language, entry, deleted, kind)
+VALUES ($1, $2, $3, $4)
 RETURNING id
 `
 
@@ -76,17 +117,66 @@ type InsertEventParams struct {
 	Language string
 	Entry    string
 	Deleted  bool
+	Kind     string
 }
 
 func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (int64, error) {
-	row := q.db.QueryRow(ctx, insertEvent, arg.Language, arg.Entry, arg.Deleted)
+	row := q.db.QueryRow(ctx, insertEvent,
+		arg.Language,
+		arg.Entry,
+		arg.Deleted,
+		arg.Kind,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertRule = `-- name: InsertRule :one
+INSERT INTO rule(
+       language, name, status, description, level, pattern, replacement, data,
+       updated, updated_by
+) VALUES (
+       $1, $2, $3, $4, $5, $6, $7,
+       $8, $9, $10
+)
+RETURNING id
+`
+
+type InsertRuleParams struct {
+	Language    string
+	Name        string
+	Status      string
+	Description string
+	Level       EntryLevel
+	Pattern     string
+	Replacement string
+	Data        *RuleData
+	Updated     pgtype.Timestamptz
+	UpdatedBy   string
+}
+
+func (q *Queries) InsertRule(ctx context.Context, arg InsertRuleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertRule,
+		arg.Language,
+		arg.Name,
+		arg.Status,
+		arg.Description,
+		arg.Level,
+		arg.Pattern,
+		arg.Replacement,
+		arg.Data,
+		arg.Updated,
+		arg.UpdatedBy,
+	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
 }
 
 const listDictionaries = `-- name: ListDictionaries :many
-SELECT language, COUNT(*) AS entries
+SELECT language, COUNT(*) AS entries,
+       COUNT(*) FILTER (WHERE status = 'pending') AS pending
 FROM entry
 GROUP BY language
 `
@@ -94,6 +184,7 @@ GROUP BY language
 type ListDictionariesRow struct {
 	Language string
 	Entries  int64
+	Pending  int64
 }
 
 func (q *Queries) ListDictionaries(ctx context.Context) ([]ListDictionariesRow, error) {
@@ -105,7 +196,7 @@ func (q *Queries) ListDictionaries(ctx context.Context) ([]ListDictionariesRow, 
 	var items []ListDictionariesRow
 	for rows.Next() {
 		var i ListDictionariesRow
-		if err := rows.Scan(&i.Language, &i.Entries); err != nil {
+		if err := rows.Scan(&i.Language, &i.Entries, &i.Pending); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -122,7 +213,11 @@ SELECT language, entry, status, description, common_mistakes, level, data,
 FROM entry
 WHERE
         ($1::text IS NULL OR language = $1)
-        AND ($2::text IS NULL OR entry LIKE $2)
+        AND ($2::text IS NULL OR (
+                entry ILIKE $2
+                OR description ILIKE $2
+                OR array_to_string(common_mistakes, ' ') ILIKE $2
+        ))
         AND ($3::text IS NULL OR status = $3)
 ORDER BY language, entry
 LIMIT $5::bigint OFFSET $4::bigint
@@ -130,7 +225,7 @@ LIMIT $5::bigint OFFSET $4::bigint
 
 type ListEntriesParams struct {
 	Language pgtype.Text
-	Pattern  pgtype.Text
+	Query    pgtype.Text
 	Status   pgtype.Text
 	Offset   int64
 	Limit    int64
@@ -139,7 +234,7 @@ type ListEntriesParams struct {
 func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Entry, error) {
 	rows, err := q.db.Query(ctx, listEntries,
 		arg.Language,
-		arg.Pattern,
+		arg.Query,
 		arg.Status,
 		arg.Offset,
 		arg.Limit,
@@ -158,6 +253,102 @@ func (q *Queries) ListEntries(ctx context.Context, arg ListEntriesParams) ([]Ent
 			&i.Description,
 			&i.CommonMistakes,
 			&i.Level,
+			&i.Data,
+			&i.Updated,
+			&i.UpdatedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRuleCounts = `-- name: ListRuleCounts :many
+SELECT language, COUNT(*) AS rules,
+       COUNT(*) FILTER (WHERE status = 'pending') AS pending
+FROM rule
+GROUP BY language
+`
+
+type ListRuleCountsRow struct {
+	Language string
+	Rules    int64
+	Pending  int64
+}
+
+func (q *Queries) ListRuleCounts(ctx context.Context) ([]ListRuleCountsRow, error) {
+	rows, err := q.db.Query(ctx, listRuleCounts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRuleCountsRow
+	for rows.Next() {
+		var i ListRuleCountsRow
+		if err := rows.Scan(&i.Language, &i.Rules, &i.Pending); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRules = `-- name: ListRules :many
+SELECT id, language, name, status, description, level, pattern, replacement,
+       data, updated, updated_by
+FROM rule
+WHERE
+        ($1::text IS NULL OR language = $1)
+        AND ($2::text IS NULL OR (
+                name ILIKE $2
+                OR description ILIKE $2
+                OR pattern ILIKE $2
+                OR replacement ILIKE $2
+        ))
+        AND ($3::text IS NULL OR status = $3)
+ORDER BY language, name
+LIMIT $5::bigint OFFSET $4::bigint
+`
+
+type ListRulesParams struct {
+	Language pgtype.Text
+	Query    pgtype.Text
+	Status   pgtype.Text
+	Offset   int64
+	Limit    int64
+}
+
+func (q *Queries) ListRules(ctx context.Context, arg ListRulesParams) ([]Rule, error) {
+	rows, err := q.db.Query(ctx, listRules,
+		arg.Language,
+		arg.Query,
+		arg.Status,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Rule
+	for rows.Next() {
+		var i Rule
+		if err := rows.Scan(
+			&i.ID,
+			&i.Language,
+			&i.Name,
+			&i.Status,
+			&i.Description,
+			&i.Level,
+			&i.Pattern,
+			&i.Replacement,
 			&i.Data,
 			&i.Updated,
 			&i.UpdatedBy,
@@ -203,7 +394,7 @@ func (q *Queries) PruneEventlog(ctx context.Context, before pgtype.Timestamptz) 
 }
 
 const readEventlog = `-- name: ReadEventlog :many
-SELECT id, language, entry, deleted, created
+SELECT id, language, entry, deleted, created, kind
 FROM eventlog
 WHERE id > $1
 ORDER BY id
@@ -230,6 +421,7 @@ func (q *Queries) ReadEventlog(ctx context.Context, arg ReadEventlogParams) ([]E
 			&i.Entry,
 			&i.Deleted,
 			&i.Created,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -239,6 +431,37 @@ func (q *Queries) ReadEventlog(ctx context.Context, arg ReadEventlogParams) ([]E
 		return nil, err
 	}
 	return items, nil
+}
+
+const renameEntry = `-- name: RenameEntry :execrows
+UPDATE entry
+SET entry = $1, updated = $2, updated_by = $3
+WHERE language = $4 AND entry = $5
+`
+
+type RenameEntryParams struct {
+	NewEntry  string
+	Updated   pgtype.Timestamptz
+	UpdatedBy string
+	Language  string
+	Entry     string
+}
+
+// RenameEntry changes an entry's text (its key), keeping the rest of its data.
+// It reports the number of rows affected so the caller can tell whether the
+// entry existed.
+func (q *Queries) RenameEntry(ctx context.Context, arg RenameEntryParams) (int64, error) {
+	result, err := q.db.Exec(ctx, renameEntry,
+		arg.NewEntry,
+		arg.Updated,
+		arg.UpdatedBy,
+		arg.Language,
+		arg.Entry,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setEntry = `-- name: SetEntry :exec
@@ -284,4 +507,109 @@ func (q *Queries) SetEntry(ctx context.Context, arg SetEntryParams) error {
 		arg.UpdatedBy,
 	)
 	return err
+}
+
+const setEntryStatus = `-- name: SetEntryStatus :execrows
+UPDATE entry
+SET status = $1, updated = $2, updated_by = $3
+WHERE language = $4 AND entry = $5
+`
+
+type SetEntryStatusParams struct {
+	Status    string
+	Updated   pgtype.Timestamptz
+	UpdatedBy string
+	Language  string
+	Entry     string
+}
+
+// SetEntryStatus updates only the moderation status of an entry, used by the
+// accept/reject workflow. It reports the number of rows affected so the caller
+// can tell whether the entry existed.
+func (q *Queries) SetEntryStatus(ctx context.Context, arg SetEntryStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setEntryStatus,
+		arg.Status,
+		arg.Updated,
+		arg.UpdatedBy,
+		arg.Language,
+		arg.Entry,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setRuleStatus = `-- name: SetRuleStatus :one
+UPDATE rule
+SET status = $1, updated = $2, updated_by = $3
+WHERE id = $4
+RETURNING language
+`
+
+type SetRuleStatusParams struct {
+	Status    string
+	Updated   pgtype.Timestamptz
+	UpdatedBy string
+	ID        int64
+}
+
+// SetRuleStatus updates only the moderation status of a rule, returning its
+// language so the change can be recorded for the right spellchecker.
+func (q *Queries) SetRuleStatus(ctx context.Context, arg SetRuleStatusParams) (string, error) {
+	row := q.db.QueryRow(ctx, setRuleStatus,
+		arg.Status,
+		arg.Updated,
+		arg.UpdatedBy,
+		arg.ID,
+	)
+	var language string
+	err := row.Scan(&language)
+	return language, err
+}
+
+const updateRule = `-- name: UpdateRule :execrows
+UPDATE rule
+SET name = $1,
+    status = $2,
+    description = $3,
+    level = $4,
+    pattern = $5,
+    replacement = $6,
+    data = $7,
+    updated = $8,
+    updated_by = $9
+WHERE id = $10
+`
+
+type UpdateRuleParams struct {
+	Name        string
+	Status      string
+	Description string
+	Level       EntryLevel
+	Pattern     string
+	Replacement string
+	Data        *RuleData
+	Updated     pgtype.Timestamptz
+	UpdatedBy   string
+	ID          int64
+}
+
+func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateRule,
+		arg.Name,
+		arg.Status,
+		arg.Description,
+		arg.Level,
+		arg.Pattern,
+		arg.Replacement,
+		arg.Data,
+		arg.Updated,
+		arg.UpdatedBy,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

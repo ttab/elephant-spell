@@ -1,6 +1,153 @@
 [Dictionaries]
 other = "Dictionaries"
 
+[Moderation]
+other = "Moderation"
+
+[ModerationIntro]
+other = "Review entries awaiting moderation. Accepted entries are kept; rejected entries are removed."
+
+[NoPending]
+other = "No entries awaiting moderation"
+
+[Accept]
+other = "Accept"
+
+[Reject]
+other = "Reject"
+
+[ConfirmReject]
+other = "Reject and delete this entry?"
+
+[Edit]
+other = "Edit"
+
+[FormsHelp2]
+other = "Map an incorrect inflection to its correct replacement"
+
+[Incorrect]
+other = "Incorrect"
+
+[Correct]
+other = "Correct"
+
+[Remove]
+other = "Remove"
+
+[AddForm]
+other = "Add form"
+
+[TotalExpansions]
+other = "Total expansions"
+
+[CaseSensitive]
+other = "Case sensitive"
+
+[CaseSensitiveHelp]
+other = "Only match the exact casing. Enable for proper nouns; leave off for ordinary words so they are caught at the start of a sentence too."
+
+[RuleSection]
+other = "Pattern rule (advanced)"
+
+[IsRule]
+other = "Treat this entry as a pattern rule"
+
+[RuleHelp]
+other = "Match text directly. Use {digit}, {word} and {gap(N)} placeholders; literal text and spacing are matched as written. Reference captures in the replacement as {1}, {2}."
+
+[RulePattern]
+other = "Pattern"
+
+[RuleReplacement]
+other = "Replacement"
+
+[RuleGuards]
+other = "Context guards"
+
+[RuleGuardsHelp]
+other = "Comma-separated words. Optional: limit when the rule fires based on the neighbouring word."
+
+[RuleNotBefore]
+other = "Skip if preceded by"
+
+[RuleNotAfter]
+other = "Skip if followed by"
+
+[RuleBefore]
+other = "Only if preceded by"
+
+[RuleAfter]
+other = "Only if followed by"
+
+[RuleCaseSensitiveHelp]
+other = "Match the pattern and context guards with their exact casing. Enable for proper nouns."
+
+[SampleInput]
+other = "Sample input"
+
+[SampleInputHelp]
+other = "Try the rule against some text to see what it matches."
+
+[Test]
+other = "Test"
+
+[NoMatches]
+other = "No matches in the sample"
+
+[ViewExpansions]
+other = "view all"
+
+[Expansions]
+other = "Expansions"
+
+[ExpansionsOmitted]
+other = "Showing the first {{.Shown}} of {{.Total}} expansions."
+
+[NoExpansions]
+other = "Nothing to expand yet."
+
+[Close]
+other = "Close"
+
+[Rules]
+other = "Rules"
+
+[RulesLower]
+other = "rules"
+
+[NewRule]
+other = "New rule"
+
+[FilterRules]
+other = "Search name, pattern, description..."
+
+[SelectRule]
+other = "Select a rule to edit"
+
+[NoRules]
+other = "No rules found"
+
+[Name]
+other = "Name"
+
+[NameRequired]
+other = "Name is required"
+
+[RuleCreated]
+other = "Rule created"
+
+[RuleUpdated]
+other = "Rule updated"
+
+[ConfirmDeleteRule]
+other = "Are you sure you want to delete this rule?"
+
+[RuleKind]
+other = "Rule"
+
+[WordKind]
+other = "Word"
+
 [Language]
 other = "Language"
 
@@ -114,3 +261,69 @@ other = "Log out"
 
 [Back]
 other = "Back"
+
+[Spellcheck]
+other = "Spellcheck"
+
+[SpellcheckIntro]
+other = "Test text against the active dictionary and rules. Each line is checked as a separate paragraph or headline."
+
+[SpellcheckText]
+other = "Text"
+
+[SpellcheckPlaceholder]
+other = "Mellan 12-15 personer deltog."
+
+[SpellcheckSuggestions]
+other = "Include suggestions"
+
+[SpellcheckCustomOnly]
+other = "Custom dictionary and rules only (skip hunspell)"
+
+[SpellcheckNoIssues]
+other = "No issues found."
+
+[SpellcheckIssues]
+other = "issue(s) found"
+
+[Check]
+other = "Check"
+
+[FromHunspell]
+other = "hunspell"
+
+[NoSuggestions]
+other = "No suggestions"
+
+[SuggestionsLabel]
+other = "Suggestions:"
+
+[Menu]
+other = "Menu"
+
+[RenameEntry]
+other = "Rename entry"
+
+[NewText]
+other = "New text"
+
+[Rename]
+other = "Rename"
+
+[RenameHelp]
+other = "Rename the entry, keeping its common mistakes, forms and settings."
+
+[EntryRenamed]
+other = "Entry renamed"
+
+[RenameUnchanged]
+other = "Enter a different text"
+
+[RenameConflict]
+other = "An entry with that text already exists"
+
+[RenameGone]
+other = "The entry no longer exists"
+
+[RenameFailed]
+other = "Could not rename the entry"

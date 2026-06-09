@@ -1,0 +1,36 @@
+{{with .Contents}}
+{{if .Checked}}
+{{if eq .TotalIssues 0}}
+<div class="spellcheck-summary spellcheck-ok">{{t "SpellcheckNoIssues" "No issues found."}}</div>
+{{else}}
+<div class="spellcheck-summary">{{.TotalIssues}} {{t "SpellcheckIssues" "issue(s) found"}}</div>
+{{range .Chunks}}
+{{if .Entries}}
+<div class="spellcheck-chunk">
+  <div class="spellcheck-chunk-text">{{.Text}}</div>
+  <ul class="spellcheck-entries">
+    {{range .Entries}}
+    <li class="spellcheck-entry">
+      <div class="spellcheck-entry-head">
+        <span class="spellcheck-term">{{.Text}}</span>
+        <span class="badge-level badge-{{.Level}}">{{if eq .Level "error"}}{{t "Error" "Error"}}{{else}}{{t "Suggestion" "Suggestion"}}{{end}}</span>
+        {{if .Status}}<span class="entry-item-status">{{.Status}}</span>{{else}}<span class="entry-item-status">{{t "FromHunspell" "hunspell"}}</span>{{end}}
+        {{if .Spans}}<span class="spellcheck-spans">@ {{.Spans}}</span>{{end}}
+      </div>
+      {{if .Suggestions}}
+      <div class="spellcheck-suggest-row">
+        <span class="spellcheck-suggest-label">{{t "SuggestionsLabel" "Suggestions:"}}</span>
+        {{range .Suggestions}}<span class="suggestion-pill"{{if .Description}} title="{{.Description}}"{{end}}>{{.Text}}</span>{{end}}
+      </div>
+      {{else}}
+      <div class="spellcheck-no-suggestion">{{t "NoSuggestions" "No suggestions"}}</div>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+{{end}}
+{{end}}
+{{end}}
+{{end}}

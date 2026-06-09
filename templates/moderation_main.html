@@ -1,0 +1,100 @@
+<div class="moderation-langs">
+  {{range .Contents.Languages}}
+  <a class="moderation-lang {{if .Active}}active{{end}}" href="/moderation/{{.Code}}/">
+    <span class="moderation-lang-code">{{.Code}}</span>
+    {{if gt .Pending 0}}<span class="badge">{{.Pending}}</span>{{end}}
+  </a>
+  {{end}}
+</div>
+
+{{if .Contents.Items}}
+<div class="moderation-cards">
+  {{range .Contents.Items}}
+  <div class="mod-card">
+    <div class="mod-card-head">
+      <a class="mod-card-text" href="{{if .IsRule}}/rules/{{$.Contents.Language}}/{{.Ident}}{{else}}/dictionaries/{{$.Contents.Language}}/{{pathEscape .Name}}{{end}}">{{.Name}}</a>
+      <span class="mod-card-kind">{{if .IsRule}}{{t "RuleKind" "Rule"}}{{else}}{{t "WordKind" "Word"}}{{end}}</span>
+      <span class="mod-card-level level-{{.Level}}">{{if eq .Level "suggestion"}}{{t "Suggestion" "Suggestion"}}{{else}}{{t "Error" "Error"}}{{end}}</span>
+      {{if .CaseSensitive}}<span class="mod-card-cs">{{t "CaseSensitive" "Case sensitive"}}</span>{{end}}
+    </div>
+    {{if .Description}}<p class="mod-card-desc">{{.Description}}</p>{{end}}
+    {{if .IsRule}}
+    <div class="mod-card-section">
+      <span class="mod-card-label">{{t "RulePattern" "Pattern"}}</span>
+      <div class="mod-chips"><span class="chip">{{.Pattern}}</span>{{if .Replacement}}<span class="chip">→ {{.Replacement}}</span>{{end}}</div>
+    </div>
+    {{else}}
+    {{if .CommonMistakes}}
+    <div class="mod-card-section">
+      <span class="mod-card-label">{{t "CommonMistakes" "Common mistakes"}}</span>
+      <div class="mod-chips">{{range .CommonMistakes}}<span class="chip">{{.}}</span>{{end}}</div>
+    </div>
+    {{end}}
+    {{if .Forms}}
+    <div class="mod-card-section">
+      <span class="mod-card-label">{{t "Forms" "Forms"}}</span>
+      <div class="mod-chips">{{range $k, $v := .Forms}}<span class="chip">{{$k}} → {{$v}}</span>{{end}}</div>
+    </div>
+    {{end}}
+    {{end}}
+    {{if .Guards}}
+    <div class="mod-card-section">
+      <span class="mod-card-label">{{t "RuleGuards" "Context guards"}}</span>
+      <div class="mod-card-guards">
+        {{range .Guards}}
+        <div class="mod-guard">
+          <span class="mod-guard-label">{{t .Key .Default}}</span>
+          <div class="mod-chips">{{range .Words}}<span class="chip">{{.}}</span>{{end}}</div>
+        </div>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+    <div class="mod-card-foot">
+      <div class="mod-card-meta">
+        {{if .IsRule}}
+        <a href="/rules/{{$.Contents.Language}}/{{.Ident}}">{{t "Edit" "Edit"}}</a>
+        {{else}}
+        <a href="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Name}}">{{t "Edit" "Edit"}}</a>
+        {{end}}
+        {{if .Updated}}<small>{{.Updated}}{{if .UpdatedBy}} · {{.UpdatedBy}}{{end}}</small>{{end}}
+      </div>
+      {{if $.Contents.CanWrite}}
+      <div class="mod-card-actions">
+        <button
+          class="btn btn-sm btn-danger"
+          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Ident}}/reject?page={{$.Contents.Page}}"
+          hx-target="#moderation-main"
+          hx-confirm="{{t "ConfirmReject" "Reject and delete this item?"}}"
+        >{{t "Reject" "Reject"}}</button>
+        <button
+          class="btn btn-sm btn-primary"
+          hx-post="/moderation/{{$.Contents.Language}}/{{.Kind}}/{{pathEscape .Ident}}/accept?page={{$.Contents.Page}}"
+          hx-target="#moderation-main"
+        >{{t "Accept" "Accept"}}</button>
+      </div>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{if or (gt .Contents.Page 0) .Contents.HasMore}}
+<div class="moderation-pagination">
+  {{if gt .Contents.Page 0}}
+  <a href="#" class="btn btn-sm"
+    hx-get="/moderation/{{.Contents.Language}}/?page={{subtract .Contents.Page 1}}"
+    hx-target="#moderation-main"
+  >← {{t "Previous" "Previous"}}</a>
+  {{end}}
+  <span class="page-info">{{t "Page" "Page"}} {{add .Contents.Page 1}}</span>
+  {{if .Contents.HasMore}}
+  <a href="#" class="btn btn-sm"
+    hx-get="/moderation/{{.Contents.Language}}/?page={{add .Contents.Page 1}}"
+    hx-target="#moderation-main"
+  >{{t "Next" "Next"}} →</a>
+  {{end}}
+</div>
+{{end}}
+{{else}}
+<div class="moderation-empty">{{t "NoPending" "Nothing awaiting moderation"}}</div>
+{{end}}

@@ -1,6 +1,153 @@
 [Dictionaries]
 other = "Ordlistor"
 
+[Moderation]
+other = "Granskning"
+
+[ModerationIntro]
+other = "Granska poster som väntar på moderering. Godkända poster behålls, avvisade tas bort."
+
+[NoPending]
+other = "Inga poster väntar på granskning"
+
+[Accept]
+other = "Godkänn"
+
+[Reject]
+other = "Avvisa"
+
+[ConfirmReject]
+other = "Avvisa och ta bort posten?"
+
+[Edit]
+other = "Redigera"
+
+[FormsHelp2]
+other = "Koppla en felaktig böjning till dess korrekta ersättning"
+
+[Incorrect]
+other = "Felaktig"
+
+[Correct]
+other = "Korrekt"
+
+[Remove]
+other = "Ta bort"
+
+[AddForm]
+other = "Lägg till form"
+
+[TotalExpansions]
+other = "Totalt antal expansioner"
+
+[CaseSensitive]
+other = "Skiftlägeskänslig"
+
+[CaseSensitiveHelp]
+other = "Matcha endast exakt skiftläge. Slå på för egennamn; lämna av för vanliga ord så att de även fångas i början av en mening."
+
+[RuleSection]
+other = "Mönsterregel (avancerat)"
+
+[IsRule]
+other = "Behandla posten som en mönsterregel"
+
+[RuleHelp]
+other = "Matcha texten direkt. Använd platshållarna {digit}, {word} och {gap(N)}; bokstavlig text och mellanslag matchas som de skrivs. Hänvisa till fångade grupper i ersättningen som {1}, {2}."
+
+[RulePattern]
+other = "Mönster"
+
+[RuleReplacement]
+other = "Ersättning"
+
+[RuleGuards]
+other = "Kontextvillkor"
+
+[RuleGuardsHelp]
+other = "Kommaseparerade ord. Valfritt: begränsa när regeln slår till utifrån grannordet."
+
+[RuleNotBefore]
+other = "Hoppa över om föregås av"
+
+[RuleNotAfter]
+other = "Hoppa över om följs av"
+
+[RuleBefore]
+other = "Endast om föregås av"
+
+[RuleAfter]
+other = "Endast om följs av"
+
+[RuleCaseSensitiveHelp]
+other = "Matcha mönstret och kontextvillkoren med exakt skiftläge. Aktivera för egennamn."
+
+[SampleInput]
+other = "Exempeltext"
+
+[SampleInputHelp]
+other = "Testa regeln mot lite text för att se vad den träffar."
+
+[Test]
+other = "Testa"
+
+[NoMatches]
+other = "Inga träffar i exempeltexten"
+
+[ViewExpansions]
+other = "visa alla"
+
+[Expansions]
+other = "Expansioner"
+
+[ExpansionsOmitted]
+other = "Visar de första {{.Shown}} av {{.Total}} expansionerna."
+
+[NoExpansions]
+other = "Inget att expandera ännu."
+
+[Close]
+other = "Stäng"
+
+[Rules]
+other = "Regler"
+
+[RulesLower]
+other = "regler"
+
+[NewRule]
+other = "Ny regel"
+
+[FilterRules]
+other = "Sök namn, mönster, beskrivning..."
+
+[SelectRule]
+other = "Välj en regel att redigera"
+
+[NoRules]
+other = "Inga regler hittades"
+
+[Name]
+other = "Namn"
+
+[NameRequired]
+other = "Namn krävs"
+
+[RuleCreated]
+other = "Regel skapad"
+
+[RuleUpdated]
+other = "Regel uppdaterad"
+
+[ConfirmDeleteRule]
+other = "Är du säker på att du vill ta bort regeln?"
+
+[RuleKind]
+other = "Regel"
+
+[WordKind]
+other = "Ord"
+
 [Language]
 other = "Språk"
 
@@ -114,3 +261,69 @@ other = "Logga ut"
 
 [Back]
 other = "Tillbaka"
+
+[Spellcheck]
+other = "Stavningskontroll"
+
+[SpellcheckIntro]
+other = "Testa text mot den aktiva ordlistan och reglerna. Varje rad kontrolleras som ett separat stycke eller en rubrik."
+
+[SpellcheckText]
+other = "Text"
+
+[SpellcheckPlaceholder]
+other = "Mellan 12-15 personer deltog."
+
+[SpellcheckSuggestions]
+other = "Inkludera förslag"
+
+[SpellcheckCustomOnly]
+other = "Endast egen ordlista och regler (hoppa över hunspell)"
+
+[SpellcheckNoIssues]
+other = "Inga problem hittades."
+
+[SpellcheckIssues]
+other = "problem hittades"
+
+[Check]
+other = "Kontrollera"
+
+[FromHunspell]
+other = "hunspell"
+
+[NoSuggestions]
+other = "Inga förslag"
+
+[SuggestionsLabel]
+other = "Förslag:"
+
+[Menu]
+other = "Meny"
+
+[RenameEntry]
+other = "Byt namn på ord"
+
+[NewText]
+other = "Ny text"
+
+[Rename]
+other = "Byt namn"
+
+[RenameHelp]
+other = "Byt namn på ordet och behåll dess vanliga misstag, former och inställningar."
+
+[EntryRenamed]
+other = "Ordet bytte namn"
+
+[RenameUnchanged]
+other = "Ange en annan text"
+
+[RenameConflict]
+other = "Det finns redan ett ord med den texten"
+
+[RenameGone]
+other = "Ordet finns inte längre"
+
+[RenameFailed]
+other = "Kunde inte byta namn på ordet"

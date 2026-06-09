@@ -40,11 +40,12 @@ func TestAPI(t *testing.T) {
 
 		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
 			Entry: &spellapi.CustomEntry{
-				Language:    "sv-se",
-				Text:        text,
-				Status:      "approved",
-				Description: "a small country",
-				Level:       spellapi.CorrectionLevel_LEVEL_ERROR,
+				Language:      "sv-se",
+				Text:          text,
+				Status:        "approved",
+				Description:   "a small country",
+				Level:         spellapi.CorrectionLevel_LEVEL_ERROR,
+				CaseSensitive: true,
 			},
 		})
 		if err != nil {
@@ -63,13 +64,17 @@ func TestAPI(t *testing.T) {
 			t.Fatalf("unexpected entry: %+v", got.Entry)
 		}
 
+		if !got.Entry.CaseSensitive {
+			t.Errorf("CaseSensitive did not round-trip")
+		}
+
 		if got.Entry.UpdatedBy != stack.Admin.Subject {
 			t.Errorf("UpdatedBy = %q, want %q",
 				got.Entry.UpdatedBy, stack.Admin.Subject)
 		}
 
 		list, err := stack.Dictionaries.ListEntries(ctx,
-			&spellapi.ListEntriesRequest{Language: "sv-se", Prefix: "Liech"})
+			&spellapi.ListEntriesRequest{Language: "sv-se", Query: "Liech"})
 		if err != nil {
 			t.Fatalf("list entries: %v", err)
 		}
@@ -79,6 +84,70 @@ func TestAPI(t *testing.T) {
 		}) {
 			t.Fatalf("listed entries missing %q: %+v", text, list.Entries)
 		}
+	})
+
+	t.Run("rename_entry", func(t *testing.T) {
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language:       "sv-se",
+				Text:           "Faroe",
+				Status:         "accepted",
+				Level:          spellapi.CorrectionLevel_LEVEL_ERROR,
+				CommonMistakes: []string{"Färö"},
+				CaseSensitive:  true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("set entry: %v", err)
+		}
+
+		_, err = stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language: "sv-se", Text: "Iceland", Status: "accepted",
+			},
+		})
+		if err != nil {
+			t.Fatalf("set conflicting entry: %v", err)
+		}
+
+		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
+			Language: "sv-se", Text: "Faroe", NewText: "Faroes",
+		})
+		if err != nil {
+			t.Fatalf("rename: %v", err)
+		}
+
+		// The renamed entry exists and kept its data.
+		got, err := stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+			Language: "sv-se", Text: "Faroes",
+		})
+		if err != nil {
+			t.Fatalf("get renamed: %v", err)
+		}
+
+		if !got.Entry.CaseSensitive || len(got.Entry.CommonMistakes) != 1 {
+			t.Errorf("rename did not preserve data: %+v", got.Entry)
+		}
+
+		// The old text is gone.
+		_, err = stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+			Language: "sv-se", Text: "Faroe",
+		})
+		if err == nil {
+			t.Error("old entry text should no longer exist")
+		}
+
+		// Renaming onto an existing text conflicts.
+		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
+			Language: "sv-se", Text: "Faroes", NewText: "Iceland",
+		})
+		assertTwirpCode(t, err, twirp.AlreadyExists)
+
+		// Renaming a missing entry is a not-found.
+		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
+			Language: "sv-se", Text: "Nonexistent", NewText: "Whatever",
+		})
+		assertTwirpCode(t, err, twirp.NotFound)
 	})
 
 	t.Run("spellcheck_flow_through_eventlog", func(t *testing.T) {
@@ -211,9 +280,9 @@ func TestAPI(t *testing.T) {
 					&spellapi.GetEntryRequest{Language: "sv-se"})
 				return err
 			}},
-			{"list entries bad prefix", func() error {
+			{"list entries bad query", func() error {
 				_, err := stack.Dictionaries.ListEntries(ctx,
-					&spellapi.ListEntriesRequest{Prefix: "a%b"})
+					&spellapi.ListEntriesRequest{Query: "a%b"})
 				return err
 			}},
 			{"check unsupported language", func() error {
@@ -290,6 +359,283 @@ func TestAPI(t *testing.T) {
 			})
 
 		assertTwirpCode(t, err, twirp.PermissionDenied)
+	})
+
+	t.Run("moderation_status_flow", func(t *testing.T) {
+		const (
+			entry   = "Pyongyang"
+			mistake = "Pjongjang"
+		)
+
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language:       "sv-se",
+				Text:           entry,
+				Status:         "pending",
+				CommonMistakes: []string{mistake},
+				Level:          spellapi.CorrectionLevel_LEVEL_ERROR,
+			},
+		})
+		if err != nil {
+			t.Fatalf("set pending entry: %v", err)
+		}
+
+		// statusFor returns the status the spellchecker reports for the
+		// mistake, or "" if it isn't flagged yet.
+		statusFor := func() string {
+			res, err := stack.Check.Text(ctx, &spellapi.TextRequest{
+				Language:   "sv-se",
+				Text:       []string{mistake},
+				CustomOnly: true,
+			})
+			if err != nil {
+				t.Fatalf("spellcheck: %v", err)
+			}
+
+			if len(res.Misspelled) == 1 && len(res.Misspelled[0].Entries) > 0 {
+				return res.Misspelled[0].Entries[0].Status
+			}
+
+			return ""
+		}
+
+		integration.WaitFor(t, "pending entry to propagate", func() bool {
+			return statusFor() == "pending"
+		})
+
+		// The pending entry should show up in the per-language pending count.
+		dicts, err := stack.Dictionaries.ListDictionaries(ctx,
+			&spellapi.ListDictionariesRequest{})
+		if err != nil {
+			t.Fatalf("list dictionaries: %v", err)
+		}
+
+		if !slices.ContainsFunc(dicts.Dictionaries,
+			func(d *spellapi.CustomDictionary) bool {
+				return d.Language == "sv-se" && d.PendingCount > 0
+			}) {
+			t.Fatalf("expected a pending entry for sv-se, got %+v",
+				dicts.Dictionaries)
+		}
+
+		// Filtering by status returns only pending entries, and page_size
+		// bounds the page.
+		pending, err := stack.Dictionaries.ListEntries(ctx,
+			&spellapi.ListEntriesRequest{
+				Language: "sv-se", Status: "pending", PageSize: 1,
+			})
+		if err != nil {
+			t.Fatalf("list pending entries: %v", err)
+		}
+
+		if len(pending.Entries) != 1 {
+			t.Fatalf("page_size=1 should bound to one entry, got %d",
+				len(pending.Entries))
+		}
+
+		// Accepting flips the status, and it propagates back to the checker.
+		_, err = stack.Dictionaries.SetEntryStatus(ctx,
+			&spellapi.SetEntryStatusRequest{
+				Language: "sv-se", Text: entry, Status: "accepted",
+			})
+		if err != nil {
+			t.Fatalf("set entry status: %v", err)
+		}
+
+		integration.WaitFor(t, "accepted status to propagate", func() bool {
+			return statusFor() == "accepted"
+		})
+	})
+
+	t.Run("set_entry_status_missing", func(t *testing.T) {
+		_, err := stack.Dictionaries.SetEntryStatus(ctx,
+			&spellapi.SetEntryStatusRequest{
+				Language: "sv-se", Text: "does-not-exist", Status: "accepted",
+			})
+
+		assertTwirpCode(t, err, twirp.NotFound)
+	})
+
+	t.Run("search_matches_mistakes_and_description", func(t *testing.T) {
+		const text = "Zürich"
+
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language:       "sv-se",
+				Text:           text,
+				Status:         "accepted",
+				Description:    "kanton i Schweiz",
+				CommonMistakes: []string{"Zurich"},
+				Level:          spellapi.CorrectionLevel_LEVEL_ERROR,
+			},
+		})
+		if err != nil {
+			t.Fatalf("set entry: %v", err)
+		}
+
+		finds := func(query string) bool {
+			list, err := stack.Dictionaries.ListEntries(ctx,
+				&spellapi.ListEntriesRequest{Language: "sv-se", Query: query})
+			if err != nil {
+				t.Fatalf("list entries: %v", err)
+			}
+
+			return slices.ContainsFunc(list.Entries,
+				func(e *spellapi.CustomEntry) bool {
+					return e.Text == text
+				})
+		}
+
+		// Substring of the common mistake, the description, and the entry text.
+		for _, q := range []string{"Zurich", "kanton", "ürich"} {
+			if !finds(q) {
+				t.Errorf("query %q did not find %q", q, text)
+			}
+		}
+
+		if finds("nonexistent-substring") {
+			t.Errorf("unrelated query unexpectedly matched %q", text)
+		}
+	})
+
+	t.Run("custom_rule_flow", func(t *testing.T) {
+		created, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Language:    "sv-se",
+				Name:        "kronor-rule",
+				Status:      "accepted",
+				Level:       spellapi.CorrectionLevel_LEVEL_SUGGESTION,
+				Pattern:     "{digit} kr",
+				Replacement: "{1} kronor",
+			},
+		})
+		if err != nil {
+			t.Fatalf("set rule: %v", err)
+		}
+
+		if created.Id == 0 {
+			t.Fatal("SetRule did not return a new id")
+		}
+
+		flagged := func() bool {
+			res, err := stack.Check.Text(ctx, &spellapi.TextRequest{
+				Language:   "sv-se",
+				Text:       []string{"Det kostar 5 kr."},
+				CustomOnly: true,
+			})
+			if err != nil {
+				t.Fatalf("check: %v", err)
+			}
+
+			return len(res.Misspelled) == 1 &&
+				slices.ContainsFunc(res.Misspelled[0].Entries,
+					func(e *spellapi.MisspelledEntry) bool {
+						return e.Text == "5 kr"
+					})
+		}
+
+		integration.WaitFor(t, "rule to propagate", flagged)
+
+		sug, err := stack.Check.Suggestions(ctx, &spellapi.SuggestionsRequest{
+			Language:   "sv-se",
+			Text:       "5 kr",
+			CustomOnly: true,
+		})
+		if err != nil {
+			t.Fatalf("suggestions: %v", err)
+		}
+
+		if !slices.ContainsFunc(sug.Suggestions,
+			func(s *spellapi.Suggestion) bool {
+				return s.Text == "5 kronor"
+			}) {
+			t.Errorf("expected '5 kronor' suggestion, got %+v", sug.Suggestions)
+		}
+
+		got, err := stack.Rules.GetRule(ctx, &spellapi.GetRuleRequest{
+			Id: created.Id,
+		})
+		if err != nil {
+			t.Fatalf("get rule: %v", err)
+		}
+
+		if got.Rule == nil || got.Rule.Pattern != "{digit} kr" ||
+			got.Rule.Name != "kronor-rule" {
+			t.Errorf("rule did not round-trip: %+v", got.Rule)
+		}
+
+		// The rule shows up in the rule listing, filtered by pattern substring.
+		list, err := stack.Rules.ListRules(ctx, &spellapi.ListRulesRequest{
+			Language: "sv-se", Query: "kr",
+		})
+		if err != nil {
+			t.Fatalf("list rules: %v", err)
+		}
+
+		if !slices.ContainsFunc(list.Rules, func(r *spellapi.Rule) bool {
+			return r.Name == "kronor-rule"
+		}) {
+			t.Errorf("rule missing from listing: %+v", list.Rules)
+		}
+	})
+
+	t.Run("invalid_rule_rejected", func(t *testing.T) {
+		_, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Language: "sv-se",
+				Name:     "bad-rule",
+				Status:   "accepted",
+				Pattern:  "{gap(x)}",
+			},
+		})
+
+		assertTwirpCode(t, err, twirp.InvalidArgument)
+	})
+
+	t.Run("rule_status_and_delete", func(t *testing.T) {
+		created, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Language: "sv-se", Name: "pending-rule", Status: "pending",
+				Pattern: "{digit} %", Replacement: "{1} procent",
+			},
+		})
+		if err != nil {
+			t.Fatalf("set pending rule: %v", err)
+		}
+
+		// Updating by id keeps the same rule.
+		updated, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Id: created.Id, Language: "sv-se", Name: "renamed-rule",
+				Status: "pending", Pattern: "{digit} %", Replacement: "{1} procent",
+			},
+		})
+		if err != nil {
+			t.Fatalf("update rule: %v", err)
+		}
+
+		if updated.Id != created.Id {
+			t.Fatalf("update changed the id: %d -> %d", created.Id, updated.Id)
+		}
+
+		_, err = stack.Rules.SetRuleStatus(ctx, &spellapi.SetRuleStatusRequest{
+			Id: created.Id, Status: "accepted",
+		})
+		if err != nil {
+			t.Fatalf("set rule status: %v", err)
+		}
+
+		_, err = stack.Rules.DeleteRule(ctx, &spellapi.DeleteRuleRequest{
+			Id: created.Id,
+		})
+		if err != nil {
+			t.Fatalf("delete rule: %v", err)
+		}
+
+		_, err = stack.Rules.SetRuleStatus(ctx, &spellapi.SetRuleStatusRequest{
+			Id: 999999, Status: "accepted",
+		})
+		assertTwirpCode(t, err, twirp.NotFound)
 	})
 }
 

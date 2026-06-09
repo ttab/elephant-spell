@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -22,6 +23,7 @@ type DictionariesUI struct {
 	auth            howdah.Authenticator
 	authParser      elephantine.AuthInfoParser
 	dicts           spell.Dictionaries
+	rules           spell.Rules
 	languages       []string
 	defaultLanguage string
 }
@@ -31,6 +33,7 @@ func NewDictionariesUI(
 	auth howdah.Authenticator,
 	authParser elephantine.AuthInfoParser,
 	dicts spell.Dictionaries,
+	rules spell.Rules,
 	languages []string,
 	defaultLanguage string,
 ) *DictionariesUI {
@@ -45,6 +48,7 @@ func NewDictionariesUI(
 		auth:            auth,
 		authParser:      authParser,
 		dicts:           dicts,
+		rules:           rules,
 		languages:       languages,
 		defaultLanguage: defaultLanguage,
 	}
@@ -52,9 +56,10 @@ func NewDictionariesUI(
 
 func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
 	return template.FuncMap{
-		"pathEscape": url.PathEscape,
-		"add":        func(a, b int64) int64 { return a + b },
-		"subtract":   func(a, b int64) int64 { return a - b },
+		"pathEscape":    url.PathEscape,
+		"add":           func(a, b int64) int64 { return a + b },
+		"subtract":      func(a, b int64) int64 { return a - b },
+		"expandPreview": mistakesPreview,
 	}
 }
 
@@ -66,8 +71,16 @@ func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
 	mux.HandleFunc("GET /dictionaries/{language}/new", d.newEntryPage)
 	mux.HandleFunc("GET /dictionaries/{language}/{text}", d.entryPage)
 	mux.HandleFunc("POST /dictionaries/{language}/_new", d.saveNewEntry)
+	mux.HandleFunc("POST /dictionaries/{language}/_validate", d.validateMistakes)
+	mux.HandleFunc("POST /dictionaries/{language}/_expansions", d.listExpansions)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}", d.saveEntry)
 	mux.HandleFunc("POST /dictionaries/{language}/{text}/delete", d.deleteEntry)
+	mux.HandleFunc("GET /dictionaries/{language}/{text}/rename", d.renameEntryForm)
+	mux.HandleFunc("POST /dictionaries/{language}/{text}/rename", d.renameEntry)
+	mux.HandleFunc("GET /moderation/{$}", d.moderationRedirect)
+	mux.HandleFunc("GET /moderation/{language}/{$}", d.moderationPage)
+	mux.HandleFunc("POST /moderation/{language}/{kind}/{ident}/accept", d.moderationAccept)
+	mux.HandleFunc("POST /moderation/{language}/{kind}/{ident}/reject", d.moderationReject)
 }
 
 func (d *DictionariesUI) MenuHook(hooks *howdah.MenuHooks) {
@@ -77,6 +90,11 @@ func (d *DictionariesUI) MenuHook(hooks *howdah.MenuHooks) {
 				Title:  howdah.TL("Dictionaries", "Dictionaries"),
 				HREF:   "/",
 				Weight: 10,
+			},
+			{
+				Title:  howdah.TL("Moderation", "Moderation"),
+				HREF:   "/moderation/",
+				Weight: 20,
 			},
 		}
 	})
@@ -92,6 +110,11 @@ type uiEntry struct {
 	Forms          map[string]string
 	Updated        string
 	UpdatedBy      string
+	CaseSensitive  bool
+	Before         string
+	After          string
+	NotBefore      string
+	NotAfter       string
 }
 
 func customEntryToUI(e *spell.CustomEntry) uiEntry {
@@ -109,6 +132,11 @@ func customEntryToUI(e *spell.CustomEntry) uiEntry {
 		Forms:          e.Forms,
 		Updated:        e.Updated,
 		UpdatedBy:      e.UpdatedBy,
+		CaseSensitive:  e.CaseSensitive,
+		Before:         strings.Join(e.Before, ", "),
+		After:          strings.Join(e.After, ", "),
+		NotBefore:      strings.Join(e.NotBefore, ", "),
+		NotAfter:       strings.Join(e.NotAfter, ", "),
 	}
 }
 
@@ -128,16 +156,17 @@ type dictionariesContents struct {
 	Entry       *uiEntry
 	ActiveEntry string
 	NewEntry    bool
+	Rename      bool
 	Count       int
 	Flash       *flashMessage
 	CanWrite    bool
-	Prefix      string
+	Query       string
 	Page        int64
 	HasMore     bool
 }
 
 func (d *DictionariesUI) entryCount(ctx context.Context, lang string) (int, error) {
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return 0, fmt.Errorf("bridge auth for entry count: %w", err)
 	}
@@ -156,7 +185,7 @@ func (d *DictionariesUI) entryCount(ctx context.Context, lang string) (int, erro
 	return 0, nil
 }
 
-func (d *DictionariesUI) hasWriteScope(ctx context.Context) bool {
+func hasWriteScope(ctx context.Context) bool {
 	accessToken, ok := howdah.AccessToken(ctx)
 	if !ok {
 		return false
@@ -176,9 +205,53 @@ type flashMessage struct {
 	Message howdah.TextLabel
 }
 
-// withServiceAuth bridges howdah's OIDC auth context to elephantine's auth
-// context so that the spell.Dictionaries service methods can verify scopes.
-func (d *DictionariesUI) withServiceAuth(ctx context.Context) (context.Context, error) {
+// statusOption is a selectable entry/rule status for the editor's status
+// dropdown.
+type statusOption struct {
+	Value    string
+	Label    howdah.TextLabel
+	Selected bool
+}
+
+// statusOptions builds the status dropdown choices, marking the current status
+// as selected. New entries and rules (empty current status) default to
+// "pending" so additions go through moderation before taking effect.
+func statusOptions(current string) []statusOption {
+	if current == "" {
+		current = "pending"
+	}
+
+	return []statusOption{
+		{
+			Value:    "accepted",
+			Label:    howdah.TL("Accepted", "Accepted"),
+			Selected: current == "accepted",
+		},
+		{
+			Value:    "pending",
+			Label:    howdah.TL("Pending", "Pending"),
+			Selected: current == "pending",
+		},
+	}
+}
+
+// StatusOptions returns the status dropdown choices for the entry editor,
+// defaulting to "pending" for new entries.
+func (c dictionariesContents) StatusOptions() []statusOption {
+	var current string
+
+	if c.Entry != nil {
+		current = c.Entry.Status
+	}
+
+	return statusOptions(current)
+}
+
+// bridgeServiceAuth bridges howdah's OIDC auth context to elephantine's auth
+// context so that the spell service methods can verify scopes.
+func bridgeServiceAuth(
+	ctx context.Context, authParser elephantine.AuthInfoParser,
+) (context.Context, error) {
 	headers, ok := twirp.HTTPRequestHeaders(ctx)
 	if !ok {
 		return ctx, nil
@@ -189,7 +262,7 @@ func (d *DictionariesUI) withServiceAuth(ctx context.Context) (context.Context, 
 		return ctx, nil
 	}
 
-	info, err := d.authParser.AuthInfoFromHeader(authHeader)
+	info, err := authParser.AuthInfoFromHeader(authHeader)
 	if err != nil {
 		return nil, fmt.Errorf("parse auth header: %w", err)
 	}
@@ -206,6 +279,19 @@ func twirpErrorToHTTP(err error) error {
 	status := twirp.ServerHTTPStatusFromErrorCode(tErr.Code())
 
 	return howdah.NewHTTPError(status, "Error", tErr.Msg(), tErr)
+}
+
+// parseForm parses an HTTP request's form, returning a bad-request HTTP error on
+// failure so handlers can surface it directly.
+func parseForm(r *http.Request) error {
+	err := r.ParseForm()
+	if err != nil {
+		return howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid form data",
+			fmt.Errorf("parse form: %w", err))
+	}
+
+	return nil
 }
 
 func (d *DictionariesUI) keepalivePage(
@@ -232,7 +318,7 @@ func (d *DictionariesUI) listPage(
 	lang := d.defaultLanguage
 
 	if c, err := r.Cookie("lang"); err == nil && c.Value != "" {
-		if match := d.matchLanguage(c.Value); match != "" {
+		if match := matchLanguage(d.languages, c.Value); match != "" {
 			lang = match
 		}
 	}
@@ -245,16 +331,16 @@ func (d *DictionariesUI) listPage(
 // matchLanguage finds a dictionary language matching the given UI locale code.
 // It first tries an exact match, then falls back to prefix matching (e.g. "sv"
 // matches "sv-se").
-func (d *DictionariesUI) matchLanguage(code string) string {
+func matchLanguage(languages []string, code string) string {
 	code = strings.ToLower(code)
 
-	for _, lang := range d.languages {
+	for _, lang := range languages {
 		if lang == code {
 			return lang
 		}
 	}
 
-	for _, lang := range d.languages {
+	for _, lang := range languages {
 		if strings.HasPrefix(lang, code+"-") || strings.HasPrefix(code, lang+"-") {
 			return lang
 		}
@@ -281,7 +367,7 @@ func (d *DictionariesUI) languagePage(
 		)
 	}
 
-	canWrite := d.hasWriteScope(ctx)
+	canWrite := hasWriteScope(ctx)
 
 	if isHtmx(r) {
 		return d.entryListPage(ctx, lang, "", "", 0)
@@ -320,7 +406,7 @@ func (d *DictionariesUI) newEntryPage(
 	}
 
 	lang := r.PathValue("language")
-	canWrite := d.hasWriteScope(ctx)
+	canWrite := hasWriteScope(ctx)
 
 	if isHtmx(r) {
 		return &howdah.Page{
@@ -368,9 +454,9 @@ func (d *DictionariesUI) entryPage(
 
 	lang := r.PathValue("language")
 	text := r.PathValue("text")
-	canWrite := d.hasWriteScope(ctx)
+	canWrite := hasWriteScope(ctx)
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -431,7 +517,7 @@ func (d *DictionariesUI) saveNewEntry(
 		return nil, err
 	}
 
-	if !d.hasWriteScope(ctx) {
+	if !hasWriteScope(ctx) {
 		return nil, howdah.NewHTTPError(
 			http.StatusForbidden,
 			"MissingScope", "You need the 'spell_write' scope to make changes",
@@ -441,12 +527,8 @@ func (d *DictionariesUI) saveNewEntry(
 
 	lang := r.PathValue("language")
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err),
-		)
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
 	text := strings.TrimSpace(r.FormValue("text"))
@@ -465,7 +547,7 @@ func (d *DictionariesUI) saveNewEntry(
 		}, nil
 	}
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -477,28 +559,48 @@ func (d *DictionariesUI) saveNewEntry(
 
 	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(text))
 
-	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
-		Language: lang,
-		Text:     text,
+	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("EntryCreated", "Entry created"),
 	})
+}
+
+// entryDetailResponse renders the entry detail (a form, or the empty
+// placeholder when text is empty) together with an out-of-band refresh of the
+// sidebar list, so the list reflects creates, edits and deletes immediately.
+func (d *DictionariesUI) entryDetailResponse(
+	ctx, svcCtx context.Context, lang, text string, flash *flashMessage,
+) (*howdah.Page, error) {
+	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	entry := customEntryToUI(res.Entry)
+	contents := dictionariesContents{
+		Language: lang,
+		Entries:  entries,
+		HasMore:  hasMore,
+		CanWrite: true,
+		Flash:    flash,
+	}
+
+	if text != "" {
+		res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
+			Language: lang,
+			Text:     text,
+		})
+		if err != nil {
+			return nil, twirpErrorToHTTP(err)
+		}
+
+		entry := customEntryToUI(res.Entry)
+		contents.Entry = &entry
+		contents.ActiveEntry = text
+	}
 
 	return &howdah.Page{
-		Template: "entry_form.html",
-		Contents: dictionariesContents{
-			Language:    lang,
-			Entry:       &entry,
-			ActiveEntry: text,
-			CanWrite:    true,
-			Flash: &flashMessage{
-				Type:    "success",
-				Message: howdah.TL("EntryCreated", "Entry created"),
-			},
-		},
+		Template: "entry_response.html",
+		Contents: contents,
 	}, nil
 }
 
@@ -510,7 +612,7 @@ func (d *DictionariesUI) saveEntry(
 		return nil, err
 	}
 
-	if !d.hasWriteScope(ctx) {
+	if !hasWriteScope(ctx) {
 		return nil, howdah.NewHTTPError(
 			http.StatusForbidden,
 			"MissingScope", "You need the 'spell_write' scope to make changes",
@@ -521,15 +623,11 @@ func (d *DictionariesUI) saveEntry(
 	lang := r.PathValue("language")
 	text := r.PathValue("text")
 
-	err = r.ParseForm()
-	if err != nil {
-		return nil, howdah.NewHTTPError(
-			http.StatusBadRequest, "Error", "Invalid form data",
-			fmt.Errorf("parse form: %w", err),
-		)
+	if err := parseForm(r); err != nil {
+		return nil, err
 	}
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -539,29 +637,10 @@ func (d *DictionariesUI) saveEntry(
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
-		Language: lang,
-		Text:     text,
+	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("EntryUpdated", "Entry updated"),
 	})
-	if err != nil {
-		return nil, twirpErrorToHTTP(err)
-	}
-
-	entry := customEntryToUI(res.Entry)
-
-	return &howdah.Page{
-		Template: "entry_form.html",
-		Contents: dictionariesContents{
-			Language:    lang,
-			Entry:       &entry,
-			ActiveEntry: text,
-			CanWrite:    true,
-			Flash: &flashMessage{
-				Type:    "success",
-				Message: howdah.TL("EntryUpdated", "Entry updated"),
-			},
-		},
-	}, nil
 }
 
 func (d *DictionariesUI) deleteEntry(
@@ -572,7 +651,7 @@ func (d *DictionariesUI) deleteEntry(
 		return nil, err
 	}
 
-	if !d.hasWriteScope(ctx) {
+	if !hasWriteScope(ctx) {
 		return nil, howdah.NewHTTPError(
 			http.StatusForbidden,
 			"MissingScope", "You need the 'spell_write' scope to make changes",
@@ -583,7 +662,7 @@ func (d *DictionariesUI) deleteEntry(
 	lang := r.PathValue("language")
 	text := r.PathValue("text")
 
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
 	}
@@ -596,9 +675,171 @@ func (d *DictionariesUI) deleteEntry(
 		return nil, twirpErrorToHTTP(err)
 	}
 
-	w.Header().Set("HX-Redirect", "/dictionaries/"+lang+"/")
+	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/")
 
-	return nil, howdah.ErrSkipRender
+	return d.entryDetailResponse(ctx, svcCtx, lang, "", nil)
+}
+
+// renameEntryForm shows the simple rename form for an entry.
+func (d *DictionariesUI) renameEntryForm(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	ctx, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if !hasWriteScope(ctx) {
+		return nil, forbiddenScope()
+	}
+
+	lang := r.PathValue("language")
+	text := r.PathValue("text")
+
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
+	if err != nil {
+		return nil, howdah.InternalHTTPError(err)
+	}
+
+	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
+		Language: lang, Text: text,
+	})
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	entry := customEntryToUI(res.Entry)
+
+	if isHtmx(r) {
+		return &howdah.Page{
+			Template: "entry_rename.html",
+			Contents: dictionariesContents{
+				Language: lang, Entry: &entry, ActiveEntry: text,
+				Rename: true, CanWrite: true,
+			},
+		}, nil
+	}
+
+	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	count, err := d.entryCount(ctx, lang)
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	return &howdah.Page{
+		Template: "dictionaries.html",
+		Title:    howdah.TLiteral(text + " – Dictionaries"),
+		Contents: dictionariesContents{
+			Languages:   d.languages,
+			Language:    lang,
+			Entries:     entries,
+			Count:       count,
+			Entry:       &entry,
+			ActiveEntry: text,
+			Rename:      true,
+			CanWrite:    true,
+			HasMore:     hasMore,
+		},
+	}, nil
+}
+
+// renameEntry applies a rename and, on success, swaps in the renamed entry's
+// detail. On a validation or conflict error it re-renders the rename form with
+// a message instead of an error page.
+func (d *DictionariesUI) renameEntry(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (_ *howdah.Page, outErr error) {
+	ctx, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if !hasWriteScope(ctx) {
+		return nil, forbiddenScope()
+	}
+
+	lang := r.PathValue("language")
+	text := r.PathValue("text")
+
+	err = r.ParseForm()
+	if err != nil {
+		return nil, howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid form data",
+			fmt.Errorf("parse form: %w", err))
+	}
+
+	newText := strings.TrimSpace(r.FormValue("new_text"))
+
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
+	if err != nil {
+		return nil, howdah.InternalHTTPError(err)
+	}
+
+	if newText == "" || newText == text {
+		return d.renameFormWithFlash(svcCtx, lang, text, &flashMessage{
+			Type:    "error",
+			Message: howdah.TL("RenameUnchanged", "Enter a different text"),
+		})
+	}
+
+	_, err = d.dicts.RenameEntry(svcCtx, &spell.RenameEntryRequest{
+		Language: lang, Text: text, NewText: newText,
+	})
+	if err != nil {
+		return d.renameFormWithFlash(svcCtx, lang, text, &flashMessage{
+			Type:    "error",
+			Message: renameErrorMessage(err),
+		})
+	}
+
+	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(newText))
+
+	return d.entryDetailResponse(ctx, svcCtx, lang, newText, &flashMessage{
+		Type:    "success",
+		Message: howdah.TL("EntryRenamed", "Entry renamed"),
+	})
+}
+
+// renameFormWithFlash re-renders the rename form for an entry with a message.
+func (d *DictionariesUI) renameFormWithFlash(
+	svcCtx context.Context, lang, text string, flash *flashMessage,
+) (*howdah.Page, error) {
+	res, err := d.dicts.GetEntry(svcCtx, &spell.GetEntryRequest{
+		Language: lang, Text: text,
+	})
+	if err != nil {
+		return nil, twirpErrorToHTTP(err)
+	}
+
+	entry := customEntryToUI(res.Entry)
+
+	return &howdah.Page{
+		Template: "entry_rename.html",
+		Contents: dictionariesContents{
+			Language: lang, Entry: &entry, ActiveEntry: text,
+			Rename: true, CanWrite: true, Flash: flash,
+		},
+	}, nil
+}
+
+// renameErrorMessage maps a rename RPC error to an editor-facing message.
+func renameErrorMessage(err error) howdah.TextLabel {
+	var twerr twirp.Error
+	if errors.As(err, &twerr) {
+		switch twerr.Code() {
+		case twirp.AlreadyExists:
+			return howdah.TL("RenameConflict",
+				"An entry with that text already exists")
+		case twirp.NotFound:
+			return howdah.TL("RenameGone", "The entry no longer exists")
+		}
+	}
+
+	return howdah.TL("RenameFailed", "Could not rename the entry")
 }
 
 func (d *DictionariesUI) setEntryFromForm(
@@ -625,24 +866,9 @@ func (d *DictionariesUI) setEntryFromForm(
 		}
 	}
 
-	forms := make(map[string]string)
-
-	formsRaw := strings.TrimSpace(r.FormValue("forms"))
-	if formsRaw != "" {
-		for _, line := range strings.Split(formsRaw, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-
-			k, v, ok := strings.Cut(line, "=")
-			if !ok {
-				continue
-			}
-
-			forms[strings.TrimSpace(k)] = strings.TrimSpace(v)
-		}
-	}
+	// Forms are submitted as parallel arrays of incorrect/correct inputs, one
+	// pair per row in the form editor.
+	forms := parseForms(r.Form)
 
 	_, err := d.dicts.SetEntry(ctx, &spell.SetEntryRequest{
 		Entry: &spell.CustomEntry{
@@ -653,6 +879,11 @@ func (d *DictionariesUI) setEntryFromForm(
 			CommonMistakes: commonMistakes,
 			Level:          level,
 			Forms:          forms,
+			CaseSensitive:  r.FormValue("case_sensitive") == "on",
+			Before:         splitCommaList(r.FormValue("before")),
+			After:          splitCommaList(r.FormValue("after")),
+			NotBefore:      splitCommaList(r.FormValue("not_before")),
+			NotAfter:       splitCommaList(r.FormValue("not_after")),
 		},
 	})
 	if err != nil {
@@ -662,17 +893,202 @@ func (d *DictionariesUI) setEntryFromForm(
 	return nil
 }
 
+// patternLine is the validation result for a single common-mistakes line.
+type patternLine struct {
+	Line  string
+	Count int
+	Error string
+}
+
+type patternPreviewContents struct {
+	Results []patternLine
+	Total   int
+}
+
+// HasExpansions reports whether the preview is worth showing — i.e. some line
+// actually expands to more than one combination, or has a brace error. When
+// every line is a plain literal the preview would just repeat the text field.
+func (p patternPreviewContents) HasExpansions() bool {
+	for _, r := range p.Results {
+		if r.Count > 1 || r.Error != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// validateMistakes expands the submitted common-mistakes patterns server-side
+// and returns a preview of how many combinations each line yields, plus any
+// brace errors. It reuses the canonical Expand logic so the preview can't drift
+// from what the spellchecker actually does.
+func (d *DictionariesUI) validateMistakes(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	_, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := parseForm(r); err != nil {
+		return nil, err
+	}
+
+	return &howdah.Page{
+		Template: "pattern_preview.html",
+		Contents: mistakesPreview(
+			strings.Split(r.FormValue("common_mistakes"), "\n")),
+	}, nil
+}
+
+// mistakesPreview expands each common-mistakes line and reports how many
+// combinations it yields, plus any brace errors. Shared by the live validation
+// endpoint and the form's at-load preview so they can't drift from what the
+// spellchecker actually does.
+func mistakesPreview(lines []string) patternPreviewContents {
+	var (
+		results []patternLine
+		total   int
+	)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		res := patternLine{Line: line}
+
+		expanded, err := Expand(line)
+		if err != nil {
+			res.Error = err.Error()
+		} else {
+			res.Count = len(expanded)
+			total += len(expanded)
+		}
+
+		results = append(results, res)
+	}
+
+	return patternPreviewContents{Results: results, Total: total}
+}
+
+// parseForms pairs the parallel forms_incorrect/forms_correct inputs from the
+// entry form into an incorrect→correct map, skipping rows where either side is
+// blank.
+func parseForms(form url.Values) map[string]string {
+	forms := make(map[string]string)
+
+	incorrect := form["forms_incorrect"]
+	correct := form["forms_correct"]
+
+	for i := range incorrect {
+		k := strings.TrimSpace(incorrect[i])
+		if k == "" || i >= len(correct) {
+			continue
+		}
+
+		v := strings.TrimSpace(correct[i])
+		if v == "" {
+			continue
+		}
+
+		forms[k] = v
+	}
+
+	return forms
+}
+
+// maxExpansionsShown caps how many expansions the modal renders, to keep the
+// DOM bounded for patterns that expand to very many combinations.
+const maxExpansionsShown = 500
+
+// expansionGroup is the full expansion of one common-mistakes line.
+type expansionGroup struct {
+	Line       string
+	Expansions []string
+	Error      string
+}
+
+type expansionsContents struct {
+	Groups  []expansionGroup
+	Total   int
+	Shown   int
+	Omitted int
+}
+
+// listExpansions enumerates every expansion of the submitted common-mistakes
+// patterns for the detail modal, reusing the canonical Expand logic.
+func (d *DictionariesUI) listExpansions(
+	ctx context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	_, err := d.auth.RequireAuth(ctx, w, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := parseForm(r); err != nil {
+		return nil, err
+	}
+
+	var (
+		groups []expansionGroup
+		total  int
+		shown  int
+	)
+
+	for _, line := range strings.Split(r.FormValue("common_mistakes"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		group := expansionGroup{Line: line}
+
+		expanded, err := Expand(line)
+		if err != nil {
+			group.Error = err.Error()
+			groups = append(groups, group)
+
+			continue
+		}
+
+		total += len(expanded)
+
+		for _, e := range expanded {
+			if shown >= maxExpansionsShown {
+				break
+			}
+
+			group.Expansions = append(group.Expansions, e)
+			shown++
+		}
+
+		groups = append(groups, group)
+	}
+
+	return &howdah.Page{
+		Template: "expansions.html",
+		Contents: expansionsContents{
+			Groups:  groups,
+			Total:   total,
+			Shown:   shown,
+			Omitted: total - shown,
+		},
+	}, nil
+}
+
 func (d *DictionariesUI) listEntries(
-	ctx context.Context, lang, prefix string, page int64,
+	ctx context.Context, lang, query string, page int64,
 ) ([]uiEntry, bool, error) {
-	svcCtx, err := d.withServiceAuth(ctx)
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, false, fmt.Errorf("bridge auth for list entries: %w", err)
 	}
 
 	res, err := d.dicts.ListEntries(svcCtx, &spell.ListEntriesRequest{
 		Language: lang,
-		Prefix:   prefix,
+		Query:    query,
 		Page:     page,
 	})
 	if err != nil {
@@ -694,7 +1110,7 @@ func (d *DictionariesUI) entriesPage(
 	}
 
 	lang := r.PathValue("language")
-	prefix := r.URL.Query().Get("prefix")
+	query := r.URL.Query().Get("query")
 
 	var page int64
 
@@ -708,13 +1124,13 @@ func (d *DictionariesUI) entriesPage(
 		}
 	}
 
-	return d.entryListPage(ctx, lang, "", prefix, page)
+	return d.entryListPage(ctx, lang, "", query, page)
 }
 
 func (d *DictionariesUI) entryListPage(
-	ctx context.Context, lang, activeEntry, prefix string, page int64,
+	ctx context.Context, lang, activeEntry, query string, page int64,
 ) (*howdah.Page, error) {
-	entries, hasMore, err := d.listEntries(ctx, lang, prefix, page)
+	entries, hasMore, err := d.listEntries(ctx, lang, query, page)
 	if err != nil {
 		return nil, twirpErrorToHTTP(err)
 	}
@@ -726,7 +1142,7 @@ func (d *DictionariesUI) entryListPage(
 			Entries:     entries,
 			Count:       len(entries),
 			ActiveEntry: activeEntry,
-			Prefix:      prefix,
+			Query:       query,
 			Page:        page,
 			HasMore:     hasMore,
 		},

@@ -71,6 +71,7 @@ type Eventlog struct {
 	Entry    string
 	Deleted  bool
 	Created  pgtype.Timestamptz
+	Kind     string
 }
 
 type JobLock struct {
@@ -78,6 +79,20 @@ type JobLock struct {
 	Holder    string
 	Touched   pgtype.Timestamptz
 	Iteration int64
+}
+
+type Rule struct {
+	ID          int64
+	Language    string
+	Name        string
+	Status      string
+	Description string
+	Level       EntryLevel
+	Pattern     string
+	Replacement string
+	Data        *RuleData
+	Updated     pgtype.Timestamptz
+	UpdatedBy   string
 }
 
 type SchemaVersion struct {

@@ -25,8 +25,8 @@
       <input
         type="text"
         id="entry-filter-input"
-        name="prefix"
-        placeholder="{{t "FilterEntries" "Filter entries..."}}"
+        name="query"
+        placeholder="{{t "FilterEntries" "Search text, mistakes, description..."}}"
         hx-get="/dictionaries/{{.Contents.Language}}/entries"
         hx-trigger="input changed delay:300ms, search"
         hx-target="#entry-list"
@@ -50,7 +50,9 @@
   </div>
   <div class="panel-right">
     <div id="entry-detail">
-      {{if .Contents.Entry}}
+      {{if .Contents.Rename}}
+        {{template "entry_rename.html" .}}
+      {{else if .Contents.Entry}}
         {{template "entry_form.html" .}}
       {{else if .Contents.NewEntry}}
         {{template "entry_form.html" .}}

@@ -140,6 +140,24 @@ body {
   font-size: 15px;
   color: var(--color-text);
   text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Overflow menu shown in place of the inline nav on narrow screens. The
+   .dropdown qualifier keeps the specificity above the base .dropdown rule. */
+.app-nav-menu.dropdown {
+  display: none;
+}
+
+.app-nav-menu .dropdown-menu {
+  left: 0;
+  right: auto;
+}
+
+.app-nav-menu .dropdown-menu li a.active {
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .app-nav {
@@ -212,6 +230,8 @@ body {
 
 .icon-sun  { width: 18px; height: 18px; -webkit-mask-image: url('/assets/icons/sun.svg'); mask-image: url('/assets/icons/sun.svg'); }
 .icon-moon { width: 18px; height: 18px; -webkit-mask-image: url('/assets/icons/moon.svg'); mask-image: url('/assets/icons/moon.svg'); }
+.icon-menu { width: 18px; height: 18px; -webkit-mask-image: url('/assets/icons/menu.svg'); mask-image: url('/assets/icons/menu.svg'); }
+.icon-pen  { width: 15px; height: 15px; -webkit-mask-image: url('/assets/icons/pen.svg'); mask-image: url('/assets/icons/pen.svg'); }
 
 /* Show sun in dark mode, moon in light mode */
 .theme-toggle .icon-sun { display: none; }
@@ -281,10 +301,16 @@ body {
   margin-left: 4px;
   padding-left: 12px;
   border-left: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .header-user.loaded {
   display: flex;
+}
+
+.header-user .btn {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .user-avatar {
@@ -498,6 +524,25 @@ body {
 .entry-form-header h2 {
   font-size: 16px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.entry-rename-btn {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+
+.entry-rename-btn:hover {
+  color: var(--color-primary);
+  background: var(--color-bg);
 }
 
 .entry-form {
@@ -842,6 +887,15 @@ body {
   line-height: 1.65;
 }
 
+.docs-content a {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.docs-content a:hover {
+  color: var(--color-primary-hover);
+}
+
 .docs-content table {
   width: 100%;
   border-collapse: collapse;
@@ -906,21 +960,26 @@ body {
 
 /* Responsive – phones and small tablets */
 
+/* Collapse the inline nav into an overflow dropdown before the bar gets
+   crowded, so the title and actions never have to wrap. */
+@media (max-width: 900px) {
+  .app-nav {
+    display: none;
+  }
+
+  .app-nav-menu.dropdown {
+    display: inline-block;
+  }
+}
+
 @media (max-width: 768px) {
-  /* Header: let the nav wrap to its own row and drop the user-name label so
-     the title and actions still fit on a narrow screen. */
+  /* Drop the user-name label so the title, menu and actions still fit. */
   .app-header-inner {
     flex-wrap: wrap;
     height: auto;
     min-height: 48px;
     padding: 8px 12px;
     gap: 8px 12px;
-  }
-
-  .app-nav {
-    order: 3;
-    flex-basis: 100%;
-    overflow-x: auto;
   }
 
   .user-name {
@@ -983,4 +1042,781 @@ body {
     overflow-x: auto;
     white-space: nowrap;
   }
+}
+
+/* Moderation queue */
+.moderation {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.moderation-header h1 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+}
+
+.moderation-intro {
+  margin: 0 0 20px;
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.moderation-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.moderation-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.moderation-lang:hover {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+}
+
+.moderation-lang.active {
+  background: var(--color-active);
+  border-color: var(--color-primary);
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Spellcheck test page */
+.spellcheck-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  /* app-main is overflow:hidden for the master-detail pages, so this page
+     scrolls itself when there are many findings. */
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.spellcheck-page h2 {
+  margin: 0 0 4px;
+}
+
+.spellcheck-form textarea {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  background: var(--color-surface);
+  resize: vertical;
+}
+
+.spellcheck-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.spellcheck-results {
+  margin-top: 20px;
+}
+
+.spellcheck-summary {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.spellcheck-ok {
+  color: var(--color-success, #2e7d32);
+}
+
+.spellcheck-chunk {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.spellcheck-chunk-text {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.spellcheck-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.spellcheck-entry {
+  padding: 8px 0;
+}
+
+.spellcheck-entry + .spellcheck-entry {
+  border-top: 1px solid var(--color-border);
+}
+
+.spellcheck-entry-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spellcheck-term {
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.badge-level {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-error {
+  background: color-mix(in srgb, var(--color-danger, #d32f2f) 18%, transparent);
+  color: var(--color-danger, #d32f2f);
+}
+
+.badge-suggestion {
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+}
+
+.spellcheck-suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.spellcheck-suggest-label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.spellcheck-spans {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.suggestion-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-active);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text);
+}
+
+.spellcheck-no-suggestion {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.moderation-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.mod-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.mod-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mod-card-text {
+  font-weight: 600;
+  word-break: break-word;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+a.mod-card-text:hover {
+  text-decoration: underline;
+}
+
+.mod-card-level {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.mod-card-kind {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+
+.mod-card-cs {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.level-error {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-warning-border);
+}
+
+.level-suggestion {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.mod-card-desc {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
+}
+
+.mod-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mod-card-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+}
+
+.mod-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  /* break long expansion patterns ({A|B|…}) so a chip can't overflow the card */
+  overflow-wrap: anywhere;
+}
+
+.mod-card-guards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mod-guard {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mod-guard-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.mod-card-foot {
+  display: flex;
+  /* bottom-align so the gap below the buttons matches the card's padding (the
+     two-line meta column would otherwise centre the buttons a few px high). */
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.mod-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.mod-card-meta a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.mod-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.moderation-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.moderation-empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+/* Entry form: structured forms rows */
+.forms-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.forms-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.forms-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.forms-arrow {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.forms-row-remove {
+  flex-shrink: 0;
+}
+
+/* code-input editor for expansion/rule patterns.
+   Only theme and size the host here — do NOT override display/position, the
+   vendored code-input CSS relies on `display: grid` to stack the textarea over
+   the highlighted pre. */
+code-input {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  height: 140px;
+  margin: 0;
+  --padding: 10px;
+}
+
+.tok-brace {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.tok-pipe {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.tok-rule {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.tok-cap {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+/* Compact code-input for rule pattern/replacement fields. code-input is built
+   as a multi-line code editor (a transparent textarea over a highlighted
+   <pre>); rather than force it into a fixed single-line box — which desyncs the
+   two layers as soon as content scrolls — let it grow with its content and wrap
+   long lines, so it never needs to scroll. */
+code-input.code-input-line {
+  height: auto;
+  /* code-input defaults to 16px padding on every side; trim it so a one-line
+     field is compact like the surrounding inputs. */
+  --padding-top: 11px;
+  --padding-bottom: 11px;
+  --padding-left: 12px;
+  --padding-right: 12px;
+  font-size: 0.9rem;
+  /* the autocomplete popup is appended inside the element, so it must be able
+     to escape the box. Safe here because the content wraps (below) and the box
+     grows to fit, so it never scrolls. */
+  overflow: visible;
+}
+
+code-input.code-input-line textarea,
+code-input.code-input-line pre {
+  /* a fixed (not percentage) min-height fills one line without the grid
+     feedback loop that makes height:auto grow on every render. Includes the
+     padding because box-sizing is border-box (below), so an empty editor still
+     stands a full line tall. */
+  min-height: calc(1.5em + var(--padding-top) + var(--padding-bottom)) !important;
+  /* only the wrapping code-input draws the field border; the global
+     input/textarea styling otherwise adds a second, offset border. */
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-sizing: border-box !important;
+  /* wrap long input instead of scrolling sideways (which would desync the
+     textarea from the highlight overlay). */
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* code-input syncs the textarea's size to the highlight <pre>, which defaults
+   to width:max-content and so grows with no-wrap content. Constrain the <pre>
+   to the box so it wraps, and the synced textarea wraps with it. */
+code-input.code-input-line pre {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* autocomplete popup */
+.code-input_autocomplete_popup {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.code-input_autocomplete_popup:empty {
+  display: none;
+}
+
+.ac-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.ac-item:hover,
+.ac-item.ac-active {
+  background: var(--color-active);
+}
+
+/* common-mistakes expansion preview */
+.pattern-preview {
+  margin-top: 6px;
+}
+
+.pattern-preview-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pattern-preview-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.8rem;
+}
+
+.pattern-preview-list code {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+
+.pattern-preview-list li.invalid code {
+  color: var(--color-danger);
+}
+
+.pp-count {
+  color: var(--color-text-muted);
+}
+
+.pp-error {
+  color: var(--color-danger);
+}
+
+.pattern-preview-total {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+button.pattern-preview-total {
+  cursor: pointer;
+}
+
+.pattern-preview-view {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+button.pattern-preview-total:hover .pattern-preview-view {
+  color: var(--color-primary-hover);
+}
+
+/* expansion modal */
+.modal {
+  /* centre in the viewport regardless of UA dialog defaults */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.modal::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.modal-close {
+  border: 0;
+  background: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+
+.modal-body {
+  padding: 12px 16px;
+  max-height: calc(80vh - 52px);
+  overflow-y: auto;
+}
+
+.expansion-group + .expansion-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-light);
+}
+
+.expansion-line code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--color-text-secondary);
+}
+
+.expansion-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.expansion-omitted,
+.expansion-empty {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+/* rule editor: sample test */
+/* Context-guard rows: label to the left of the input. The grid's auto column
+   sizes to the widest label, so every input left-aligns. display:contents lets
+   each .guard-row stay a semantic pair while its label/input participate in the
+   shared grid. */
+.guard-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.guard-row {
+  display: contents;
+}
+
+.guard-rows label {
+  margin-bottom: 0;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+/* On narrow screens stack the label above its input. */
+@media (max-width: 768px) {
+  .guard-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .guard-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.rule-test-row {
+  display: flex;
+  gap: 8px;
+}
+
+.rule-test-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.rule-test-result {
+  margin-top: 6px;
+}
+
+.rule-test-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+}
+
+.rule-test-match {
+  font-family: var(--font-mono);
+  color: var(--color-danger);
+}
+
+.rule-test-sugg {
+  font-family: var(--font-mono);
+  color: var(--color-success);
+}
+
+.rule-test-empty {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  width: auto;
+  margin: 0;
+}
+
+.form-rule {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+
+.form-rule summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.form-rule[open] summary {
+  margin-bottom: 8px;
+}
+
+.form-rule .form-group + .form-group {
+  margin-top: 8px;
 }

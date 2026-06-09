@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -55,6 +56,7 @@ const (
 var (
 	_ spell.Check        = &Application{}
 	_ spell.Dictionaries = &Application{}
+	_ spell.Rules        = &Application{}
 )
 
 type Parameters struct {
@@ -225,9 +227,11 @@ func (a *Application) Run(ctx context.Context) error {
 
 	checkServer := spell.NewCheckServer(a, opts.ServerOptions())
 	dictServer := spell.NewDictionariesServer(a, opts.ServerOptions())
+	rulesServer := spell.NewRulesServer(a, opts.ServerOptions())
 
 	server.RegisterAPI(checkServer, opts)
 	server.RegisterAPI(dictServer, opts)
+	server.RegisterAPI(rulesServer, opts)
 
 	err = a.setupUI(server.Mux)
 	if err != nil {
@@ -318,6 +322,11 @@ func (a *Application) runEntryUpdater(ctx context.Context) error {
 		return fmt.Errorf("preload entries: %w", err)
 	}
 
+	err = a.preloadRules(ctx)
+	if err != nil {
+		return fmt.Errorf("preload rules: %w", err)
+	}
+
 	// Catch up on anything written during startup before settling into the
 	// notify/poll loop.
 	_, cursor, err = a.drainEventlog(ctx, cursor)
@@ -369,6 +378,16 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 	}
 
 	cDicts := NewDictionariesUI(
+		a.logger, cAuth, a.p.AuthInfoParser, a, a,
+		supportedLanguages, a.p.DefaultLanguage,
+	)
+
+	cRules := NewRulesUI(
+		a.logger, cAuth, a.p.AuthInfoParser, a, a,
+		supportedLanguages, a.p.DefaultLanguage,
+	)
+
+	cSpellcheck := NewSpellcheckUI(
 		a.logger, cAuth, a.p.AuthInfoParser, a,
 		supportedLanguages, a.p.DefaultLanguage,
 	)
@@ -380,7 +399,7 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 
 	cUserInfo := NewUserInfo(a.logger, cAuth)
 
-	cDocs, err := NewDocsUI(cAuth, a.p.Docs, "dictionary-entries.md")
+	cDocs, err := NewDocsUI(cAuth, a.p.Docs)
 	if err != nil {
 		return fmt.Errorf("create docs component: %w", err)
 	}
@@ -388,7 +407,9 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 	_, err = howdah.NewApplication(
 		a.logger, mux,
 		a.p.Templates, a.p.Locales, a.p.Assets,
-		[]howdah.Component{cAuth, cLangs, cUserInfo, cDicts, cDocs},
+		[]howdah.Component{
+			cAuth, cLangs, cUserInfo, cSpellcheck, cDicts, cRules, cDocs,
+		},
 	)
 	if err != nil {
 		return fmt.Errorf("create howdah application: %w", err)
@@ -446,7 +467,7 @@ func (a *Application) DeleteEntry(
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	err = a.recordEntryChange(ctx, q, tx, req.Language, req.Text, true)
+	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record entry change: %w", err)
 	}
@@ -457,6 +478,88 @@ func (a *Application) DeleteEntry(
 	}
 
 	return &spell.DeleteEntryResponse{}, nil
+}
+
+// RenameEntry implements spell.Dictionaries.
+func (a *Application) RenameEntry(
+	ctx context.Context, req *spell.RenameEntryRequest,
+) (_ *spell.RenameEntryResponse, outErr error) {
+	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	if err != nil {
+		return nil, err //nolint: wrapcheck
+	}
+
+	if req.Language == "" {
+		return nil, twirp.RequiredArgumentError("language")
+	}
+
+	if req.Text == "" {
+		return nil, twirp.RequiredArgumentError("text")
+	}
+
+	if req.NewText == "" {
+		return nil, twirp.RequiredArgumentError("new_text")
+	}
+
+	if req.NewText == req.Text {
+		return nil, twirp.InvalidArgumentError("new_text",
+			"must differ from the current text")
+	}
+
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("start transaction: %w", err)
+	}
+
+	defer pg.Rollback(tx, &outErr)
+
+	q := a.q.WithTx(tx)
+
+	// Refuse to clobber an existing entry with the target text.
+	_, err = q.GetEntry(ctx, postgres.GetEntryParams{
+		Language: req.Language,
+		Entry:    req.NewText,
+	})
+	if err == nil {
+		return nil, twirp.NewError(twirp.AlreadyExists,
+			"an entry with that text already exists")
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, twirp.InternalErrorf("read from database: %w", err)
+	}
+
+	affected, err := q.RenameEntry(ctx, postgres.RenameEntryParams{
+		Language:  req.Language,
+		Entry:     req.Text,
+		NewEntry:  req.NewText,
+		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedBy: auth.Claims.Subject,
+	})
+	if err != nil {
+		return nil, twirp.InternalErrorf("write to database: %w", err)
+	}
+
+	if affected == 0 {
+		return nil, twirp.NotFoundError("entry does not exist")
+	}
+
+	// A rename is a remove of the old text plus an add of the new one, so the
+	// listener clears the stale phrase and loads the renamed one.
+	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
+	if err != nil {
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
+	}
+
+	err = a.recordChange(ctx, q, tx, req.Language, req.NewText, false, eventKindEntry)
+	if err != nil {
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("commit changes: %w", err)
+	}
+
+	return &spell.RenameEntryResponse{}, nil
 }
 
 // GetEntry implements spell.Dictionaries.
@@ -489,10 +592,14 @@ func (a *Application) GetEntry(
 		return nil, twirp.InternalErrorf("get entry level: %v", err)
 	}
 
-	var forms map[string]string
+	var (
+		forms         map[string]string
+		caseSensitive bool
+	)
 
 	if row.Data != nil {
 		forms = row.Data.Forms
+		caseSensitive = row.Data.CaseSensitive
 	}
 
 	var updated string
@@ -500,21 +607,37 @@ func (a *Application) GetEntry(
 		updated = row.Updated.Time.Format(time.RFC3339)
 	}
 
-	res := spell.GetEntryResponse{
-		Entry: &spell.CustomEntry{
-			Language:       row.Language,
-			Text:           row.Entry,
-			Status:         row.Status,
-			Description:    row.Description,
-			CommonMistakes: row.CommonMistakes,
-			Level:          level,
-			Forms:          forms,
-			Updated:        updated,
-			UpdatedBy:      row.UpdatedBy,
-		},
+	entry := &spell.CustomEntry{
+		Language:       row.Language,
+		Text:           row.Entry,
+		Status:         row.Status,
+		Description:    row.Description,
+		CommonMistakes: row.CommonMistakes,
+		Level:          level,
+		Forms:          forms,
+		Updated:        updated,
+		UpdatedBy:      row.UpdatedBy,
+		CaseSensitive:  caseSensitive,
 	}
 
+	applyEntryGuards(entry, row.Data)
+
+	res := spell.GetEntryResponse{Entry: entry}
+
 	return &res, nil
+}
+
+// applyEntryGuards copies an entry's stored context guards onto its RPC
+// representation.
+func applyEntryGuards(e *spell.CustomEntry, d *postgres.EntryData) {
+	if d == nil {
+		return
+	}
+
+	e.Before = d.Before
+	e.After = d.After
+	e.NotBefore = d.NotBefore
+	e.NotAfter = d.NotAfter
 }
 
 // ListDictionaries implements spell.Dictionaries.
@@ -531,15 +654,40 @@ func (a *Application) ListDictionaries(
 		return nil, twirp.InternalErrorf("read from database: %w", err)
 	}
 
-	res := spell.ListDictionariesResponse{
-		Dictionaries: make([]*spell.CustomDictionary, len(rows)),
+	ruleRows, err := a.q.ListRuleCounts(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("read rule counts: %w", err)
 	}
 
-	for i, row := range rows {
-		res.Dictionaries[i] = &spell.CustomDictionary{
-			Language:   row.Language,
-			EntryCount: row.Entries,
+	// Merge per-language word and rule counts into one entry per language.
+	byLang := make(map[string]*spell.CustomDictionary)
+
+	dict := func(lang string) *spell.CustomDictionary {
+		d, ok := byLang[lang]
+		if !ok {
+			d = &spell.CustomDictionary{Language: lang}
+			byLang[lang] = d
 		}
+
+		return d
+	}
+
+	for _, row := range rows {
+		d := dict(row.Language)
+		d.EntryCount = row.Entries
+		d.PendingCount = row.Pending
+	}
+
+	for _, row := range ruleRows {
+		d := dict(row.Language)
+		d.RuleCount = row.Rules
+		d.RulePendingCount = row.Pending
+	}
+
+	var res spell.ListDictionariesResponse
+
+	for _, d := range byLang {
+		res.Dictionaries = append(res.Dictionaries, d)
 	}
 
 	return &res, nil
@@ -555,22 +703,26 @@ func (a *Application) ListEntries(
 		return nil, err //nolint: wrapcheck
 	}
 
-	if strings.Contains(req.Prefix, "%") {
-		return nil, twirp.InvalidArgumentError("prefix", "prefix cannot contain '%'")
+	if strings.Contains(req.Query, "%") {
+		return nil, twirp.InvalidArgumentError("query", "query cannot contain '%'")
 	}
 
 	var pattern string
 
-	if req.Prefix != "" {
-		pattern = req.Prefix + "%"
+	if req.Query != "" {
+		pattern = "%" + req.Query + "%"
 	}
 
-	limit := int64(100)
+	limit := req.PageSize
+	if limit <= 0 {
+		limit = 100
+	}
+
 	offset := limit * req.Page
 
 	rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
 		Language: pg.TextOrNull(req.Language),
-		Pattern:  pg.TextOrNull(pattern),
+		Query:    pg.TextOrNull(pattern),
 		Status:   pg.TextOrNull(req.Status),
 		Limit:    limit,
 		Offset:   offset,
@@ -589,10 +741,14 @@ func (a *Application) ListEntries(
 			return nil, twirp.InternalErrorf("get entry level: %v", err)
 		}
 
-		var forms map[string]string
+		var (
+			forms         map[string]string
+			caseSensitive bool
+		)
 
 		if row.Data != nil {
 			forms = row.Data.Forms
+			caseSensitive = row.Data.CaseSensitive
 		}
 
 		var updated string
@@ -610,7 +766,10 @@ func (a *Application) ListEntries(
 			Forms:          forms,
 			Updated:        updated,
 			UpdatedBy:      row.UpdatedBy,
+			CaseSensitive:  caseSensitive,
 		}
+
+		applyEntryGuards(res.Entries[i], row.Data)
 	}
 
 	return &res, nil
@@ -669,7 +828,12 @@ func (a *Application) SetEntry(
 		CommonMistakes: req.Entry.CommonMistakes,
 		Level:          level,
 		Data: &postgres.EntryData{
-			Forms: req.Entry.Forms,
+			Forms:         req.Entry.Forms,
+			CaseSensitive: req.Entry.CaseSensitive,
+			Before:        req.Entry.Before,
+			After:         req.Entry.After,
+			NotBefore:     req.Entry.NotBefore,
+			NotAfter:      req.Entry.NotAfter,
 		},
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedBy: auth.Claims.Subject,
@@ -678,7 +842,7 @@ func (a *Application) SetEntry(
 		return nil, twirp.InternalErrorf("write to database: %w", err)
 	}
 
-	err = a.recordEntryChange(ctx, q, tx, req.Entry.Language, req.Entry.Text, false)
+	err = a.recordChange(ctx, q, tx, req.Entry.Language, req.Entry.Text, false, eventKindEntry)
 	if err != nil {
 		return nil, twirp.InternalErrorf("record entry change: %w", err)
 	}
@@ -689,6 +853,102 @@ func (a *Application) SetEntry(
 	}
 
 	return &spell.SetEntryResponse{}, nil
+}
+
+// SetEntryStatus implements spell.Dictionaries. It updates only the moderation
+// status of an existing entry — the lightweight path used by the accept/reject
+// workflow.
+func (a *Application) SetEntryStatus(
+	ctx context.Context, req *spell.SetEntryStatusRequest,
+) (_ *spell.SetEntryStatusResponse, outErr error) {
+	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	if err != nil {
+		return nil, err //nolint: wrapcheck
+	}
+
+	if req.Language == "" {
+		return nil, twirp.RequiredArgumentError("language")
+	}
+
+	if req.Text == "" {
+		return nil, twirp.RequiredArgumentError("text")
+	}
+
+	if req.Status == "" {
+		return nil, twirp.RequiredArgumentError("status")
+	}
+
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("start transaction: %w", err)
+	}
+
+	defer pg.Rollback(tx, &outErr)
+
+	q := a.q.WithTx(tx)
+
+	affected, err := q.SetEntryStatus(ctx, postgres.SetEntryStatusParams{
+		Language:  req.Language,
+		Entry:     req.Text,
+		Status:    req.Status,
+		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		UpdatedBy: auth.Claims.Subject,
+	})
+	if err != nil {
+		return nil, twirp.InternalErrorf("write to database: %w", err)
+	}
+
+	if affected == 0 {
+		return nil, twirp.NotFoundError("entry does not exist")
+	}
+
+	err = a.recordChange(ctx, q, tx, req.Language, req.Text, false, eventKindEntry)
+	if err != nil {
+		return nil, twirp.InternalErrorf("record entry change: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, twirp.InternalErrorf("commit changes: %w", err)
+	}
+
+	return &spell.SetEntryStatusResponse{}, nil
+}
+
+// ruleToRPC converts a stored rule row to its RPC representation.
+func ruleToRPC(r postgres.Rule) (*spell.Rule, error) {
+	level, err := entryLevelToRPC(r.Level)
+	if err != nil {
+		return nil, err
+	}
+
+	var updated string
+	if r.Updated.Valid {
+		updated = r.Updated.Time.Format(time.RFC3339)
+	}
+
+	out := &spell.Rule{
+		Id:          r.ID,
+		Language:    r.Language,
+		Name:        r.Name,
+		Status:      r.Status,
+		Description: r.Description,
+		Level:       level,
+		Pattern:     r.Pattern,
+		Replacement: r.Replacement,
+		Updated:     updated,
+		UpdatedBy:   r.UpdatedBy,
+	}
+
+	if r.Data != nil {
+		out.Before = r.Data.Before
+		out.After = r.Data.After
+		out.NotBefore = r.Data.NotBefore
+		out.NotAfter = r.Data.NotAfter
+		out.CaseSensitive = r.Data.CaseSensitive
+	}
+
+	return out, nil
 }
 
 func entryLevelFromRPC(level spell.CorrectionLevel) (postgres.EntryLevel, error) {
@@ -786,18 +1046,25 @@ func (a *Application) Suggestions(
 	}, nil
 }
 
-// recordEntryChange appends an entry change to the eventlog and wakes the
-// consumer. It must run inside the same transaction as the entry write so the
-// change and its event commit atomically.
+// eventKind values distinguish dictionary-word changes from rule changes in the
+// eventlog so the consumer applies each to the right store.
+const (
+	eventKindEntry = "entry"
+	eventKindRule  = "rule"
+)
+
+// recordChange appends a change to the eventlog and wakes the consumer. It must
+// run inside the same transaction as the write so the change and its event
+// commit atomically.
 //
 // The exclusive table lock serialises eventlog writers: a writer holds it
 // until commit, so the next writer cannot draw its event id until this event
 // is committed and visible. That keeps commit order equal to id order, which
 // the log poller relies on to never skip an event. The published id is only a
 // wake-up — the consumer reads all events after its own cursor.
-func (a *Application) recordEntryChange(
+func (a *Application) recordChange(
 	ctx context.Context, q *postgres.Queries, db pg.DBExec,
-	language, entry string, deleted bool,
+	language, name string, deleted bool, kind string,
 ) error {
 	err := q.LockEventlog(ctx)
 	if err != nil {
@@ -806,8 +1073,9 @@ func (a *Application) recordEntryChange(
 
 	id, err := q.InsertEvent(ctx, postgres.InsertEventParams{
 		Language: language,
-		Entry:    entry,
+		Entry:    name,
 		Deleted:  deleted,
+		Kind:     kind,
 	})
 	if err != nil {
 		return fmt.Errorf("append eventlog entry: %w", err)

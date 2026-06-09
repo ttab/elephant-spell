@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/ttab/elephant-spell/postgres"
+	"github.com/ttab/elephantine"
 )
 
 // eventBatchSize is how many events a single drain iteration reads per
@@ -14,22 +16,23 @@ import (
 // whole catch-up counts as a single FanOut.Polled call regardless of backlog.
 const eventBatchSize = 500
 
-// preloadEntries loads every current custom entry into its language's
-// spellchecker. It is the startup baseline for entries that predate the
-// eventlog; incremental changes are then applied from the log.
-func (a *Application) preloadEntries(ctx context.Context) error {
-	var (
-		limit  int64 = 200
-		offset int64
-	)
+// preloadPageSize is the batch size used when loading the startup baseline.
+const preloadPageSize = 200
+
+// preloadAll pages through a list query, applying process to every row, until
+// the source is exhausted. It is the shared startup-baseline loader for entries
+// and rules.
+func preloadAll[T any](
+	ctx context.Context,
+	fetch func(ctx context.Context, limit, offset int64) ([]T, error),
+	process func(row T),
+) error {
+	var offset int64
 
 	for {
-		rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
-			Limit:  limit,
-			Offset: offset,
-		})
+		rows, err := fetch(ctx, preloadPageSize, offset)
 		if err != nil {
-			return fmt.Errorf("list entries: %w", err)
+			return err
 		}
 
 		if len(rows) == 0 {
@@ -37,16 +40,69 @@ func (a *Application) preloadEntries(ctx context.Context) error {
 		}
 
 		for _, row := range rows {
+			process(row)
+		}
+
+		offset += preloadPageSize
+	}
+}
+
+// preloadEntries loads every current custom entry into its language's
+// spellchecker. It is the startup baseline for entries that predate the
+// eventlog; incremental changes are then applied from the log.
+func (a *Application) preloadEntries(ctx context.Context) error {
+	return preloadAll(ctx,
+		func(ctx context.Context, limit, offset int64) ([]postgres.Entry, error) {
+			rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
+				Limit:  limit,
+				Offset: offset,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list entries: %w", err)
+			}
+
+			return rows, nil
+		},
+		func(row postgres.Entry) {
 			spell, ok := a.languages[row.Language]
 			if !ok {
-				continue
+				return
 			}
 
 			spell.AddPhrase(entryAsPhrase(row))
-		}
+		},
+	)
+}
 
-		offset += limit
-	}
+// preloadRules loads every current rule into its language's spellchecker, the
+// startup baseline before the eventlog takes over.
+func (a *Application) preloadRules(ctx context.Context) error {
+	return preloadAll(ctx,
+		func(ctx context.Context, limit, offset int64) ([]postgres.Rule, error) {
+			rows, err := a.q.ListRules(ctx, postgres.ListRulesParams{
+				Limit:  limit,
+				Offset: offset,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("list rules: %w", err)
+			}
+
+			return rows, nil
+		},
+		func(row postgres.Rule) {
+			spell, ok := a.languages[row.Language]
+			if !ok {
+				return
+			}
+
+			err := spell.AddRule(ruleDefFromRule(row))
+			if err != nil {
+				a.logger.ErrorContext(ctx, "skip invalid rule",
+					"rule", row.Name, "language", row.Language,
+					elephantine.LogKeyError, err)
+			}
+		},
+	)
 }
 
 // drainEventlog applies every event after the cursor to the spellcheckers and
@@ -93,9 +149,10 @@ func (a *Application) drainEventlog(
 }
 
 // applyEvent brings the relevant spellchecker in line with a single eventlog
-// entry. Deletes remove the phrase; for upserts the current entry is read and
-// added — and if it has since been removed, the phrase is dropped too, so
-// replaying events is idempotent regardless of ordering.
+// entry, routing by kind to the word or rule store. Deletes remove the item;
+// for upserts the current row is read and added — and if it has since been
+// removed, the item is dropped too, so replaying events is idempotent
+// regardless of ordering.
 func (a *Application) applyEvent(
 	ctx context.Context, e postgres.Eventlog,
 ) error {
@@ -104,8 +161,18 @@ func (a *Application) applyEvent(
 		return nil
 	}
 
+	if e.Kind == eventKindRule {
+		return a.applyRuleEvent(ctx, spell, e)
+	}
+
+	return a.applyEntryEvent(ctx, spell, e)
+}
+
+func (a *Application) applyEntryEvent(
+	ctx context.Context, s *Spellcheck, e postgres.Eventlog,
+) error {
 	if e.Deleted {
-		spell.RemovePhrase(e.Entry)
+		s.RemovePhrase(e.Entry)
 
 		return nil
 	}
@@ -115,23 +182,89 @@ func (a *Application) applyEvent(
 		Entry:    e.Entry,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		spell.RemovePhrase(e.Entry)
+		s.RemovePhrase(e.Entry)
 
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("read entry from database: %w", err)
 	}
 
-	spell.AddPhrase(entryAsPhrase(entry))
+	s.AddPhrase(entryAsPhrase(entry))
 
 	return nil
 }
 
+func (a *Application) applyRuleEvent(
+	ctx context.Context, s *Spellcheck, e postgres.Eventlog,
+) error {
+	// The eventlog carries the rule id as text for rule events.
+	id, err := strconv.ParseInt(e.Entry, 10, 64)
+	if err != nil {
+		return fmt.Errorf("parse rule id %q: %w", e.Entry, err)
+	}
+
+	if e.Deleted {
+		s.RemoveRule(id)
+
+		return nil
+	}
+
+	row, err := a.q.GetRule(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		s.RemoveRule(id)
+
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("read rule from database: %w", err)
+	}
+
+	// A rule that fails to compile is logged and skipped rather than stalling
+	// the eventlog; patterns are validated on write so this is defensive.
+	err = s.AddRule(ruleDefFromRule(row))
+	if err != nil {
+		a.logger.ErrorContext(ctx, "skip invalid rule",
+			"rule", row.ID, "language", row.Language,
+			elephantine.LogKeyError, err)
+	}
+
+	return nil
+}
+
+func ruleDefFromRule(r postgres.Rule) RuleDef {
+	def := RuleDef{
+		ID:          r.ID,
+		Name:        r.Name,
+		Pattern:     r.Pattern,
+		Replacement: r.Replacement,
+		Description: r.Description,
+		Level:       r.Level,
+		Status:      r.Status,
+	}
+
+	if r.Data != nil {
+		def.Before = r.Data.Before
+		def.After = r.Data.After
+		def.NotBefore = r.Data.NotBefore
+		def.NotAfter = r.Data.NotAfter
+		def.CaseSensitive = r.Data.CaseSensitive
+	}
+
+	return def
+}
+
 func entryAsPhrase(e postgres.Entry) Phrase {
-	var forms map[string]string
+	var (
+		forms         map[string]string
+		caseSensitive bool
+		g             guards
+	)
 
 	if e.Data != nil {
 		forms = e.Data.Forms
+		caseSensitive = e.Data.CaseSensitive
+		g = compileGuards(
+			e.Data.Before, e.Data.After,
+			e.Data.NotBefore, e.Data.NotAfter, caseSensitive)
 	}
 
 	return Phrase{
@@ -140,5 +273,8 @@ func entryAsPhrase(e postgres.Entry) Phrase {
 		CommonMistakes: e.CommonMistakes,
 		Level:          e.Level,
 		Forms:          forms,
+		Status:         e.Status,
+		CaseSensitive:  caseSensitive,
+		Guards:         g,
 	}
 }

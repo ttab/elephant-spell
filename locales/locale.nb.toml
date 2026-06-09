@@ -1,6 +1,153 @@
 [Dictionaries]
 other = "Ordlister"
 
+[Moderation]
+other = "Moderering"
+
+[ModerationIntro]
+other = "Gå gjennom oppføringer som venter på moderering. Godkjente oppføringer beholdes, avviste fjernes."
+
+[NoPending]
+other = "Ingen oppføringer venter på moderering"
+
+[Accept]
+other = "Godkjenn"
+
+[Reject]
+other = "Avvis"
+
+[ConfirmReject]
+other = "Avvis og slett denne oppføringen?"
+
+[Edit]
+other = "Rediger"
+
+[FormsHelp2]
+other = "Koble en feil bøyning til riktig erstatning"
+
+[Incorrect]
+other = "Feil"
+
+[Correct]
+other = "Riktig"
+
+[Remove]
+other = "Fjern"
+
+[AddForm]
+other = "Legg til form"
+
+[TotalExpansions]
+other = "Totalt antall utvidelser"
+
+[CaseSensitive]
+other = "Skill mellom store og små bokstaver"
+
+[CaseSensitiveHelp]
+other = "Treff bare nøyaktig skrivemåte. Slå på for egennavn; la stå av for vanlige ord så de også fanges først i en setning."
+
+[RuleSection]
+other = "Mønsterregel (avansert)"
+
+[IsRule]
+other = "Behandle oppføringen som en mønsterregel"
+
+[RuleHelp]
+other = "Treff teksten direkte. Bruk plassholderne {digit}, {word} og {gap(N)}; ordrett tekst og mellomrom treffes slik de skrives. Vis til fangede grupper i erstatningen som {1}, {2}."
+
+[RulePattern]
+other = "Mønster"
+
+[RuleReplacement]
+other = "Erstatning"
+
+[RuleGuards]
+other = "Kontekstvilkår"
+
+[RuleGuardsHelp]
+other = "Kommaseparerte ord. Valgfritt: begrens når regelen utløses ut fra naboordet."
+
+[RuleNotBefore]
+other = "Hopp over hvis foran står"
+
+[RuleNotAfter]
+other = "Hopp over hvis etter står"
+
+[RuleBefore]
+other = "Bare hvis foran står"
+
+[RuleAfter]
+other = "Bare hvis etter står"
+
+[RuleCaseSensitiveHelp]
+other = "Match mønsteret og kontekstvilkårene med nøyaktig skifte. Aktiver for egennavn."
+
+[SampleInput]
+other = "Eksempeltekst"
+
+[SampleInputHelp]
+other = "Test regelen mot litt tekst for å se hva den treffer."
+
+[Test]
+other = "Test"
+
+[NoMatches]
+other = "Ingen treff i eksempelteksten"
+
+[ViewExpansions]
+other = "vis alle"
+
+[Expansions]
+other = "Utvidelser"
+
+[ExpansionsOmitted]
+other = "Viser de første {{.Shown}} av {{.Total}} utvidelsene."
+
+[NoExpansions]
+other = "Ingenting å utvide ennå."
+
+[Close]
+other = "Lukk"
+
+[Rules]
+other = "Regler"
+
+[RulesLower]
+other = "regler"
+
+[NewRule]
+other = "Ny regel"
+
+[FilterRules]
+other = "Søk navn, mønster, beskrivelse..."
+
+[SelectRule]
+other = "Velg en regel å redigere"
+
+[NoRules]
+other = "Ingen regler funnet"
+
+[Name]
+other = "Navn"
+
+[NameRequired]
+other = "Navn kreves"
+
+[RuleCreated]
+other = "Regel opprettet"
+
+[RuleUpdated]
+other = "Regel oppdatert"
+
+[ConfirmDeleteRule]
+other = "Er du sikker på at du vil slette regelen?"
+
+[RuleKind]
+other = "Regel"
+
+[WordKind]
+other = "Ord"
+
 [Language]
 other = "Språk"
 
@@ -114,3 +261,69 @@ other = "Logg ut"
 
 [Back]
 other = "Tilbake"
+
+[Spellcheck]
+other = "Stavekontroll"
+
+[SpellcheckIntro]
+other = "Test tekst mot den aktive ordlisten og reglene. Hver linje kontrolleres som et eget avsnitt eller en overskrift."
+
+[SpellcheckText]
+other = "Tekst"
+
+[SpellcheckPlaceholder]
+other = "Mellan 12-15 personer deltog."
+
+[SpellcheckSuggestions]
+other = "Inkluder forslag"
+
+[SpellcheckCustomOnly]
+other = "Bare egen ordliste og regler (hopp over hunspell)"
+
+[SpellcheckNoIssues]
+other = "Ingen problemer funnet."
+
+[SpellcheckIssues]
+other = "problemer funnet"
+
+[Check]
+other = "Kontroller"
+
+[FromHunspell]
+other = "hunspell"
+
+[NoSuggestions]
+other = "Ingen forslag"
+
+[SuggestionsLabel]
+other = "Forslag:"
+
+[Menu]
+other = "Meny"
+
+[RenameEntry]
+other = "Gi ordet nytt navn"
+
+[NewText]
+other = "Ny tekst"
+
+[Rename]
+other = "Gi nytt navn"
+
+[RenameHelp]
+other = "Gi ordet nytt navn og behold vanlige feil, former og innstillinger."
+
+[EntryRenamed]
+other = "Ordet fikk nytt navn"
+
+[RenameUnchanged]
+other = "Skriv inn en annen tekst"
+
+[RenameConflict]
+other = "Det finnes allerede et ord med den teksten"
+
+[RenameGone]
+other = "Ordet finnes ikke lenger"
+
+[RenameFailed]
+other = "Kunne ikke gi ordet nytt navn"

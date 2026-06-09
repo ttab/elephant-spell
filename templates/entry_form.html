@@ -35,8 +35,9 @@
     <div class="form-group">
       <label for="status">{{t "Status" "Status"}}</label>
       <select id="status" name="status" required {{if not .CanWrite}}disabled{{end}}>
-        <option value="accepted" {{if and .Entry (eq .Entry.Status "accepted")}}selected{{end}}>{{t "Accepted" "Accepted"}}</option>
-        <option value="pending" {{if and .Entry (eq .Entry.Status "pending")}}selected{{end}}>{{t "Pending" "Pending"}}</option>
+        {{range .StatusOptions}}
+        <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{tl .Label}}</option>
+        {{end}}
       </select>
     </div>
 

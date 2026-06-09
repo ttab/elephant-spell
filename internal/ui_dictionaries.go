@@ -205,6 +205,48 @@ type flashMessage struct {
 	Message howdah.TextLabel
 }
 
+// statusOption is a selectable entry/rule status for the editor's status
+// dropdown.
+type statusOption struct {
+	Value    string
+	Label    howdah.TextLabel
+	Selected bool
+}
+
+// statusOptions builds the status dropdown choices, marking the current status
+// as selected. New entries and rules (empty current status) default to
+// "pending" so additions go through moderation before taking effect.
+func statusOptions(current string) []statusOption {
+	if current == "" {
+		current = "pending"
+	}
+
+	return []statusOption{
+		{
+			Value:    "accepted",
+			Label:    howdah.TL("Accepted", "Accepted"),
+			Selected: current == "accepted",
+		},
+		{
+			Value:    "pending",
+			Label:    howdah.TL("Pending", "Pending"),
+			Selected: current == "pending",
+		},
+	}
+}
+
+// StatusOptions returns the status dropdown choices for the entry editor,
+// defaulting to "pending" for new entries.
+func (c dictionariesContents) StatusOptions() []statusOption {
+	var current string
+
+	if c.Entry != nil {
+		current = c.Entry.Status
+	}
+
+	return statusOptions(current)
+}
+
 // bridgeServiceAuth bridges howdah's OIDC auth context to elephantine's auth
 // context so that the spell service methods can verify scopes.
 func bridgeServiceAuth(

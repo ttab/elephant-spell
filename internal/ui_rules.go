@@ -145,6 +145,18 @@ type rulesContents struct {
 	HasMore    bool
 }
 
+// StatusOptions returns the status dropdown choices for the rule editor,
+// defaulting to "pending" for new rules.
+func (c rulesContents) StatusOptions() []statusOption {
+	var current string
+
+	if c.Rule != nil {
+		current = c.Rule.Status
+	}
+
+	return statusOptions(current)
+}
+
 func (d *RulesUI) redirectPage(
 	ctx context.Context, w http.ResponseWriter, r *http.Request,
 ) (*howdah.Page, error) {
@@ -493,7 +505,7 @@ func (d *RulesUI) setRuleFromForm(
 
 	status := strings.TrimSpace(r.FormValue("status"))
 	if status == "" {
-		status = "accepted"
+		status = "pending"
 	}
 
 	res, err := d.rules.SetRule(ctx, &spell.SetRuleRequest{

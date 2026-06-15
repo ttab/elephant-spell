@@ -12,7 +12,7 @@ require (
 	github.com/ory/dockertest/v3 v3.12.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/ttab/clitools v1.0.3
-	github.com/ttab/elephant-api v0.23.1-0.20260605063608-cd9379fcae57
+	github.com/ttab/elephant-api v0.24.0
 	github.com/ttab/elephantine v0.27.1
 	github.com/ttab/eltest v0.2.2
 	github.com/ttab/howdah v0.1.0

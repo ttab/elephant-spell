@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/blevesearch/segment v0.9.1
-	github.com/coreos/go-oidc/v3 v3.18.0
+	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/dghubble/trie v0.1.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jackc/puddle/v2 v2.2.2

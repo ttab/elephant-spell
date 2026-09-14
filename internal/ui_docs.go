@@ -12,8 +12,67 @@ import (
 
 	"github.com/ttab/howdah"
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
+
+// docLinkRewriter turns the relative markdown links the guide files use
+// between themselves into the routes they are served on: "rules.md#guards"
+// becomes "/docs/rules#guards".
+//
+// The guide is read in two places, and the two disagree about what a link
+// is. On GitHub, and to the link checker "mage docs:links" runs, a sibling
+// document is "rules.md". In the admin UI there is no .md — DocsUI strips
+// the suffix and serves the page at /docs/rules — so the file's own
+// spelling would 404. Rewriting at render time lets the files keep the
+// spelling that is checkable and still serve the right href.
+//
+// Only relative *.md targets are touched: an absolute URL, an anchor on the
+// current page, and a link to anything that is not markdown all pass
+// through unchanged.
+type docLinkRewriter struct{}
+
+func (docLinkRewriter) Transform(
+	doc *ast.Document, _ text.Reader, _ parser.Context,
+) {
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		link, ok := n.(*ast.Link)
+		if !entering || !ok {
+			return ast.WalkContinue, nil
+		}
+
+		dest := string(link.Destination)
+
+		if strings.Contains(dest, "://") || strings.HasPrefix(dest, "/") ||
+			strings.HasPrefix(dest, "#") {
+			return ast.WalkContinue, nil
+		}
+
+		path, fragment, hasFragment := strings.Cut(dest, "#")
+
+		base, isMarkdown := strings.CutSuffix(path, ".md")
+		if !isMarkdown {
+			return ast.WalkContinue, nil
+		}
+
+		// index.md is served at /docs/ rather than at /docs/index.
+		target := "/docs/" + base
+		if base == "index" {
+			target = "/docs/"
+		}
+
+		if hasFragment {
+			target += "#" + fragment
+		}
+
+		link.Destination = []byte(target)
+
+		return ast.WalkContinue, nil
+	})
+}
 
 // DocsUI is the howdah component for the documentation pages. It renders every
 // markdown file in the docs filesystem; index.md is served at /docs/ and the
@@ -31,7 +90,14 @@ func NewDocsUI(auth howdah.Authenticator, docsFS fs.FS) (*DocsUI, error) {
 		return nil, fmt.Errorf("list docs: %w", err)
 	}
 
-	md := goldmark.New(goldmark.WithExtensions(extension.Table))
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.Table),
+		goldmark.WithParserOptions(
+			parser.WithASTTransformers(
+				util.Prioritized(docLinkRewriter{}, 100),
+			),
+		),
+	)
 	docs := make(map[string]template.HTML)
 
 	for _, e := range entries {

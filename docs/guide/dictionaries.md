@@ -3,7 +3,7 @@
 Dictionary words extend the built-in hunspell dictionaries with
 organisation-specific words, phrases, and common-mistake corrections. For
 patterns (number ranges, gaps between words, context-dependent corrections) see
-[Rules](/docs/rules).
+[Rules](rules.md).
 
 ## Entry fields
 
@@ -23,7 +23,7 @@ Each entry has the following fields:
 ## Context guards
 
 An entry can be limited by the words immediately next to a match, the same way
-[pattern rules](/docs/rules#context-guards) are:
+[pattern rules](rules.md#context-guards) are:
 
 - **skip if preceded / followed by** — suppress the match when the neighbouring
   word is one of these.

@@ -4,9 +4,9 @@ The spell service combines the built-in hunspell dictionaries with a custom,
 editor-managed layer. That layer has two kinds of entity, each managed in its
 own section of the admin UI:
 
-- **[Dictionaries](/docs/dictionaries)** — words and phrases: corrections for
+- **[Dictionaries](dictionaries.md)** — words and phrases: corrections for
   misspellings and alternative spellings, inflected forms, and case handling.
-- **[Rules](/docs/rules)** — patterns with placeholders that catch errors which
+- **[Rules](rules.md)** — patterns with placeholders that catch errors which
   can't be listed as fixed strings, such as number ranges, gaps between words,
   and context-dependent corrections.
 

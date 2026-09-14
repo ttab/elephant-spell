@@ -118,9 +118,9 @@ type uiEntry struct {
 }
 
 func customEntryToUI(e *spell.CustomEntry) uiEntry {
-	level := "error"
+	level := uiLevelError
 	if e.Level == spell.CorrectionLevel_LEVEL_SUGGESTION {
-		level = "suggestion"
+		level = uiLevelSuggestion
 	}
 
 	return uiEntry{
@@ -218,7 +218,7 @@ type statusOption struct {
 // "pending" so additions go through moderation before taking effect.
 func statusOptions(current string) []statusOption {
 	if current == "" {
-		current = "pending"
+		current = statusPending
 	}
 
 	return []statusOption{
@@ -228,9 +228,9 @@ func statusOptions(current string) []statusOption {
 			Selected: current == "accepted",
 		},
 		{
-			Value:    "pending",
+			Value:    statusPending,
 			Label:    howdah.TL("Pending", "Pending"),
-			Selected: current == "pending",
+			Selected: current == statusPending,
 		},
 	}
 }
@@ -271,7 +271,9 @@ func bridgeServiceAuth(
 }
 
 func twirpErrorToHTTP(err error) error {
-	tErr, ok := err.(twirp.Error)
+	var tErr twirp.Error
+
+	ok := errors.As(err, &tErr)
 	if !ok {
 		return howdah.InternalHTTPError(err)
 	}
@@ -384,7 +386,7 @@ func (d *DictionariesUI) languagePage(
 	}
 
 	return &howdah.Page{
-		Template: "dictionaries.html",
+		Template: tmplDictionaries,
 		Title:    howdah.TL("Dictionaries", "Dictionaries"),
 		Contents: dictionariesContents{
 			Languages: d.languages,
@@ -410,7 +412,7 @@ func (d *DictionariesUI) newEntryPage(
 
 	if isHtmx(r) {
 		return &howdah.Page{
-			Template: "entry_form.html",
+			Template: tmplEntryForm,
 			Contents: dictionariesContents{
 				Language: lang,
 				NewEntry: true,
@@ -430,7 +432,7 @@ func (d *DictionariesUI) newEntryPage(
 	}
 
 	return &howdah.Page{
-		Template: "dictionaries.html",
+		Template: tmplDictionaries,
 		Title:    howdah.TL("Dictionaries", "Dictionaries"),
 		Contents: dictionariesContents{
 			Languages: d.languages,
@@ -473,7 +475,7 @@ func (d *DictionariesUI) entryPage(
 
 	if isHtmx(r) {
 		return &howdah.Page{
-			Template: "entry_form.html",
+			Template: tmplEntryForm,
 			Contents: dictionariesContents{
 				Language:    lang,
 				Entry:       &entry,
@@ -494,7 +496,7 @@ func (d *DictionariesUI) entryPage(
 	}
 
 	return &howdah.Page{
-		Template: "dictionaries.html",
+		Template: tmplDictionaries,
 		Title:    howdah.TLiteral(text + " – Dictionaries"),
 		Contents: dictionariesContents{
 			Languages:   d.languages,
@@ -534,13 +536,13 @@ func (d *DictionariesUI) saveNewEntry(
 	text := strings.TrimSpace(r.FormValue("text"))
 	if text == "" {
 		return &howdah.Page{
-			Template: "entry_form.html",
+			Template: tmplEntryForm,
 			Contents: dictionariesContents{
 				Language: lang,
 				NewEntry: true,
 				CanWrite: true,
 				Flash: &flashMessage{
-					Type:    "error",
+					Type:    flashError,
 					Message: howdah.TL("TextRequired", "Text is required"),
 				},
 			},
@@ -560,7 +562,7 @@ func (d *DictionariesUI) saveNewEntry(
 	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(text))
 
 	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
-		Type:    "success",
+		Type:    flashSuccess,
 		Message: howdah.TL("EntryCreated", "Entry created"),
 	})
 }
@@ -599,7 +601,7 @@ func (d *DictionariesUI) entryDetailResponse(
 	}
 
 	return &howdah.Page{
-		Template: "entry_response.html",
+		Template: tmplEntryResponse,
 		Contents: contents,
 	}, nil
 }
@@ -638,7 +640,7 @@ func (d *DictionariesUI) saveEntry(
 	}
 
 	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
-		Type:    "success",
+		Type:    flashSuccess,
 		Message: howdah.TL("EntryUpdated", "Entry updated"),
 	})
 }
@@ -712,7 +714,7 @@ func (d *DictionariesUI) renameEntryForm(
 
 	if isHtmx(r) {
 		return &howdah.Page{
-			Template: "entry_rename.html",
+			Template: tmplEntryRename,
 			Contents: dictionariesContents{
 				Language: lang, Entry: &entry, ActiveEntry: text,
 				Rename: true, CanWrite: true,
@@ -731,7 +733,7 @@ func (d *DictionariesUI) renameEntryForm(
 	}
 
 	return &howdah.Page{
-		Template: "dictionaries.html",
+		Template: tmplDictionaries,
 		Title:    howdah.TLiteral(text + " – Dictionaries"),
 		Contents: dictionariesContents{
 			Languages:   d.languages,
@@ -781,7 +783,7 @@ func (d *DictionariesUI) renameEntry(
 
 	if newText == "" || newText == text {
 		return d.renameFormWithFlash(svcCtx, lang, text, &flashMessage{
-			Type:    "error",
+			Type:    flashError,
 			Message: howdah.TL("RenameUnchanged", "Enter a different text"),
 		})
 	}
@@ -791,7 +793,7 @@ func (d *DictionariesUI) renameEntry(
 	})
 	if err != nil {
 		return d.renameFormWithFlash(svcCtx, lang, text, &flashMessage{
-			Type:    "error",
+			Type:    flashError,
 			Message: renameErrorMessage(err),
 		})
 	}
@@ -799,7 +801,7 @@ func (d *DictionariesUI) renameEntry(
 	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(newText))
 
 	return d.entryDetailResponse(ctx, svcCtx, lang, newText, &flashMessage{
-		Type:    "success",
+		Type:    flashSuccess,
 		Message: howdah.TL("EntryRenamed", "Entry renamed"),
 	})
 }
@@ -818,7 +820,7 @@ func (d *DictionariesUI) renameFormWithFlash(
 	entry := customEntryToUI(res.Entry)
 
 	return &howdah.Page{
-		Template: "entry_rename.html",
+		Template: tmplEntryRename,
 		Contents: dictionariesContents{
 			Language: lang, Entry: &entry, ActiveEntry: text,
 			Rename: true, CanWrite: true, Flash: flash,
@@ -826,20 +828,25 @@ func (d *DictionariesUI) renameFormWithFlash(
 	}, nil
 }
 
+// renameFailed is the message for a rename that failed for a reason the
+// editor can do nothing specific about.
+var renameFailed = howdah.TL("RenameFailed", "Could not rename the entry")
+
 // renameErrorMessage maps a rename RPC error to an editor-facing message.
 func renameErrorMessage(err error) howdah.TextLabel {
-	var twerr twirp.Error
-	if errors.As(err, &twerr) {
+	if twerr, ok := errors.AsType[twirp.Error](err); ok {
 		switch twerr.Code() {
 		case twirp.AlreadyExists:
 			return howdah.TL("RenameConflict",
 				"An entry with that text already exists")
 		case twirp.NotFound:
 			return howdah.TL("RenameGone", "The entry no longer exists")
+		default:
+			return renameFailed
 		}
 	}
 
-	return howdah.TL("RenameFailed", "Could not rename the entry")
+	return renameFailed
 }
 
 func (d *DictionariesUI) setEntryFromForm(
@@ -850,7 +857,7 @@ func (d *DictionariesUI) setEntryFromForm(
 
 	level := spell.CorrectionLevel_LEVEL_ERROR
 
-	if r.FormValue("level") == "suggestion" {
+	if r.FormValue("level") == uiLevelSuggestion {
 		level = spell.CorrectionLevel_LEVEL_SUGGESTION
 	}
 
@@ -858,7 +865,7 @@ func (d *DictionariesUI) setEntryFromForm(
 
 	cmRaw := strings.TrimSpace(r.FormValue("common_mistakes"))
 	if cmRaw != "" {
-		for _, line := range strings.Split(cmRaw, "\n") {
+		for line := range strings.SplitSeq(cmRaw, "\n") {
 			line = strings.TrimSpace(line)
 			if line != "" {
 				commonMistakes = append(commonMistakes, line)
@@ -935,7 +942,7 @@ func (d *DictionariesUI) validateMistakes(
 	}
 
 	return &howdah.Page{
-		Template: "pattern_preview.html",
+		Template: tmplPatternPreview,
 		Contents: mistakesPreview(
 			strings.Split(r.FormValue("common_mistakes"), "\n")),
 	}, nil
@@ -1037,7 +1044,7 @@ func (d *DictionariesUI) listExpansions(
 		shown  int
 	)
 
-	for _, line := range strings.Split(r.FormValue("common_mistakes"), "\n") {
+	for line := range strings.SplitSeq(r.FormValue("common_mistakes"), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -1068,7 +1075,7 @@ func (d *DictionariesUI) listExpansions(
 	}
 
 	return &howdah.Page{
-		Template: "expansions.html",
+		Template: tmplExpansions,
 		Contents: expansionsContents{
 			Groups:  groups,
 			Total:   total,
@@ -1136,7 +1143,7 @@ func (d *DictionariesUI) entryListPage(
 	}
 
 	return &howdah.Page{
-		Template: "entry_list.html",
+		Template: tmplEntryList,
 		Contents: dictionariesContents{
 			Language:    lang,
 			Entries:     entries,

@@ -68,6 +68,27 @@ All flags can also be set via environment variables.
 | `--client-id` | `CLIENT_ID` | | OIDC client ID |
 | `--client-secret` | `CLIENT_SECRET` | | OIDC client secret |
 | `--callback-url` | `CALLBACK_URL` | `http://localhost:1080/auth/callback` | OIDC callback URL |
+| `--default-language` | `DEFAULT_LANGUAGE` | `sv-se` | Language to redirect to from the root page |
+| `--insecure-cookies` | `INSECURE_COOKIES` | `false` | Drop `Secure` from the session cookies, for serving the UI over plain HTTP locally |
+| | `COOKIE_KEY_1`, `COOKIE_KEY_2`, ... | | Cookie keyring, required. See [Cookie keys](#cookie-keys) |
+
+### Cookie keys
+
+The web UI's session cookie is sealed with AES-256-GCM, and the service will
+not start without at least one currently usable key. Each key is its own
+environment variable — `COOKIE_KEY_1`, `COOKIE_KEY_2` and so on — holding an
+RFC 3339 timestamp and the standard base64 of 32 random bytes, separated by an
+underscore:
+
+```
+COOKIE_KEY_1=2026-08-01T00:00:00Z_TWFuIGlzIGRpc3Rpbmd1aXNoZWQsIG5vdCBvbmx5IGJ5IA==
+```
+
+The key sealed with is the one whose timestamp is the latest of those that have
+passed; every configured key still opens, which is what makes a rollover a
+matter of adding the next variable ahead of its use-after date and removing the
+old one once no session can be sealed under it. `howdah.GenerateCookieKey`
+produces a secret, and howdah's README carries the rotation runbook.
 
 ## RPC services
 

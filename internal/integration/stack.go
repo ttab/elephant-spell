@@ -17,6 +17,7 @@ import (
 	"github.com/ttab/elephant-spell/internal"
 	"github.com/ttab/elephantine"
 	"github.com/ttab/eltest"
+	"github.com/ttab/howdah"
 	"golang.org/x/oauth2"
 )
 
@@ -73,6 +74,15 @@ func NewStack(t T) *Stack {
 	addr := freeAddr(t)
 	baseURL := "http://" + addr
 
+	// howdah has no unsealed-cookie mode, so the server needs a keyring
+	// even for a test that never logs in through the UI. A throwaway key
+	// dated in the past is enough: nothing outlives the test.
+	keyring, err := howdah.NewCookieKeyring([]howdah.CookieKey{{
+		UseAfter: time.Now().Add(-time.Hour),
+		Secret:   make([]byte, 32),
+	}})
+	eltest.Must(eltestT{t}, err, "create cookie keyring")
+
 	params := internal.Parameters{
 		Addr:            addr,
 		Logger:          logger,
@@ -95,10 +105,14 @@ func NewStack(t T) *Stack {
 				internal.ScopeSpellcheckWrite,
 			},
 		},
-		Templates: mustSub(t, spellweb.TemplateFS, "templates"),
-		Locales:   mustSub(t, spellweb.LocaleFS, "locales"),
-		Assets:    mustSub(t, spellweb.AssetFS, "assets"),
-		Docs:      docs.FS,
+		CookieKeyring: keyring,
+		// The test server speaks plain HTTP, and a Secure cookie would
+		// not survive a round trip over it.
+		InsecureCookies: true,
+		Templates:       mustSub(t, spellweb.TemplateFS, "templates"),
+		Locales:         mustSub(t, spellweb.LocaleFS, "locales"),
+		Assets:          mustSub(t, spellweb.AssetFS, "assets"),
+		Docs:            docs.FS,
 	}
 
 	app, err := internal.NewApplication(ctx, params)

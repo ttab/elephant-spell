@@ -14,7 +14,7 @@ import (
 func benchRuleDefs(n int) []RuleDef {
 	defs := make([]RuleDef, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		var pattern, replacement string
 
 		switch i % 4 {

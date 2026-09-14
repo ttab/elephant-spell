@@ -33,6 +33,10 @@ func BearerHTTPClient(base *http.Client, token string) *BearerClient {
 func (c *BearerClient) Do(req *http.Request) (*http.Response, error) {
 	req.Header.Set("Authorization", "Bearer "+c.token)
 
+	// G704: the request is built by the test that calls this, against the
+	// test server's own address. Nothing here is reachable from outside
+	// the test binary.
+	//nolint:gosec
 	resp, err := c.base.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("bearer client: %w", err)

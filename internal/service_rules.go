@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/postgres"
-	"github.com/ttab/elephantine"
 	"github.com/ttab/elephantine/pg"
 	"github.com/twitchtv/twirp"
 )
@@ -37,9 +36,9 @@ func ruleDataFromRPC(r *spell.Rule) *postgres.RuleData {
 func (a *Application) ListRules(
 	ctx context.Context, req *spell.ListRulesRequest,
 ) (*spell.ListRulesResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if strings.Contains(req.Query, "%") {
@@ -88,9 +87,9 @@ func (a *Application) ListRules(
 func (a *Application) GetRule(
 	ctx context.Context, req *spell.GetRuleRequest,
 ) (*spell.GetRuleResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Id == 0 {
@@ -117,9 +116,9 @@ func (a *Application) GetRule(
 func (a *Application) SetRule(
 	ctx context.Context, req *spell.SetRuleRequest,
 ) (_ *spell.SetRuleResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Rule == nil {
@@ -228,9 +227,9 @@ func (a *Application) SetRule(
 func (a *Application) SetRuleStatus(
 	ctx context.Context, req *spell.SetRuleStatusRequest,
 ) (_ *spell.SetRuleStatusResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Id == 0 {
@@ -280,9 +279,9 @@ func (a *Application) SetRuleStatus(
 func (a *Application) DeleteRule(
 	ctx context.Context, req *spell.DeleteRuleRequest,
 ) (_ *spell.DeleteRuleResponse, outErr error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Id == 0 {

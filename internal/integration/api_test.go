@@ -239,6 +239,7 @@ func TestAPI(t *testing.T) {
 			{"set entry nil", func() error {
 				_, err := stack.Dictionaries.SetEntry(ctx,
 					&spellapi.SetEntryRequest{})
+
 				return err
 			}},
 			{"set unknown language", func() error {
@@ -247,18 +248,21 @@ func TestAPI(t *testing.T) {
 						Language: "zz-zz", Text: "x", Status: "approved",
 					},
 				})
+
 				return err
 			}},
 			{"set missing text", func() error {
 				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
 					Entry: &spellapi.CustomEntry{Language: "sv-se", Status: "approved"},
 				})
+
 				return err
 			}},
 			{"set missing status", func() error {
 				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
 					Entry: &spellapi.CustomEntry{Language: "sv-se", Text: "x"},
 				})
+
 				return err
 			}},
 			{"set invalid level", func() error {
@@ -268,32 +272,38 @@ func TestAPI(t *testing.T) {
 						Level: spellapi.CorrectionLevel(99),
 					},
 				})
+
 				return err
 			}},
 			{"delete missing language", func() error {
 				_, err := stack.Dictionaries.DeleteEntry(ctx,
 					&spellapi.DeleteEntryRequest{Text: "x"})
+
 				return err
 			}},
 			{"get missing text", func() error {
 				_, err := stack.Dictionaries.GetEntry(ctx,
 					&spellapi.GetEntryRequest{Language: "sv-se"})
+
 				return err
 			}},
 			{"list entries bad query", func() error {
 				_, err := stack.Dictionaries.ListEntries(ctx,
 					&spellapi.ListEntriesRequest{Query: "a%b"})
+
 				return err
 			}},
 			{"check unsupported language", func() error {
 				_, err := stack.Check.Text(ctx, &spellapi.TextRequest{
 					Language: "zz-zz", Text: []string{"hej"},
 				})
+
 				return err
 			}},
 			{"suggestions missing text", func() error {
 				_, err := stack.Check.Suggestions(ctx,
 					&spellapi.SuggestionsRequest{Language: "sv-se"})
+
 				return err
 			}},
 		}

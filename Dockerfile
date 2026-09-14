@@ -1,4 +1,4 @@
-FROM golang:1.26.4-bookworm AS build
+FROM golang:1.27.1-trixie AS build
 
 WORKDIR /usr/src
 
@@ -6,13 +6,16 @@ RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y build-essential libhunspell-dev && \
     rm -rf /var/lib/apt/lists/*
 
+ADD go.mod go.sum ./
+RUN go mod download && go mod verify
+
 ADD . ./
 
 ARG TARGETOS TARGETARCH
 RUN GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -o /build/spell ./cmd/spell
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get upgrade -y && \
     apt-get install -y libhunspell-1.7-0 ca-certificates && \

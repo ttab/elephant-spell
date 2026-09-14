@@ -12,7 +12,7 @@ func TestChecker(t *testing.T) {
 		"../dictionaries/sv_SE.aff",
 		"../dictionaries/sv_SE.dic",
 	)
-	test.Must(t, err, "create spellchecker")
+	test.Mustf(t, err, "create spellchecker")
 
 	suggestions := c.Suggest("paralell")
 	test.EqualDiff(t, []string{"parallell"}, suggestions,
@@ -32,13 +32,13 @@ func TestChecker(t *testing.T) {
 	const foreignWord = "al-Fatiha"
 
 	fOk := c.Spell(foreignWord)
-	test.Equal(t, false, fOk, "%q should not be known from start", foreignWord)
+	test.Equalf(t, false, fOk, "%q should not be known from start", foreignWord)
 
 	addOk := c.Add(foreignWord)
-	test.Equal(t, true, addOk, "add %q", foreignWord)
+	test.Equalf(t, true, addOk, "add %q", foreignWord)
 
 	fOk = c.Spell(foreignWord)
-	test.Equal(t, true, fOk, "%q should be accepted after add", foreignWord)
+	test.Equalf(t, true, fOk, "%q should be accepted after add", foreignWord)
 
 	suggestions3 := c.Suggest("al-Fatih")
 	test.EqualDiff(t, []string{

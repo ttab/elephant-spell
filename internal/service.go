@@ -23,6 +23,8 @@ import (
 	"github.com/ttab/elephant-spell/postgres"
 	"github.com/ttab/elephantine"
 	"github.com/ttab/elephantine/pg"
+	"github.com/ttab/elephantine/pg/joblock"
+	"github.com/ttab/elephantine/rpc"
 	"github.com/ttab/howdah"
 	"github.com/twitchtv/twirp"
 	"golang.org/x/oauth2"
@@ -81,6 +83,16 @@ type Parameters struct {
 	OIDCVerifier *oidc.IDTokenVerifier
 	OIDCConfig   *oauth2.Config
 
+	// CookieKeyring seals the session and post-login redirect cookies.
+	// howdah has no mode that writes a refresh token to the browser in
+	// the clear, so it is required whenever the web UI is served.
+	CookieKeyring *howdah.CookieKeyring
+
+	// InsecureCookies drops the Secure attribute from the cookies howdah
+	// sets, which a deployment served over plain HTTP needs for the
+	// browser to send the session back. For local development only.
+	InsecureCookies bool
+
 	// Embedded filesystems for the web UI.
 	Templates fs.FS
 	Locales   fs.FS
@@ -89,7 +101,7 @@ type Parameters struct {
 }
 
 func NewApplication(
-	ctx context.Context, p Parameters,
+	_ context.Context, p Parameters,
 ) (_ *Application, outErr error) {
 	// We need to set up a directory with our dictionaries so that hunspell
 	// can load them.
@@ -253,14 +265,19 @@ func (a *Application) Run(ctx context.Context) error {
 	})
 
 	grp.Required("eventlog_pruner", func(ctx context.Context) error {
-		return pg.RunInJobLock(
+		return joblock.Run(
 			grace.CancelOnStop(ctx), a.db, a.logger,
 			"eventlog-pruner", "eventlog-prune",
-			pg.JobLockOptions{},
+			joblock.Options{},
 			a.runEventlogPruner)
 	})
 
-	return grp.Wait()
+	err = grp.Wait()
+	if err != nil {
+		return fmt.Errorf("run server: %w", err)
+	}
+
+	return nil
 }
 
 // runEventlogPruner periodically deletes events past the retention window. It
@@ -368,9 +385,19 @@ func (a *Application) runEntryUpdater(ctx context.Context) error {
 }
 
 func (a *Application) setupUI(mux *http.ServeMux) error {
-	cAuth := howdah.NewOIDCAuth(
+	var authOpts []howdah.OIDCAuthOption
+
+	if a.p.InsecureCookies {
+		authOpts = append(authOpts, howdah.WithInsecureCookies())
+	}
+
+	cAuth, err := howdah.NewOIDCAuth(
 		a.p.OIDCProvider, a.p.OIDCVerifier, *a.p.OIDCConfig,
+		a.p.CookieKeyring, authOpts...,
 	)
+	if err != nil {
+		return fmt.Errorf("set up authentication: %w", err)
+	}
 
 	supportedLanguages := make([]string, 0, len(a.languages))
 	for code := range a.languages {
@@ -420,7 +447,7 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 
 // SupportedLanguages implements spell.Dictionaries.
 func (a *Application) SupportedLanguages(
-	ctx context.Context, req *spell.SupportedLanguagesRequest,
+	_ context.Context, _ *spell.SupportedLanguagesRequest,
 ) (*spell.SupportedLanguagesResponse, error) {
 	var res spell.SupportedLanguagesResponse
 
@@ -433,13 +460,25 @@ func (a *Application) SupportedLanguages(
 	return &res, nil
 }
 
+// requireWriteScope authorizes a dictionary or rule write. These are Twirp
+// mounts, so the check's *connect.Error is translated on the way out; the
+// ToTwirp goes when the service moves to Connect.
+func requireWriteScope(ctx context.Context) (*elephantine.AuthInfo, error) {
+	info, err := rpc.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	if err != nil {
+		return nil, rpc.ToTwirp(err)
+	}
+
+	return info, nil
+}
+
 // DeleteEntry implements spell.Dictionaries.
 func (a *Application) DeleteEntry(
 	ctx context.Context, req *spell.DeleteEntryRequest,
 ) (_ *spell.DeleteEntryResponse, outErr error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
@@ -484,9 +523,9 @@ func (a *Application) DeleteEntry(
 func (a *Application) RenameEntry(
 	ctx context.Context, req *spell.RenameEntryRequest,
 ) (_ *spell.RenameEntryResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
@@ -566,9 +605,9 @@ func (a *Application) RenameEntry(
 func (a *Application) GetEntry(
 	ctx context.Context, req *spell.GetEntryRequest,
 ) (*spell.GetEntryResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
@@ -642,11 +681,11 @@ func applyEntryGuards(e *spell.CustomEntry, d *postgres.EntryData) {
 
 // ListDictionaries implements spell.Dictionaries.
 func (a *Application) ListDictionaries(
-	ctx context.Context, req *spell.ListDictionariesRequest,
+	ctx context.Context, _ *spell.ListDictionariesRequest,
 ) (*spell.ListDictionariesResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	rows, err := a.q.ListDictionaries(ctx)
@@ -698,9 +737,9 @@ func (a *Application) ListEntries(
 	ctx context.Context,
 	req *spell.ListEntriesRequest,
 ) (*spell.ListEntriesResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if strings.Contains(req.Query, "%") {
@@ -779,9 +818,9 @@ func (a *Application) ListEntries(
 func (a *Application) SetEntry(
 	ctx context.Context, req *spell.SetEntryRequest,
 ) (_ *spell.SetEntryResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Entry == nil {
@@ -861,9 +900,9 @@ func (a *Application) SetEntry(
 func (a *Application) SetEntryStatus(
 	ctx context.Context, req *spell.SetEntryStatusRequest,
 ) (_ *spell.SetEntryStatusResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
@@ -1004,7 +1043,7 @@ func (a *Application) Text(
 		m, err := lang.Check(ctx, req.Text[i], req.Suggestions, req.CustomOnly)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"spellcheck text %d: %v", i+1, err)
+				"spellcheck text %d: %w", i+1, err)
 		}
 
 		res.Misspelled[i] = m

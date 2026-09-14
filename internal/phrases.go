@@ -16,7 +16,7 @@ type PhraseMatch struct {
 }
 
 // PhraseIterator runs a sliding window over a text and yeilds all the word
-// sequence combinations
+// sequence combinations.
 func PhraseIterator(text []byte, phraseLength int) func(yield func(v PhraseMatch) bool) {
 	// Circular buffer for the last N tokens.
 	window := make([]token, 0, phraseLength*4)

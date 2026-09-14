@@ -230,10 +230,10 @@ func formatSpans(spans []*spell.TextSpan) string {
 
 func correctionLevelLabel(level spell.CorrectionLevel) string {
 	if level == spell.CorrectionLevel_LEVEL_SUGGESTION {
-		return "suggestion"
+		return uiLevelSuggestion
 	}
 
-	return "error"
+	return uiLevelError
 }
 
 // preferredLanguage picks the language from the lang cookie when it matches a
@@ -252,7 +252,7 @@ func (d *SpellcheckUI) preferredLanguage(r *http.Request) string {
 func splitChunks(text string) []string {
 	var chunks []string
 
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			chunks = append(chunks, line)

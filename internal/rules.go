@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -155,6 +156,7 @@ func compilePattern(
 
 				body.WriteString(`\s+`)
 				setFirst(false)
+
 				lastWord = false
 
 				continue
@@ -205,6 +207,7 @@ func compilePattern(
 		flush()
 		body.WriteString(grp)
 		setFirst(true)
+
 		lastWord = true
 
 		i += closeIdx + 1
@@ -365,19 +368,19 @@ func (g guards) pass(text string, start, end int) bool {
 		next = foldKey(next)
 	}
 
-	if len(g.before) > 0 && !sliceContains(g.before, prev) {
+	if len(g.before) > 0 && !slices.Contains(g.before, prev) {
 		return false
 	}
 
-	if len(g.after) > 0 && !sliceContains(g.after, next) {
+	if len(g.after) > 0 && !slices.Contains(g.after, next) {
 		return false
 	}
 
-	if sliceContains(g.notBefore, prev) {
+	if slices.Contains(g.notBefore, prev) {
 		return false
 	}
 
-	if sliceContains(g.notAfter, next) {
+	if slices.Contains(g.notAfter, next) {
 		return false
 	}
 
@@ -391,16 +394,6 @@ func matchGroup(re *regexp.Regexp, s string) string {
 	}
 
 	return m[1]
-}
-
-func sliceContains(folded []string, v string) bool {
-	for _, f := range folded {
-		if f == v {
-			return true
-		}
-	}
-
-	return false
 }
 
 // expandTemplate fills {1}, {2}, … placeholders with the captured strings.

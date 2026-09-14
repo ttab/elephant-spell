@@ -9,8 +9,11 @@ import (
 // Expand parses a string with "Option {a|b}" syntax and returns all
 // permutations. It returns an error if the braces are unbalanced or nested.
 func Expand(input string) ([]string, error) {
-	var parts [][]string
-	var buffer strings.Builder
+	var (
+		parts  [][]string
+		buffer strings.Builder
+	)
+
 	inBrace := false
 
 	// Parse the input string.

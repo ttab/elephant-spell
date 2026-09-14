@@ -107,9 +107,9 @@ type uiRule struct {
 }
 
 func ruleToUI(r *spell.Rule) uiRule {
-	level := "error"
+	level := uiLevelError
 	if r.Level == spell.CorrectionLevel_LEVEL_SUGGESTION {
-		level = "suggestion"
+		level = uiLevelSuggestion
 	}
 
 	return uiRule{
@@ -201,7 +201,7 @@ func (d *RulesUI) languagePage(
 	}
 
 	return &howdah.Page{
-		Template: "rules.html",
+		Template: tmplRules,
 		Title:    howdah.TL("Rules", "Rules"),
 		Contents: rulesContents{
 			Languages: d.languages,
@@ -236,7 +236,7 @@ func (d *RulesUI) listPartial(
 	}
 
 	return &howdah.Page{
-		Template: "rule_list.html",
+		Template: tmplRuleList,
 		Contents: rulesContents{
 			Language: lang,
 			Rules:    rules,
@@ -260,7 +260,7 @@ func (d *RulesUI) newRulePage(
 
 	if isHtmx(r) {
 		return &howdah.Page{
-			Template: "rule_form.html",
+			Template: tmplRuleForm,
 			Contents: rulesContents{Language: lang, NewRule: true, CanWrite: canWrite},
 		}, nil
 	}
@@ -271,7 +271,7 @@ func (d *RulesUI) newRulePage(
 	}
 
 	return &howdah.Page{
-		Template: "rules.html",
+		Template: tmplRules,
 		Title:    howdah.TL("Rules", "Rules"),
 		Contents: rulesContents{
 			Languages: d.languages,
@@ -315,7 +315,7 @@ func (d *RulesUI) rulePage(
 
 	if isHtmx(r) {
 		return &howdah.Page{
-			Template: "rule_form.html",
+			Template: tmplRuleForm,
 			Contents: rulesContents{
 				Language: lang, Rule: &rule, ActiveRule: id, CanWrite: canWrite,
 			},
@@ -328,7 +328,7 @@ func (d *RulesUI) rulePage(
 	}
 
 	return &howdah.Page{
-		Template: "rules.html",
+		Template: tmplRules,
 		Title:    howdah.TLiteral(rule.Name + " – Rules"),
 		Contents: rulesContents{
 			Languages:  d.languages,
@@ -387,11 +387,11 @@ func (d *RulesUI) saveRuleForm(
 
 	if isNew && strings.TrimSpace(r.FormValue("name")) == "" {
 		return &howdah.Page{
-			Template: "rule_form.html",
+			Template: tmplRuleForm,
 			Contents: rulesContents{
 				Language: lang, NewRule: true, CanWrite: true,
 				Flash: &flashMessage{
-					Type:    "error",
+					Type:    flashError,
 					Message: howdah.TL("NameRequired", "Name is required"),
 				},
 			},
@@ -409,7 +409,7 @@ func (d *RulesUI) saveRuleForm(
 	}
 
 	flash := &flashMessage{
-		Type:    "success",
+		Type:    flashSuccess,
 		Message: howdah.TL("RuleUpdated", "Rule updated"),
 	}
 
@@ -488,7 +488,7 @@ func (d *RulesUI) ruleDetailResponse(
 	}
 
 	return &howdah.Page{
-		Template: "rule_response.html",
+		Template: tmplRuleResponse,
 		Contents: contents,
 	}, nil
 }
@@ -499,13 +499,13 @@ func (d *RulesUI) setRuleFromForm(
 	ctx context.Context, lang string, id int64, r *http.Request,
 ) (int64, error) {
 	level := spell.CorrectionLevel_LEVEL_ERROR
-	if r.FormValue("level") == "suggestion" {
+	if r.FormValue("level") == uiLevelSuggestion {
 		level = spell.CorrectionLevel_LEVEL_SUGGESTION
 	}
 
 	status := strings.TrimSpace(r.FormValue("status"))
 	if status == "" {
-		status = "pending"
+		status = statusPending
 	}
 
 	res, err := d.rules.SetRule(ctx, &spell.SetRuleRequest{
@@ -585,7 +585,7 @@ func (d *RulesUI) testRule(
 	}
 
 	return &howdah.Page{
-		Template: "rule_test.html",
+		Template: tmplRuleTest,
 		Contents: contents,
 	}, nil
 }
@@ -656,7 +656,7 @@ func (d *RulesUI) ruleCount(ctx context.Context, lang string) int {
 func splitCommaList(s string) []string {
 	var out []string
 
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			out = append(out, part)

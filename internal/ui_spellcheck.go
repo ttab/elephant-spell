@@ -167,7 +167,7 @@ func (d *SpellcheckUI) runCheck(
 			CustomOnly:  customOnly,
 		})
 		if err != nil {
-			return nil, twirpErrorToHTTP(err)
+			return nil, rpcErrorToHTTP(err)
 		}
 
 		contents.Chunks, contents.TotalIssues = spellChunks(chunks, res)

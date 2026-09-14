@@ -6,12 +6,14 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
+	"os"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	spellapi "github.com/ttab/elephant-api/spell"
+	"github.com/ttab/elephant-api/spell/spellconnect"
 	spellweb "github.com/ttab/elephant-spell"
 	"github.com/ttab/elephant-spell/docs"
 	"github.com/ttab/elephant-spell/internal"
@@ -131,14 +133,57 @@ func NewStack(t T) *Stack {
 
 	admin := env.Caller(t, "spell-admin", internal.ScopeSpellcheckWrite)
 
+	check, dicts, rules := clientsFor(RPCStack(), baseURL, admin.Token)
+
 	return &Stack{
 		Env:          env,
 		Pool:         pool,
 		BaseURL:      baseURL,
 		Admin:        admin,
-		Check:        spellapi.NewCheckProtobufClient(baseURL, BearerHTTPClient(nil, admin.Token)),
-		Dictionaries: spellapi.NewDictionariesProtobufClient(baseURL, BearerHTTPClient(nil, admin.Token)),
-		Rules:        spellapi.NewRulesProtobufClient(baseURL, BearerHTTPClient(nil, admin.Token)),
+		Check:        check,
+		Dictionaries: dicts,
+		Rules:        rules,
+	}
+}
+
+// RPCStack is the protocol the test clients speak, from TEST_RPC_STACK.
+// Both mounts are always served; this only decides which one the suite
+// drives, so that every existing test is also a Connect test.
+func RPCStack() string {
+	stack := os.Getenv("TEST_RPC_STACK")
+	if stack == "" {
+		return StackTwirp
+	}
+
+	return stack
+}
+
+// The protocol stacks the suite can be run against.
+const (
+	StackTwirp   = "twirp"
+	StackConnect = "connect"
+)
+
+// clientsFor builds the typed clients for a stack. The Connect
+// ServiceClients implement the same plain spellapi interfaces the Twirp
+// clients do, which is what lets one suite cover both.
+func clientsFor(
+	stack string, baseURL string, token string,
+) (spellapi.Check, spellapi.Dictionaries, spellapi.Rules) {
+	httpClient := BearerHTTPClient(nil, token)
+
+	switch stack {
+	case StackConnect:
+		return spellconnect.NewCheckServiceClient(httpClient, baseURL),
+			spellconnect.NewDictionariesServiceClient(httpClient, baseURL),
+			spellconnect.NewRulesServiceClient(httpClient, baseURL)
+	case StackTwirp:
+		return spellapi.NewCheckProtobufClient(baseURL, httpClient),
+			spellapi.NewDictionariesProtobufClient(baseURL, httpClient),
+			spellapi.NewRulesProtobufClient(baseURL, httpClient)
+	default:
+		panic("unknown TEST_RPC_STACK " + stack +
+			", want " + StackTwirp + " or " + StackConnect)
 	}
 }
 

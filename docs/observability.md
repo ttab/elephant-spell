@@ -21,7 +21,7 @@ This document does not tell you what to do when a number is wrong — that is [`
 
 | Source | Series |
 |---|---|
-| `elephantine` service options and Twirp hooks | `rpc_*` |
+| `elephantine` service options: the Twirp hooks and the Connect interceptor, which share one set of collectors | `rpc_*` |
 | `elephantine.ErrGroup` | `task_restarts_total` |
 | `elephantine/pg` FanOut recovery | `pg_fanout_eventlog_*` |
 | `elephantine/pg/joblock` | `pg_job_lock_*` |
@@ -35,7 +35,7 @@ This document does not tell you what to do when a number is wrong — that is [`
 - `rpc_requests_total{service,method}` — call volume. The baseline is editorial traffic against `Check/Text`, so it tracks the working day; a flat line through the morning is a caller that has stopped, not a quiet service.
 - `rpc_duration_seconds{service,method}` — `Check/Text` carries the real work. Latency here scales with the size of the text and the number of loaded entries, so a step change with no deploy means the dictionary grew, not that Postgres slowed down. `Suggestions` is slower per call by nature — hunspell suggestion generation is the expensive path.
 - `rpc_responses_total{service,method,code}` — the error breakdown. `invalid_argument` is routine: it is what a malformed request from the UI or a client looks like. `unauthenticated` is routine at low rates (expired tokens) and a problem in a step; **since elephantine v0.29.0 a bad token is `unauthenticated`, where it used to be `permission_denied`** — a panel keyed on the old code reads zero.
-- `rpc_protocol_responses_total{service,method,protocol,code,client_id}` — the same breakdown with the protocol and the calling client. `protocol="twirp"` is everything today; this is the series that will say when ELE-1504's Connect mount is carrying traffic, and `client_id` names the applications that would have to move before the Twirp mount could be removed.
+- `rpc_protocol_responses_total{service,method,protocol,code,client_id}` — the same breakdown with the protocol and the calling client. Both mounts are served, so **this is the series that says how far the migration off Twirp has got**: `protocol="twirp"` falling to zero for a method is what says that method's Twirp mount can be removed, and `client_id` — the token's client id claim, empty for an anonymous caller — names the applications that still have to move. The `code` label is the error breakdown `rpc_responses_total` cannot give, since the two stacks disagree on the HTTP status for some codes.
 
 ## Eventlog fanout
 

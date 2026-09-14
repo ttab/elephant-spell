@@ -197,7 +197,7 @@ func (d *RulesUI) languagePage(
 
 	rules, hasMore, err := d.listRules(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -232,7 +232,7 @@ func (d *RulesUI) listPartial(
 
 	rules, hasMore, err := d.listRules(ctx, lang, query, page)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -267,7 +267,7 @@ func (d *RulesUI) newRulePage(
 
 	rules, hasMore, err := d.listRules(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -308,7 +308,7 @@ func (d *RulesUI) rulePage(
 
 	res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{Id: id})
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	rule := ruleToUI(res.Rule)
@@ -324,7 +324,7 @@ func (d *RulesUI) rulePage(
 
 	rules, hasMore, err := d.listRules(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -405,7 +405,7 @@ func (d *RulesUI) saveRuleForm(
 
 	id, err = d.setRuleFromForm(svcCtx, lang, id, r)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	flash := &flashMessage{
@@ -449,7 +449,7 @@ func (d *RulesUI) deleteRule(
 
 	_, err = d.rules.DeleteRule(svcCtx, &spell.DeleteRuleRequest{Id: id})
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	w.Header().Set("HX-Push-Url", "/rules/"+lang+"/")
@@ -465,7 +465,7 @@ func (d *RulesUI) ruleDetailResponse(
 ) (*howdah.Page, error) {
 	rules, hasMore, err := d.listRules(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	contents := rulesContents{
@@ -479,7 +479,7 @@ func (d *RulesUI) ruleDetailResponse(
 	if id != 0 {
 		res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{Id: id})
 		if err != nil {
-			return nil, twirpErrorToHTTP(err)
+			return nil, rpcErrorToHTTP(err)
 		}
 
 		rule := ruleToUI(res.Rule)

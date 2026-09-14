@@ -82,6 +82,10 @@ _Avoid_: checker (which is the hunspell binding), engine
 A sequence of up to three words matched as a unit by the sliding window. Every entry is a phrase as far as the tries are concerned, whether or not it contains a space.
 _Avoid_: n-gram, token sequence
 
+**Stack**:
+Which RPC protocol a caller is speaking — Twirp or Connect. Both are served from the same implementation on different paths. Say "the Connect stack", not "the Connect API": the API is the same one.
+_Avoid_: protocol, transport, mount (for the protocol; a mount is the registration)
+
 ## False friends
 
 **`eventlog` means something different here than it does in the platform.** elephant-repository's eventlog is the durable source of truth from which state is rebuilt. This service's eventlog is a transport: it is pruned to one hour, nothing is ever recovered from it, and a restarting replica ignores it entirely and reloads from the `entry` and `rule` tables. A document that says "the eventlog" without saying whose has to be fixed.

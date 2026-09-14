@@ -255,7 +255,7 @@ func (d *DictionariesUI) moderationPage(
 
 	contents, err := d.moderationData(ctx, lang, page)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	if isHtmx(r) {
@@ -374,18 +374,18 @@ func (d *DictionariesUI) moderate(
 
 	err = action(svcCtx, kind, lang, ident)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	contents, err := d.moderationData(ctx, lang, page)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	if len(contents.Items) == 0 && page > 0 {
 		contents, err = d.moderationData(ctx, lang, page-1)
 		if err != nil {
-			return nil, twirpErrorToHTTP(err)
+			return nil, rpcErrorToHTTP(err)
 		}
 	}
 

@@ -180,7 +180,17 @@ Three Twirp services, all mounted through `elephantine.APIServer` with `ServiceA
 | | `GetEntry`, `ListEntries`, `ListDictionaries`, `SetEntry`, `SetEntryStatus`, `RenameEntry`, `DeleteEntry` | `spell_write` |
 | `elephant.spell.Rules` | `GetRule`, `ListRules`, `SetRule`, `SetRuleStatus`, `DeleteRule` | `spell_write` |
 
-`requireWriteScope` is the single gate for the second and third groups. It calls `rpc.RequireAnyScope` and translates the resulting `*connect.Error` with `rpc.ToTwirp`; **the translation is the only thing that has to change when this service grows a Connect mount** (ELE-1504).
+`requireWriteScope` is the single gate for the second and third groups.
+
+### One implementation, two mounts
+
+Each service is mounted twice: `RegisterAPI` puts it on `/twirp/elephant.spell.<Service>/` and `RegisterConnect` on `/elephant.spell.<Service>/`. Both are served by the same `*Application` — the generated `spellconnect.New<Service>ServiceHandler` adapts the plain `spell.<Service>` interface, so there is no second set of methods to keep in step.
+
+**The handlers are written in the Connect error vocabulary and never name a protocol.** `rpc.RequiredArgument`, `rpc.NotFound`, `rpc.Internalf` and the rest produce `*connect.Error` values; the Connect mount renders them directly, and the Twirp mount's `rpc.TwirpInterceptor` — installed for you by `ServiceOptions.ServerOptions` — translates code, message and meta on the way out. A handler that reaches for a `twirp.*` error instead would answer a Connect caller with an uncoded `unknown`.
+
+**The web UI is the exception, and it is why `rpcErrorToHTTP` reads Connect codes.** The UI calls the RPC implementations in process, so no mount and therefore no interceptor stands between them: it sees the `*connect.Error` itself.
+
+`rpc_protocol_responses_total{protocol=...}` is what says when the Twirp mount can be retired; see [observability.md](observability.md#rpc-surface).
 
 An unauthenticated or unparseable token is answered `unauthenticated` (401). `permission_denied` (403) is reserved for a caller we did identify and that lacks `spell_write`.
 

@@ -12,10 +12,11 @@ import (
 	"strconv"
 	"strings"
 
+	connect "connectrpc.com/connect"
 	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephantine"
+	"github.com/ttab/elephantine/rpc"
 	"github.com/ttab/howdah"
-	"github.com/twitchtv/twirp"
 )
 
 type DictionariesUI struct {
@@ -252,13 +253,8 @@ func (c dictionariesContents) StatusOptions() []statusOption {
 func bridgeServiceAuth(
 	ctx context.Context, authParser elephantine.AuthInfoParser,
 ) (context.Context, error) {
-	headers, ok := twirp.HTTPRequestHeaders(ctx)
-	if !ok {
-		return ctx, nil
-	}
-
-	authHeader := headers.Get("Authorization")
-	if authHeader == "" {
+	authHeader, ok := howdah.AuthorizationHeader(ctx)
+	if !ok || authHeader == "" {
 		return ctx, nil
 	}
 
@@ -270,17 +266,20 @@ func bridgeServiceAuth(
 	return elephantine.SetAuthInfo(ctx, info), nil
 }
 
-func twirpErrorToHTTP(err error) error {
-	var tErr twirp.Error
+// rpcErrorToHTTP renders the error an RPC implementation returned as an error
+// page. The UI calls those implementations in-process rather than over the
+// wire, so it sees the *connect.Error itself — no Twirp mount, and so no
+// interceptor, stands between them.
+func rpcErrorToHTTP(err error) error {
+	var cErr *connect.Error
 
-	ok := errors.As(err, &tErr)
+	ok := errors.As(err, &cErr)
 	if !ok {
 		return howdah.InternalHTTPError(err)
 	}
 
-	status := twirp.ServerHTTPStatusFromErrorCode(tErr.Code())
-
-	return howdah.NewHTTPError(status, "Error", tErr.Msg(), tErr)
+	return howdah.NewHTTPError(
+		rpc.HTTPStatus(cErr.Code()), "Error", cErr.Message(), cErr)
 }
 
 // parseForm parses an HTTP request's form, returning a bad-request HTTP error on
@@ -377,12 +376,12 @@ func (d *DictionariesUI) languagePage(
 
 	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	count, err := d.entryCount(ctx, lang)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -423,12 +422,12 @@ func (d *DictionariesUI) newEntryPage(
 
 	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	count, err := d.entryCount(ctx, lang)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -468,7 +467,7 @@ func (d *DictionariesUI) entryPage(
 		Text:     text,
 	})
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	entry := customEntryToUI(res.Entry)
@@ -487,12 +486,12 @@ func (d *DictionariesUI) entryPage(
 
 	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	count, err := d.entryCount(ctx, lang)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -556,7 +555,7 @@ func (d *DictionariesUI) saveNewEntry(
 
 	err = d.setEntryFromForm(svcCtx, lang, text, r)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(text))
@@ -575,7 +574,7 @@ func (d *DictionariesUI) entryDetailResponse(
 ) (*howdah.Page, error) {
 	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	contents := dictionariesContents{
@@ -592,7 +591,7 @@ func (d *DictionariesUI) entryDetailResponse(
 			Text:     text,
 		})
 		if err != nil {
-			return nil, twirpErrorToHTTP(err)
+			return nil, rpcErrorToHTTP(err)
 		}
 
 		entry := customEntryToUI(res.Entry)
@@ -636,7 +635,7 @@ func (d *DictionariesUI) saveEntry(
 
 	err = d.setEntryFromForm(svcCtx, lang, text, r)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
@@ -674,7 +673,7 @@ func (d *DictionariesUI) deleteEntry(
 		Text:     text,
 	})
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/")
@@ -707,7 +706,7 @@ func (d *DictionariesUI) renameEntryForm(
 		Language: lang, Text: text,
 	})
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	entry := customEntryToUI(res.Entry)
@@ -724,12 +723,12 @@ func (d *DictionariesUI) renameEntryForm(
 
 	entries, hasMore, err := d.listEntries(ctx, lang, "", 0)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	count, err := d.entryCount(ctx, lang)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{
@@ -814,7 +813,7 @@ func (d *DictionariesUI) renameFormWithFlash(
 		Language: lang, Text: text,
 	})
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	entry := customEntryToUI(res.Entry)
@@ -834,12 +833,12 @@ var renameFailed = howdah.TL("RenameFailed", "Could not rename the entry")
 
 // renameErrorMessage maps a rename RPC error to an editor-facing message.
 func renameErrorMessage(err error) howdah.TextLabel {
-	if twerr, ok := errors.AsType[twirp.Error](err); ok {
-		switch twerr.Code() {
-		case twirp.AlreadyExists:
+	if cErr, ok := errors.AsType[*connect.Error](err); ok {
+		switch cErr.Code() {
+		case connect.CodeAlreadyExists:
 			return howdah.TL("RenameConflict",
 				"An entry with that text already exists")
-		case twirp.NotFound:
+		case connect.CodeNotFound:
 			return howdah.TL("RenameGone", "The entry no longer exists")
 		default:
 			return renameFailed
@@ -1139,7 +1138,7 @@ func (d *DictionariesUI) entryListPage(
 ) (*howdah.Page, error) {
 	entries, hasMore, err := d.listEntries(ctx, lang, query, page)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	return &howdah.Page{

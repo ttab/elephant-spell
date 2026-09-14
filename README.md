@@ -4,7 +4,7 @@ Spellcheck service combining [hunspell](https://hunspell.github.io/) with an edi
 
 The editor-managed layer has two kinds of item. **Entries** are words and phrases with their common mistakes, alternate forms and context guards; **rules** are patterns with placeholders, for the errors a word list cannot express — number ranges, spacing, context-dependent corrections. Both are moderated by the quality desk before they are marked reviewed, and both are used for spellchecking either way.
 
-Three [Twirp](https://github.com/twitchtv/twirp) services expose it — `Check`, `Dictionaries` and `Rules` — alongside a web UI where the dictionaries, the rules, the moderation queue and a spellcheck scratch pad live. Every replica holds the whole editor-managed layer in memory and follows a Postgres eventlog to stay current.
+Three services expose it — `Check`, `Dictionaries` and `Rules` — each served on both a [Twirp](https://github.com/twitchtv/twirp) and a [Connect](https://connectrpc.com/) mount, alongside a web UI where the dictionaries, the rules, the moderation queue and a spellcheck scratch pad live. Every replica holds the whole editor-managed layer in memory and follows a Postgres eventlog to stay current.
 
 ## Documentation
 
@@ -370,6 +370,8 @@ docker run -e CONN_STRING=postgres://... -e OIDC_PROVIDER=... elephant-spell
 
 **No pool statistics, and no `MaxConns`.** Neither pool is registered with `pg.NewPoolStatCollector`, so saturation is invisible; and neither sets `MaxConns`, so each takes `max(4, runtime.NumCPU())` read from the cpuset rather than the cgroup quota. On Kubernetes with the default CPU manager policy that tracks the node's vCPU count, which makes pool size a property of where the pod landed and changes it silently on reschedule.
 
-**Twirp only.** The service serves no Connect mount. `requireWriteScope` already calls `rpc.RequireAnyScope` and translates the resulting `*connect.Error`, so the translation is the only thing that has to go — tracked as ELE-1504.
+**The Twirp mount is still carrying the traffic.** Both stacks are served, but nothing has moved onto Connect yet. `rpc_protocol_responses_total{protocol="twirp"}` going to zero for a method is what says its Twirp mount can be removed, and the `client_id` label names the callers that have to move first.
+
+**Connect and Twirp spell JSON field names differently.** A Connect JSON response uses lowerCamelCase (`customOnly`) where Twirp uses the `.proto` spelling (`custom_only`). Generated clients are unaffected and requests are accepted either way; a caller that reads JSON by hand and changes only the path prefix gets a 200 and `undefined` for every multi-word field.
 
 **No incident history.** The failure modes in [`docs/ops.md`](docs/ops.md#failure-modes) are read off the code rather than taken from a real incident, so they carry no measured numbers. The first one should be written in with them.

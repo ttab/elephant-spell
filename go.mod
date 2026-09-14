@@ -3,6 +3,7 @@ module github.com/ttab/elephant-spell
 go 1.27.1
 
 require (
+	connectrpc.com/connect v1.21.0
 	github.com/blevesearch/segment v0.9.1
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dghubble/trie v0.1.0
@@ -25,7 +26,6 @@ require (
 )
 
 require (
-	connectrpc.com/connect v1.21.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect

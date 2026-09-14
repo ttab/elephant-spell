@@ -6,6 +6,10 @@ linked PRs hold the detail.
 
 ## [v1.6.0] - Unreleased
 
+**New (the services are served on Connect as well as Twirp):** each of `Check`, `Dictionaries` and `Rules` is now mounted twice — on `/twirp/elephant.spell.<Service>/` as before, and on `/elephant.spell.<Service>/` for Connect and gRPC. Both are served by the same implementation, so behaviour, scopes and error codes are identical; nothing about the Twirp mount changes and no caller has to move. A Go client moves by swapping `spell.New<Service>ProtobufClient` for `spellconnect.New<Service>ServiceClient`, which satisfies the same interface. (ELE-1504)
+
+**Behaviour change (Connect JSON spells field names differently):** a Connect JSON response uses lowerCamelCase (`customOnly`, `caseSensitive`) where a Twirp JSON response uses the spelling from the `.proto` (`custom_only`, `case_sensitive`). Requests are accepted either way and generated clients are unaffected. **A caller that reads JSON by hand with `fetch` or `curl` and changes only the path prefix gets a `200` and `undefined` for every multi-word field.** This is deliberate: the standard encoding is what every Connect runtime assumes, so the service does not install a `UseProtoNames` codec to make Connect look like Twirp.
+
 **Breaking (the web UI needs a cookie keyring):** the session cookie is now
 sealed with AES-256-GCM, and the service refuses to start without at least one
 currently usable key. Provision `COOKIE_KEY_1` before the deploy, in the form
@@ -54,6 +58,8 @@ Changes:
 - The eventlog prune job moves onto `elephantine/pg/joblock`, which is where
   the job lock now lives. The lock name, the interval and the retention window
   are unchanged, so there is nothing to reconfigure.
+- The RPC handlers are written in the `elephantine/rpc` error vocabulary rather than constructing Twirp errors directly, which is what lets one implementation answer both stacks with the right code. The web UI reads those errors as the `*connect.Error` values they are, since it calls the implementations in process.
+- The integration suite is parameterised over the two stacks with `TEST_RPC_STACK`, and CI runs it against both, so every existing test is also a Connect test.
 - Repository: a `.golangci.yml` matching the rest of the fleet, where the
   linter previously ran on its defaults. Its findings are fixed rather than
   suppressed, bar two gosec false positives, the diagnostics cgo raises in its

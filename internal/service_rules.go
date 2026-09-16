@@ -11,9 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/postgres"
-	"github.com/ttab/elephantine"
 	"github.com/ttab/elephantine/pg"
-	"github.com/twitchtv/twirp"
+	"github.com/ttab/elephantine/rpc"
 )
 
 // ruleDataFromRPC builds the stored guard data for a rule, or nil when there
@@ -37,13 +36,13 @@ func ruleDataFromRPC(r *spell.Rule) *postgres.RuleData {
 func (a *Application) ListRules(
 	ctx context.Context, req *spell.ListRulesRequest,
 ) (*spell.ListRulesResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if strings.Contains(req.Query, "%") {
-		return nil, twirp.InvalidArgumentError("query", "query cannot contain '%'")
+		return nil, rpc.InvalidArgument("query", "query cannot contain '%'")
 	}
 
 	var pattern string
@@ -65,7 +64,7 @@ func (a *Application) ListRules(
 		Offset:   limit * req.Page,
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorf("read from database: %w", err)
+		return nil, rpc.Internalf("read from database: %w", err)
 	}
 
 	res := spell.ListRulesResponse{
@@ -75,7 +74,7 @@ func (a *Application) ListRules(
 	for i, row := range rows {
 		rule, err := ruleToRPC(row)
 		if err != nil {
-			return nil, twirp.InternalErrorf("convert rule: %v", err)
+			return nil, rpc.Internalf("convert rule: %v", err)
 		}
 
 		res.Rules[i] = rule
@@ -88,25 +87,25 @@ func (a *Application) ListRules(
 func (a *Application) GetRule(
 	ctx context.Context, req *spell.GetRuleRequest,
 ) (*spell.GetRuleResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Id == 0 {
-		return nil, twirp.RequiredArgumentError("id")
+		return nil, rpc.RequiredArgument("id")
 	}
 
 	row, err := a.q.GetRule(ctx, req.Id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, twirp.NotFoundError("rule does not exist")
+		return nil, rpc.NotFound("rule does not exist")
 	} else if err != nil {
-		return nil, twirp.InternalErrorf("read from database: %w", err)
+		return nil, rpc.Internalf("read from database: %w", err)
 	}
 
 	rule, err := ruleToRPC(row)
 	if err != nil {
-		return nil, twirp.InternalErrorf("convert rule: %v", err)
+		return nil, rpc.Internalf("convert rule: %v", err)
 	}
 
 	return &spell.GetRuleResponse{Rule: rule}, nil
@@ -117,35 +116,35 @@ func (a *Application) GetRule(
 func (a *Application) SetRule(
 	ctx context.Context, req *spell.SetRuleRequest,
 ) (_ *spell.SetRuleResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Rule == nil {
-		return nil, twirp.RequiredArgumentError("rule")
+		return nil, rpc.RequiredArgument("rule")
 	}
 
 	if req.Rule.Language == "" {
-		return nil, twirp.RequiredArgumentError("rule.language")
+		return nil, rpc.RequiredArgument("rule.language")
 	}
 
 	_, ok := a.languages[req.Rule.Language]
 	if !ok {
-		return nil, twirp.InvalidArgumentError("rule.language",
+		return nil, rpc.InvalidArgument("rule.language",
 			"unknown language")
 	}
 
 	if req.Rule.Name == "" {
-		return nil, twirp.RequiredArgumentError("rule.name")
+		return nil, rpc.RequiredArgument("rule.name")
 	}
 
 	if req.Rule.Status == "" {
-		return nil, twirp.RequiredArgumentError("rule.status")
+		return nil, rpc.RequiredArgument("rule.status")
 	}
 
 	if req.Rule.Pattern == "" {
-		return nil, twirp.RequiredArgumentError("rule.pattern")
+		return nil, rpc.RequiredArgument("rule.pattern")
 	}
 
 	level, err := entryLevelFromRPC(req.Rule.Level)
@@ -156,12 +155,12 @@ func (a *Application) SetRule(
 	// Validate the pattern up front so a broken rule can't be stored.
 	_, err = compileRule(RuleDef{Pattern: req.Rule.Pattern})
 	if err != nil {
-		return nil, twirp.InvalidArgumentError("rule.pattern", err.Error())
+		return nil, rpc.InvalidArgument("rule.pattern", err.Error())
 	}
 
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("start transaction: %w", err)
+		return nil, rpc.Internalf("start transaction: %w", err)
 	}
 
 	defer pg.Rollback(tx, &outErr)
@@ -186,7 +185,7 @@ func (a *Application) SetRule(
 			UpdatedBy:   auth.Claims.Subject,
 		})
 		if err != nil {
-			return nil, twirp.InternalErrorf("write to database: %w", err)
+			return nil, rpc.Internalf("write to database: %w", err)
 		}
 	} else {
 		affected, err := q.UpdateRule(ctx, postgres.UpdateRuleParams{
@@ -202,23 +201,23 @@ func (a *Application) SetRule(
 			UpdatedBy:   auth.Claims.Subject,
 		})
 		if err != nil {
-			return nil, twirp.InternalErrorf("write to database: %w", err)
+			return nil, rpc.Internalf("write to database: %w", err)
 		}
 
 		if affected == 0 {
-			return nil, twirp.NotFoundError("rule does not exist")
+			return nil, rpc.NotFound("rule does not exist")
 		}
 	}
 
 	err = a.recordChange(ctx, q, tx,
 		req.Rule.Language, strconv.FormatInt(id, 10), false, eventKindRule)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record rule change: %w", err)
+		return nil, rpc.Internalf("record rule change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("commit changes: %w", err)
+		return nil, rpc.Internalf("commit changes: %w", err)
 	}
 
 	return &spell.SetRuleResponse{Id: id}, nil
@@ -228,22 +227,22 @@ func (a *Application) SetRule(
 func (a *Application) SetRuleStatus(
 	ctx context.Context, req *spell.SetRuleStatusRequest,
 ) (_ *spell.SetRuleStatusResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Id == 0 {
-		return nil, twirp.RequiredArgumentError("id")
+		return nil, rpc.RequiredArgument("id")
 	}
 
 	if req.Status == "" {
-		return nil, twirp.RequiredArgumentError("status")
+		return nil, rpc.RequiredArgument("status")
 	}
 
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("start transaction: %w", err)
+		return nil, rpc.Internalf("start transaction: %w", err)
 	}
 
 	defer pg.Rollback(tx, &outErr)
@@ -257,20 +256,20 @@ func (a *Application) SetRuleStatus(
 		UpdatedBy: auth.Claims.Subject,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, twirp.NotFoundError("rule does not exist")
+		return nil, rpc.NotFound("rule does not exist")
 	} else if err != nil {
-		return nil, twirp.InternalErrorf("write to database: %w", err)
+		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
 	err = a.recordChange(ctx, q, tx,
 		language, strconv.FormatInt(req.Id, 10), false, eventKindRule)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record rule change: %w", err)
+		return nil, rpc.Internalf("record rule change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("commit changes: %w", err)
+		return nil, rpc.Internalf("commit changes: %w", err)
 	}
 
 	return &spell.SetRuleStatusResponse{}, nil
@@ -280,18 +279,18 @@ func (a *Application) SetRuleStatus(
 func (a *Application) DeleteRule(
 	ctx context.Context, req *spell.DeleteRuleRequest,
 ) (_ *spell.DeleteRuleResponse, outErr error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Id == 0 {
-		return nil, twirp.RequiredArgumentError("id")
+		return nil, rpc.RequiredArgument("id")
 	}
 
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("start transaction: %w", err)
+		return nil, rpc.Internalf("start transaction: %w", err)
 	}
 
 	defer pg.Rollback(tx, &outErr)
@@ -302,23 +301,23 @@ func (a *Application) DeleteRule(
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Nothing to delete — treat as a no-op success.
 		if err := tx.Commit(ctx); err != nil {
-			return nil, twirp.InternalErrorf("commit changes: %w", err)
+			return nil, rpc.Internalf("commit changes: %w", err)
 		}
 
 		return &spell.DeleteRuleResponse{}, nil
 	} else if err != nil {
-		return nil, twirp.InternalErrorf("write to database: %w", err)
+		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
 	err = a.recordChange(ctx, q, tx,
 		language, strconv.FormatInt(req.Id, 10), true, eventKindRule)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record rule change: %w", err)
+		return nil, rpc.Internalf("record rule change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("commit changes: %w", err)
+		return nil, rpc.Internalf("commit changes: %w", err)
 	}
 
 	return &spell.DeleteRuleResponse{}, nil

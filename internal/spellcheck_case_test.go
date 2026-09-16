@@ -14,10 +14,10 @@ func TestSpellcheckCaseFolding(t *testing.T) {
 		"../dictionaries/sv_SE.aff",
 		"../dictionaries/sv_SE.dic",
 	)
-	test.Must(t, err, "create hunspell checker")
+	test.Mustf(t, err, "create hunspell checker")
 
 	check, err := internal.NewSpellcheck("sv-se", c)
-	test.Must(t, err, "create spellchecker")
+	test.Mustf(t, err, "create spellchecker")
 
 	// Case-insensitive entry (the default): a lowercase common mistake should
 	// still be caught when the word appears capitalised at the start of a
@@ -42,7 +42,7 @@ func TestSpellcheckCaseFolding(t *testing.T) {
 		t.Helper()
 
 		res, err := check.Check(t.Context(), input, true, true)
-		test.Must(t, err, "spellcheck")
+		test.Mustf(t, err, "spellcheck")
 
 		for _, e := range res.Entries {
 			if e.Text == input && len(e.Suggestions) > 0 {

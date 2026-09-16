@@ -18,6 +18,7 @@ import (
 	"github.com/ttab/elephant-spell/docs"
 	"github.com/ttab/elephant-spell/internal"
 	"github.com/ttab/elephantine"
+	"github.com/ttab/howdah"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/oauth2"
 )
@@ -68,6 +69,10 @@ func main() {
 				Sources: cli.EnvVars("PARAMETER_SOURCE"),
 				Value:   "ssm",
 			},
+			// G101: the default is the local development database
+			// created by "mage sql:db", which is the only place
+			// this password reaches.
+			//nolint:gosec
 			&cli.StringFlag{
 				Name:    "db",
 				Value:   "postgres://elephant-spell:pass@localhost/elephant-spell",
@@ -130,6 +135,12 @@ func main() {
 				Sources: cli.EnvVars("DEFAULT_LANGUAGE"),
 				Usage:   "Language to redirect to from the root page",
 				Value:   "sv-se",
+			},
+			&cli.BoolFlag{
+				Name:    "insecure-cookies",
+				Sources: cli.EnvVars("INSECURE_COOKIES"),
+				Usage: "Drop the Secure attribute from session cookies," +
+					" needed when serving the UI over plain HTTP locally",
 			},
 		},
 	}
@@ -225,21 +236,33 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	}
 
 	params := internal.Parameters{
-		Addr:           addr,
-		ProfileAddr:    profileAddr,
-		TLSAddr:        tlsAddr,
-		CertFile:       certFile,
-		KeyFile:        keyFile,
-		Logger:         logger,
-		Database:       dbpool,
-		PubsubDatabase: pubsubPool,
-		AuthInfoParser: auth.AuthParser,
-		Registerer:     prometheus.DefaultRegisterer,
-		CORSHosts:      corsHosts,
+		Addr:            addr,
+		ProfileAddr:     profileAddr,
+		TLSAddr:         tlsAddr,
+		CertFile:        certFile,
+		KeyFile:         keyFile,
+		Logger:          logger,
+		Database:        dbpool,
+		PubsubDatabase:  pubsubPool,
+		AuthInfoParser:  auth.AuthParser,
+		Registerer:      prometheus.DefaultRegisterer,
+		CORSHosts:       corsHosts,
 		PingInterval:    pingInterval,
 		PingGrace:       pingGrace,
 		DefaultLanguage: defaultLanguage,
+		InsecureCookies: c.Bool("insecure-cookies"),
 	}
+
+	// The keyring seals the session and post-login redirect cookies, and
+	// is read from COOKIE_KEY_* — howdah.DefaultCookieKeyPrefix — so that
+	// one secret naming convention holds across the fleet.
+	keyring, err := howdah.CookieKeyringFromEnv(
+		howdah.WithCookieKeyLogger(logger))
+	if err != nil {
+		return fmt.Errorf("read cookie keyring: %w", err)
+	}
+
+	params.CookieKeyring = keyring
 
 	provider, err := oidc.NewProvider(ctx, oidcProviderURL)
 	if err != nil {

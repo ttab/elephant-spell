@@ -1,19 +1,52 @@
 # Elephant spell
 
-Spellcheck microservice combining [hunspell](https://hunspell.github.io/) with a custom dictionary stored in PostgreSQL. Exposes two [Twirp](https://github.com/twitchtv/twirp) RPC services and a web UI for dictionary management.
+Spellcheck service combining [hunspell](https://hunspell.github.io/) with an editor-managed layer stored in PostgreSQL.
 
-## Architecture
+The editor-managed layer has two kinds of item. **Entries** are words and phrases with their common mistakes, alternate forms and context guards; **rules** are patterns with placeholders, for the errors a word list cannot express — number ranges, spacing, context-dependent corrections. Both are moderated by the quality desk before they are marked reviewed, and both are used for spellchecking either way.
 
-- **Dual database pools**: a direct connection (`CONN_STRING`) for PostgreSQL `LISTEN/NOTIFY` and an optional PgBouncer connection (`BOUNCER_CONN_STRING`) for general queries. LISTEN/NOTIFY cannot go through PgBouncer.
-- **Real-time updates**: custom dictionary changes propagate instantly via PostgreSQL `LISTEN/NOTIFY` on the `entry_update` channel.
-- **Phrase matching**: sliding window (up to 3 words) over text using tries for both valid phrases and common mistakes. Pattern expansion syntax `{A|B} {1|2}` generates all combinations.
-- **Embedded dictionaries**: hunspell dictionaries for all supported languages are bundled in the binary via `//go:embed`.
+Three services expose it — `Check`, `Dictionaries` and `Rules` — each served on both a [Twirp](https://github.com/twitchtv/twirp) and a [Connect](https://connectrpc.com/) mount, alongside a web UI where the dictionaries, the rules, the moderation queue and a spellcheck scratch pad live. Every replica holds the whole editor-managed layer in memory and follows a Postgres eventlog to stay current.
+
+## Documentation
+
+| Document | What it settles |
+|---|---|
+| **`README.md`** (this document) | What the repository holds, how to build and run it, what every configuration flag does, and what is missing. |
+| [`docs/architecture.md`](docs/architecture.md) | How the service is built: the process model, the write and read paths, the spellchecker, and the RPC surface. |
+| [`docs/ops.md`](docs/ops.md) | Dependencies, deployment shape, bootstrap order, and the failure modes with the signal for each. |
+| [`docs/observability.md`](docs/observability.md) | Every metric the service exports and what a change in it means. |
+| [`CONTEXT.md`](CONTEXT.md) | What the words mean, and which of them mean something else in the platform. |
+| [`docs/adr/`](docs/adr/) | Why a decision went the way it did, and what was reversed. |
+
+`docs/guide/` is not part of that set: it is the quality desk's guide to writing entries and rules, embedded into the binary and served in the admin UI at `/docs/`.
+
+Links between these are checked mechanically:
+
+```bash
+go run github.com/magefile/mage docs:links
+```
+
+## Repository layout
+
+```
+cmd/spell/          the service binary
+cmd/spell-client/   the operator CLI
+internal/           the application: RPC handlers, spellchecker, eventlog consumer, web UI
+hunspell/           the cgo binding
+dictionaries/       the embedded hunspell dictionaries, one .aff/.dic pair per language
+postgres/           sqlc-generated queries; entry.go is hand-written
+schema/             tern migrations
+templates/          the web UI's html/template files
+locales/            UI translations: en, sv, nb
+assets/             the UI's static files
+docs/               this documentation set, plus guide/ which is served to editors
+magefiles/          the mage targets
+```
 
 ## Building and running
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.27.1+
 - `libhunspell-dev` (CGo dependency)
 - PostgreSQL
 
@@ -45,7 +78,7 @@ go test ./...
 ### Lint
 
 ```bash
-# CI uses golangci-lint v2.7
+# CI uses golangci-lint v2.13; the config is .golangci.yml
 golangci-lint run --timeout=4m
 ```
 
@@ -68,6 +101,27 @@ All flags can also be set via environment variables.
 | `--client-id` | `CLIENT_ID` | | OIDC client ID |
 | `--client-secret` | `CLIENT_SECRET` | | OIDC client secret |
 | `--callback-url` | `CALLBACK_URL` | `http://localhost:1080/auth/callback` | OIDC callback URL |
+| `--default-language` | `DEFAULT_LANGUAGE` | `sv-se` | Language to redirect to from the root page |
+| `--insecure-cookies` | `INSECURE_COOKIES` | `false` | Drop `Secure` from the session cookies, for serving the UI over plain HTTP locally |
+| | `COOKIE_KEY_1`, `COOKIE_KEY_2`, ... | | Cookie keyring, required. See [Cookie keys](#cookie-keys) |
+
+### Cookie keys
+
+The web UI's session cookie is sealed with AES-256-GCM, and the service will
+not start without at least one currently usable key. Each key is its own
+environment variable — `COOKIE_KEY_1`, `COOKIE_KEY_2` and so on — holding an
+RFC 3339 timestamp and the standard base64 of 32 random bytes, separated by an
+underscore:
+
+```
+COOKIE_KEY_1=2026-08-01T00:00:00Z_TWFuIGlzIGRpc3Rpbmd1aXNoZWQsIG5vdCBvbmx5IGJ5IA==
+```
+
+The key sealed with is the one whose timestamp is the latest of those that have
+passed; every configured key still opens, which is what makes a rollover a
+matter of adding the next variable ahead of its use-after date and removing the
+old one once no session can be sealed under it. `howdah.GenerateCookieKey`
+produces a secret, and howdah's README carries the rotation runbook.
 
 ## RPC services
 
@@ -307,3 +361,17 @@ The included `Dockerfile` builds a minimal Debian image with the hunspell runtim
 docker build -t elephant-spell .
 docker run -e CONN_STRING=postgres://... -e OIDC_PROVIDER=... elephant-spell
 ```
+
+## Pending work
+
+**No metrics of its own.** The service registers no collectors: everything on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. Nothing counts spellchecks, nothing reports how many entries or rules a replica has loaded, and — the one that bites — **eventlog lag is not exported**, so "is this replica serving the current dictionary?" cannot be answered from monitoring. [`docs/observability.md`](docs/observability.md#what-is-missing) has the full list and what stands in for it meanwhile.
+
+**No readiness check.** Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`, so a replica reports itself alive as soon as the HTTP listener is up — including while it is still paging through the startup preload. During a rollout that is a window in which a fresh replica answers checks against a partial dictionary. A check here wants `AddOptionalReadyFunction`, since a required one that touches the pool takes replicas out of service exactly when the pool is saturated.
+
+**No pool statistics, and no `MaxConns`.** Neither pool is registered with `pg.NewPoolStatCollector`, so saturation is invisible; and neither sets `MaxConns`, so each takes `max(4, runtime.NumCPU())` read from the cpuset rather than the cgroup quota. On Kubernetes with the default CPU manager policy that tracks the node's vCPU count, which makes pool size a property of where the pod landed and changes it silently on reschedule.
+
+**The Twirp mount is still carrying the traffic.** Both stacks are served, but nothing has moved onto Connect yet. `rpc_protocol_responses_total{protocol="twirp"}` going to zero for a method is what says its Twirp mount can be removed, and the `client_id` label names the callers that have to move first.
+
+**Connect and Twirp spell JSON field names differently.** A Connect JSON response uses lowerCamelCase (`customOnly`) where Twirp uses the `.proto` spelling (`custom_only`). Generated clients are unaffected and requests are accepted either way; a caller that reads JSON by hand and changes only the path prefix gets a 200 and `undefined` for every multi-word field.
+
+**No incident history.** The failure modes in [`docs/ops.md`](docs/ops.md#failure-modes) are read off the code rather than taken from a real incident, so they carry no measured numbers. The first one should be written in with them.

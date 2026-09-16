@@ -187,6 +187,12 @@ other = "One per line: incorrect=correct"
 [CommonMistakesHelp]
 other = "One per line, supports {A|B} expansion"
 
+[SessionUnavailable]
+other = "Your session could not be read, please try again"
+
+[CrossSiteRequestBlocked]
+other = "This request did not come from this site, please try again"
+
 [Error]
 other = "Error"
 

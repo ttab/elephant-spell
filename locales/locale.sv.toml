@@ -187,6 +187,12 @@ other = "En per rad: felaktig=korrekt"
 [CommonMistakesHelp]
 other = "En per rad, stödjer {A|B}-expansion"
 
+[SessionUnavailable]
+other = "Din session kunde inte läsas, försök igen"
+
+[CrossSiteRequestBlocked]
+other = "Förfrågan kom inte från den här webbplatsen, försök igen"
+
 [Error]
 other = "Fel"
 

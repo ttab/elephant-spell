@@ -11,8 +11,8 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -21,3 +21,13 @@ jobs:
       - name: Run go tests
         run: |
           go test ./...
+      # The API suite is parameterised over the two protocol stacks, and
+      # TEST_RPC_STACK picks the one the test clients are built for. Both
+      # mounts are always served; this second run is what exercises every
+      # existing test against Connect.
+      - name: Run go tests against the Connect stack
+        if: ${{ !cancelled() }}
+        env:
+          TEST_RPC_STACK: connect
+        run: |
+          go test ./internal/integration/...

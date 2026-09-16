@@ -18,13 +18,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/ttab/elephant-api/spell"
+	"github.com/ttab/elephant-api/spell/spellconnect"
 	"github.com/ttab/elephant-spell/dictionaries"
 	"github.com/ttab/elephant-spell/hunspell"
 	"github.com/ttab/elephant-spell/postgres"
 	"github.com/ttab/elephantine"
 	"github.com/ttab/elephantine/pg"
+	"github.com/ttab/elephantine/pg/joblock"
+	"github.com/ttab/elephantine/rpc"
 	"github.com/ttab/howdah"
-	"github.com/twitchtv/twirp"
 	"golang.org/x/oauth2"
 )
 
@@ -81,6 +83,16 @@ type Parameters struct {
 	OIDCVerifier *oidc.IDTokenVerifier
 	OIDCConfig   *oauth2.Config
 
+	// CookieKeyring seals the session and post-login redirect cookies.
+	// howdah has no mode that writes a refresh token to the browser in
+	// the clear, so it is required whenever the web UI is served.
+	CookieKeyring *howdah.CookieKeyring
+
+	// InsecureCookies drops the Secure attribute from the cookies howdah
+	// sets, which a deployment served over plain HTTP needs for the
+	// browser to send the session back. For local development only.
+	InsecureCookies bool
+
 	// Embedded filesystems for the web UI.
 	Templates fs.FS
 	Locales   fs.FS
@@ -89,7 +101,7 @@ type Parameters struct {
 }
 
 func NewApplication(
-	ctx context.Context, p Parameters,
+	_ context.Context, p Parameters,
 ) (_ *Application, outErr error) {
 	// We need to set up a directory with our dictionaries so that hunspell
 	// can load them.
@@ -233,6 +245,25 @@ func (a *Application) Run(ctx context.Context) error {
 	server.RegisterAPI(dictServer, opts)
 	server.RegisterAPI(rulesServer, opts)
 
+	// The same three services on their Connect paths
+	// (/elephant.spell.<Service>/), served by the same *Application. The
+	// generated ServiceHandlers adapt the plain spell.* interfaces, so
+	// there is one implementation and no second set of methods to keep in
+	// step; the handlers return coded errors that each stack renders in
+	// its own vocabulary.
+	handlerOpts := opts.HandlerOptions()
+
+	checkPath, checkHandler := spellconnect.NewCheckServiceHandler(
+		a, handlerOpts...)
+	dictPath, dictHandler := spellconnect.NewDictionariesServiceHandler(
+		a, handlerOpts...)
+	rulesPath, rulesHandler := spellconnect.NewRulesServiceHandler(
+		a, handlerOpts...)
+
+	server.RegisterConnect(checkPath, checkHandler, opts)
+	server.RegisterConnect(dictPath, dictHandler, opts)
+	server.RegisterConnect(rulesPath, rulesHandler, opts)
+
 	err = a.setupUI(server.Mux)
 	if err != nil {
 		return fmt.Errorf("set up web UI: %w", err)
@@ -253,14 +284,19 @@ func (a *Application) Run(ctx context.Context) error {
 	})
 
 	grp.Required("eventlog_pruner", func(ctx context.Context) error {
-		return pg.RunInJobLock(
+		return joblock.Run(
 			grace.CancelOnStop(ctx), a.db, a.logger,
 			"eventlog-pruner", "eventlog-prune",
-			pg.JobLockOptions{},
+			joblock.Options{},
 			a.runEventlogPruner)
 	})
 
-	return grp.Wait()
+	err = grp.Wait()
+	if err != nil {
+		return fmt.Errorf("run server: %w", err)
+	}
+
+	return nil
 }
 
 // runEventlogPruner periodically deletes events past the retention window. It
@@ -368,9 +404,19 @@ func (a *Application) runEntryUpdater(ctx context.Context) error {
 }
 
 func (a *Application) setupUI(mux *http.ServeMux) error {
-	cAuth := howdah.NewOIDCAuth(
+	var authOpts []howdah.OIDCAuthOption
+
+	if a.p.InsecureCookies {
+		authOpts = append(authOpts, howdah.WithInsecureCookies())
+	}
+
+	cAuth, err := howdah.NewOIDCAuth(
 		a.p.OIDCProvider, a.p.OIDCVerifier, *a.p.OIDCConfig,
+		a.p.CookieKeyring, authOpts...,
 	)
+	if err != nil {
+		return fmt.Errorf("set up authentication: %w", err)
+	}
 
 	supportedLanguages := make([]string, 0, len(a.languages))
 	for code := range a.languages {
@@ -420,7 +466,7 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 
 // SupportedLanguages implements spell.Dictionaries.
 func (a *Application) SupportedLanguages(
-	ctx context.Context, req *spell.SupportedLanguagesRequest,
+	_ context.Context, _ *spell.SupportedLanguagesRequest,
 ) (*spell.SupportedLanguagesResponse, error) {
 	var res spell.SupportedLanguagesResponse
 
@@ -433,26 +479,40 @@ func (a *Application) SupportedLanguages(
 	return &res, nil
 }
 
+// requireWriteScope authorizes a dictionary or rule write. The error is
+// returned as the *connect.Error the check produced: the Connect mount
+// renders it directly, and the Twirp mount's interceptor — installed by
+// ServiceOptions.ServerOptions — translates it. One implementation serves
+// both stacks precisely because nothing here picks a protocol.
+func requireWriteScope(ctx context.Context) (*elephantine.AuthInfo, error) {
+	info, err := rpc.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	if err != nil {
+		return nil, err
+	}
+
+	return info, nil
+}
+
 // DeleteEntry implements spell.Dictionaries.
 func (a *Application) DeleteEntry(
 	ctx context.Context, req *spell.DeleteEntryRequest,
 ) (_ *spell.DeleteEntryResponse, outErr error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
-		return nil, twirp.RequiredArgumentError("language")
+		return nil, rpc.RequiredArgument("language")
 	}
 
 	if req.Text == "" {
-		return nil, twirp.RequiredArgumentError("text")
+		return nil, rpc.RequiredArgument("text")
 	}
 
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("start transaction: %w", err)
+		return nil, rpc.Internalf("start transaction: %w", err)
 	}
 
 	defer pg.Rollback(tx, &outErr)
@@ -464,17 +524,17 @@ func (a *Application) DeleteEntry(
 		Entry:    req.Text,
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorf("write to database: %w", err)
+		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
 	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record entry change: %w", err)
+		return nil, rpc.Internalf("record entry change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("commit changes: %w", err)
+		return nil, rpc.Internalf("commit changes: %w", err)
 	}
 
 	return &spell.DeleteEntryResponse{}, nil
@@ -484,31 +544,31 @@ func (a *Application) DeleteEntry(
 func (a *Application) RenameEntry(
 	ctx context.Context, req *spell.RenameEntryRequest,
 ) (_ *spell.RenameEntryResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
-		return nil, twirp.RequiredArgumentError("language")
+		return nil, rpc.RequiredArgument("language")
 	}
 
 	if req.Text == "" {
-		return nil, twirp.RequiredArgumentError("text")
+		return nil, rpc.RequiredArgument("text")
 	}
 
 	if req.NewText == "" {
-		return nil, twirp.RequiredArgumentError("new_text")
+		return nil, rpc.RequiredArgument("new_text")
 	}
 
 	if req.NewText == req.Text {
-		return nil, twirp.InvalidArgumentError("new_text",
+		return nil, rpc.InvalidArgument("new_text",
 			"must differ from the current text")
 	}
 
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("start transaction: %w", err)
+		return nil, rpc.Internalf("start transaction: %w", err)
 	}
 
 	defer pg.Rollback(tx, &outErr)
@@ -521,10 +581,10 @@ func (a *Application) RenameEntry(
 		Entry:    req.NewText,
 	})
 	if err == nil {
-		return nil, twirp.NewError(twirp.AlreadyExists,
+		return nil, rpc.AlreadyExists(
 			"an entry with that text already exists")
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, twirp.InternalErrorf("read from database: %w", err)
+		return nil, rpc.Internalf("read from database: %w", err)
 	}
 
 	affected, err := q.RenameEntry(ctx, postgres.RenameEntryParams{
@@ -535,28 +595,28 @@ func (a *Application) RenameEntry(
 		UpdatedBy: auth.Claims.Subject,
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorf("write to database: %w", err)
+		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
 	if affected == 0 {
-		return nil, twirp.NotFoundError("entry does not exist")
+		return nil, rpc.NotFound("entry does not exist")
 	}
 
 	// A rename is a remove of the old text plus an add of the new one, so the
 	// listener clears the stale phrase and loads the renamed one.
 	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record entry change: %w", err)
+		return nil, rpc.Internalf("record entry change: %w", err)
 	}
 
 	err = a.recordChange(ctx, q, tx, req.Language, req.NewText, false, eventKindEntry)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record entry change: %w", err)
+		return nil, rpc.Internalf("record entry change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("commit changes: %w", err)
+		return nil, rpc.Internalf("commit changes: %w", err)
 	}
 
 	return &spell.RenameEntryResponse{}, nil
@@ -566,17 +626,17 @@ func (a *Application) RenameEntry(
 func (a *Application) GetEntry(
 	ctx context.Context, req *spell.GetEntryRequest,
 ) (*spell.GetEntryResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
-		return nil, twirp.RequiredArgumentError("language")
+		return nil, rpc.RequiredArgument("language")
 	}
 
 	if req.Text == "" {
-		return nil, twirp.RequiredArgumentError("text")
+		return nil, rpc.RequiredArgument("text")
 	}
 
 	row, err := a.q.GetEntry(ctx, postgres.GetEntryParams{
@@ -584,12 +644,12 @@ func (a *Application) GetEntry(
 		Entry:    req.Text,
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorf("read from database: %w", err)
+		return nil, rpc.Internalf("read from database: %w", err)
 	}
 
 	level, err := entryLevelToRPC(row.Level)
 	if err != nil {
-		return nil, twirp.InternalErrorf("get entry level: %v", err)
+		return nil, rpc.Internalf("get entry level: %v", err)
 	}
 
 	var (
@@ -642,21 +702,21 @@ func applyEntryGuards(e *spell.CustomEntry, d *postgres.EntryData) {
 
 // ListDictionaries implements spell.Dictionaries.
 func (a *Application) ListDictionaries(
-	ctx context.Context, req *spell.ListDictionariesRequest,
+	ctx context.Context, _ *spell.ListDictionariesRequest,
 ) (*spell.ListDictionariesResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	rows, err := a.q.ListDictionaries(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("read from database: %w", err)
+		return nil, rpc.Internalf("read from database: %w", err)
 	}
 
 	ruleRows, err := a.q.ListRuleCounts(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("read rule counts: %w", err)
+		return nil, rpc.Internalf("read rule counts: %w", err)
 	}
 
 	// Merge per-language word and rule counts into one entry per language.
@@ -698,13 +758,13 @@ func (a *Application) ListEntries(
 	ctx context.Context,
 	req *spell.ListEntriesRequest,
 ) (*spell.ListEntriesResponse, error) {
-	_, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	_, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if strings.Contains(req.Query, "%") {
-		return nil, twirp.InvalidArgumentError("query", "query cannot contain '%'")
+		return nil, rpc.InvalidArgument("query", "query cannot contain '%'")
 	}
 
 	var pattern string
@@ -728,7 +788,7 @@ func (a *Application) ListEntries(
 		Offset:   offset,
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorf("read from database: %w", err)
+		return nil, rpc.Internalf("read from database: %w", err)
 	}
 
 	res := spell.ListEntriesResponse{
@@ -738,7 +798,7 @@ func (a *Application) ListEntries(
 	for i, row := range rows {
 		level, err := entryLevelToRPC(row.Level)
 		if err != nil {
-			return nil, twirp.InternalErrorf("get entry level: %v", err)
+			return nil, rpc.Internalf("get entry level: %v", err)
 		}
 
 		var (
@@ -779,31 +839,31 @@ func (a *Application) ListEntries(
 func (a *Application) SetEntry(
 	ctx context.Context, req *spell.SetEntryRequest,
 ) (_ *spell.SetEntryResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Entry == nil {
-		return nil, twirp.RequiredArgumentError("entry")
+		return nil, rpc.RequiredArgument("entry")
 	}
 
 	if req.Entry.Language == "" {
-		return nil, twirp.RequiredArgumentError("entry.language")
+		return nil, rpc.RequiredArgument("entry.language")
 	}
 
 	_, ok := a.languages[req.Entry.Language]
 	if !ok {
-		return nil, twirp.InvalidArgumentError("entry.language",
+		return nil, rpc.InvalidArgument("entry.language",
 			fmt.Sprintf("unknown language %q", req.Entry.Language))
 	}
 
 	if req.Entry.Text == "" {
-		return nil, twirp.RequiredArgumentError("entry.text")
+		return nil, rpc.RequiredArgument("entry.text")
 	}
 
 	if req.Entry.Status == "" {
-		return nil, twirp.RequiredArgumentError("entry.status")
+		return nil, rpc.RequiredArgument("entry.status")
 	}
 
 	level, err := entryLevelFromRPC(req.Entry.Level)
@@ -813,7 +873,7 @@ func (a *Application) SetEntry(
 
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("start transaction: %w", err)
+		return nil, rpc.Internalf("start transaction: %w", err)
 	}
 
 	defer pg.Rollback(tx, &outErr)
@@ -839,17 +899,17 @@ func (a *Application) SetEntry(
 		UpdatedBy: auth.Claims.Subject,
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorf("write to database: %w", err)
+		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
 	err = a.recordChange(ctx, q, tx, req.Entry.Language, req.Entry.Text, false, eventKindEntry)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record entry change: %w", err)
+		return nil, rpc.Internalf("record entry change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("commit changes: %w", err)
+		return nil, rpc.Internalf("commit changes: %w", err)
 	}
 
 	return &spell.SetEntryResponse{}, nil
@@ -861,26 +921,26 @@ func (a *Application) SetEntry(
 func (a *Application) SetEntryStatus(
 	ctx context.Context, req *spell.SetEntryStatusRequest,
 ) (_ *spell.SetEntryStatusResponse, outErr error) {
-	auth, err := elephantine.RequireAnyScope(ctx, ScopeSpellcheckWrite)
+	auth, err := requireWriteScope(ctx)
 	if err != nil {
-		return nil, err //nolint: wrapcheck
+		return nil, err
 	}
 
 	if req.Language == "" {
-		return nil, twirp.RequiredArgumentError("language")
+		return nil, rpc.RequiredArgument("language")
 	}
 
 	if req.Text == "" {
-		return nil, twirp.RequiredArgumentError("text")
+		return nil, rpc.RequiredArgument("text")
 	}
 
 	if req.Status == "" {
-		return nil, twirp.RequiredArgumentError("status")
+		return nil, rpc.RequiredArgument("status")
 	}
 
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("start transaction: %w", err)
+		return nil, rpc.Internalf("start transaction: %w", err)
 	}
 
 	defer pg.Rollback(tx, &outErr)
@@ -895,21 +955,21 @@ func (a *Application) SetEntryStatus(
 		UpdatedBy: auth.Claims.Subject,
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorf("write to database: %w", err)
+		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
 	if affected == 0 {
-		return nil, twirp.NotFoundError("entry does not exist")
+		return nil, rpc.NotFound("entry does not exist")
 	}
 
 	err = a.recordChange(ctx, q, tx, req.Language, req.Text, false, eventKindEntry)
 	if err != nil {
-		return nil, twirp.InternalErrorf("record entry change: %w", err)
+		return nil, rpc.Internalf("record entry change: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return nil, twirp.InternalErrorf("commit changes: %w", err)
+		return nil, rpc.Internalf("commit changes: %w", err)
 	}
 
 	return &spell.SetEntryStatusResponse{}, nil
@@ -960,7 +1020,7 @@ func entryLevelFromRPC(level spell.CorrectionLevel) (postgres.EntryLevel, error)
 		l = postgres.EntryLevelSuggestion
 	case spell.CorrectionLevel_LEVEL_UNSPECIFIED:
 	default:
-		return "", twirp.InvalidArgumentError("level",
+		return "", rpc.InvalidArgument("level",
 			"unhandled level")
 	}
 
@@ -985,14 +1045,14 @@ func (a *Application) Text(
 ) (*spell.TextResponse, error) {
 	_, ok := elephantine.GetAuthInfo(ctx)
 	if !ok {
-		return nil, twirp.Unauthenticated.Error("unauthenticated")
+		return nil, rpc.Unauthenticated("unauthenticated")
 	}
 
 	langCode := strings.ToLower(req.Language)
 
 	lang, ok := a.languages[langCode]
 	if !ok {
-		return nil, twirp.InvalidArgument.Errorf(
+		return nil, rpc.InvalidArgumentf("language",
 			"unsupported language %q", req.Language)
 	}
 
@@ -1004,7 +1064,7 @@ func (a *Application) Text(
 		m, err := lang.Check(ctx, req.Text[i], req.Suggestions, req.CustomOnly)
 		if err != nil {
 			return nil, fmt.Errorf(
-				"spellcheck text %d: %v", i+1, err)
+				"spellcheck text %d: %w", i+1, err)
 		}
 
 		res.Misspelled[i] = m
@@ -1020,24 +1080,24 @@ func (a *Application) Suggestions(
 ) (*spell.SuggestionsResponse, error) {
 	_, ok := elephantine.GetAuthInfo(ctx)
 	if !ok {
-		return nil, twirp.Unauthenticated.Error("unauthenticated")
+		return nil, rpc.Unauthenticated("unauthenticated")
 	}
 
 	if req.Text == "" {
-		return nil, twirp.RequiredArgumentError("text")
+		return nil, rpc.RequiredArgument("text")
 	}
 
 	langCode := strings.ToLower(req.Language)
 
 	lang, ok := a.languages[langCode]
 	if !ok {
-		return nil, twirp.InvalidArgument.Errorf(
+		return nil, rpc.InvalidArgumentf("language",
 			"unsupported language %q", req.Language)
 	}
 
 	sugg, err := lang.Suggestions(req.Text, req.CustomOnly)
 	if err != nil {
-		return nil, twirp.InternalErrorf(
+		return nil, rpc.Internalf(
 			"generate suggestions: %v", err)
 	}
 

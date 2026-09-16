@@ -187,6 +187,12 @@ other = "En per linje: feil=riktig"
 [CommonMistakesHelp]
 other = "En per linje, støtter {A|B}-ekspansjon"
 
+[SessionUnavailable]
+other = "Økten din kunne ikke leses, prøv igjen"
+
+[CrossSiteRequestBlocked]
+other = "Forespørselen kom ikke fra dette nettstedet, prøv igjen"
+
 [Error]
 other = "Feil"
 

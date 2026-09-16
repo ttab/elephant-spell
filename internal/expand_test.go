@@ -104,6 +104,7 @@ func TestExpand(t *testing.T) {
 			case (err != nil) != tt.ExpectErr:
 				t.Errorf("Expand(%q) error = %v, expectErr %v",
 					tt.Input, err, tt.ExpectErr)
+
 				return
 			case tt.ExpectErr:
 				return

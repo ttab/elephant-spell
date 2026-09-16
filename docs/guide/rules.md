@@ -4,7 +4,7 @@ A **pattern rule** matches text against a small pattern language instead of
 listing fixed strings. This catches errors that can't be enumerated — number
 ranges, words with other words in between, and corrections that depend on the
 surrounding words. For plain words, phrases and inflected forms see
-[Dictionaries](/docs/dictionaries).
+[Dictionaries](dictionaries.md).
 
 Rules are managed in the **Rules** section of the admin UI, separately from
 dictionary words.

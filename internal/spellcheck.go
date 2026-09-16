@@ -161,6 +161,7 @@ func resolveLongest(cands []candidateMatch) []bool {
 
 	slices.SortStableFunc(order, func(a, b int) int {
 		la := cands[a].end - cands[a].start
+
 		lb := cands[b].end - cands[b].start
 		if la != lb {
 			return lb - la
@@ -187,6 +188,7 @@ func resolveLongest(cands []candidateMatch) []bool {
 
 		if !suppressed {
 			keep[idx] = true
+
 			accepted = append(accepted, c)
 		}
 	}
@@ -602,7 +604,6 @@ func (s *Spellcheck) Check(
 		_, _ = repl.WriteString(buf, text)
 
 		textReader = buf
-
 	} else {
 		textReader = bytes.NewReader(textData)
 	}

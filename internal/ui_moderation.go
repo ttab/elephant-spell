@@ -51,7 +51,7 @@ type moderationItem struct {
 }
 
 func (m moderationItem) IsRule() bool {
-	return m.Kind == "rule"
+	return m.Kind == eventKindRule
 }
 
 // guardDisplay is one configured context guard for the moderation card: a label
@@ -92,10 +92,10 @@ type moderationContents struct {
 
 func levelString(l spell.CorrectionLevel) string {
 	if l == spell.CorrectionLevel_LEVEL_SUGGESTION {
-		return "suggestion"
+		return uiLevelSuggestion
 	}
 
-	return "error"
+	return uiLevelError
 }
 
 // moderationData assembles the unified moderation view for a language and page:
@@ -132,7 +132,7 @@ func (d *DictionariesUI) moderationData(
 
 	entries, err := d.dicts.ListEntries(svcCtx, &spell.ListEntriesRequest{
 		Language: lang,
-		Status:   "pending",
+		Status:   statusPending,
 		PageSize: moderationFetch,
 	})
 	if err != nil {
@@ -141,7 +141,7 @@ func (d *DictionariesUI) moderationData(
 
 	rules, err := d.rules.ListRules(svcCtx, &spell.ListRulesRequest{
 		Language: lang,
-		Status:   "pending",
+		Status:   statusPending,
 		PageSize: moderationFetch,
 	})
 	if err != nil {
@@ -193,15 +193,9 @@ func (d *DictionariesUI) moderationData(
 		return items[i].Updated > items[j].Updated
 	})
 
-	start := int(page) * moderationPageSize
-	if start > len(items) {
-		start = len(items)
-	}
+	start := min(int(page)*moderationPageSize, len(items))
 
-	end := start + moderationPageSize
-	if end > len(items) {
-		end = len(items)
-	}
+	end := min(start+moderationPageSize, len(items))
 
 	return moderationContents{
 		Languages: langs,
@@ -261,7 +255,7 @@ func (d *DictionariesUI) moderationPage(
 
 	contents, err := d.moderationData(ctx, lang, page)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	if isHtmx(r) {
@@ -309,30 +303,42 @@ func (d *DictionariesUI) moderationAction(
 			if status == "" {
 				_, err = d.rules.DeleteRule(svcCtx,
 					&spell.DeleteRuleRequest{Id: id})
+				if err != nil {
+					return fmt.Errorf("delete rule: %w", err)
+				}
 
-				return err
+				return nil
 			}
 
 			_, err = d.rules.SetRuleStatus(svcCtx,
 				&spell.SetRuleStatusRequest{Id: id, Status: status})
+			if err != nil {
+				return fmt.Errorf("set rule status: %w", err)
+			}
 
-			return err
+			return nil
 		}
 
 		if status == "" {
 			_, err := d.dicts.DeleteEntry(svcCtx, &spell.DeleteEntryRequest{
 				Language: lang, Text: ident,
 			})
+			if err != nil {
+				return fmt.Errorf("delete entry: %w", err)
+			}
 
-			return err
+			return nil
 		}
 
 		_, err := d.dicts.SetEntryStatus(svcCtx,
 			&spell.SetEntryStatusRequest{
 				Language: lang, Text: ident, Status: status,
 			})
+		if err != nil {
+			return fmt.Errorf("set entry status: %w", err)
+		}
 
-		return err
+		return nil
 	}
 }
 
@@ -368,18 +374,18 @@ func (d *DictionariesUI) moderate(
 
 	err = action(svcCtx, kind, lang, ident)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	contents, err := d.moderationData(ctx, lang, page)
 	if err != nil {
-		return nil, twirpErrorToHTTP(err)
+		return nil, rpcErrorToHTTP(err)
 	}
 
 	if len(contents.Items) == 0 && page > 0 {
 		contents, err = d.moderationData(ctx, lang, page-1)
 		if err != nil {
-			return nil, twirpErrorToHTTP(err)
+			return nil, rpcErrorToHTTP(err)
 		}
 	}
 

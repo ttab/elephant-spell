@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	connect "connectrpc.com/connect"
 	spellapi "github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/internal/integration"
 	"github.com/twitchtv/twirp"
@@ -141,13 +142,13 @@ func TestAPI(t *testing.T) {
 		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
 			Language: "sv-se", Text: "Faroes", NewText: "Iceland",
 		})
-		assertTwirpCode(t, err, twirp.AlreadyExists)
+		assertCode(t, err, connect.CodeAlreadyExists)
 
 		// Renaming a missing entry is a not-found.
 		_, err = stack.Dictionaries.RenameEntry(ctx, &spellapi.RenameEntryRequest{
 			Language: "sv-se", Text: "Nonexistent", NewText: "Whatever",
 		})
-		assertTwirpCode(t, err, twirp.NotFound)
+		assertCode(t, err, connect.CodeNotFound)
 	})
 
 	t.Run("spellcheck_flow_through_eventlog", func(t *testing.T) {
@@ -239,6 +240,7 @@ func TestAPI(t *testing.T) {
 			{"set entry nil", func() error {
 				_, err := stack.Dictionaries.SetEntry(ctx,
 					&spellapi.SetEntryRequest{})
+
 				return err
 			}},
 			{"set unknown language", func() error {
@@ -247,18 +249,21 @@ func TestAPI(t *testing.T) {
 						Language: "zz-zz", Text: "x", Status: "approved",
 					},
 				})
+
 				return err
 			}},
 			{"set missing text", func() error {
 				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
 					Entry: &spellapi.CustomEntry{Language: "sv-se", Status: "approved"},
 				})
+
 				return err
 			}},
 			{"set missing status", func() error {
 				_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
 					Entry: &spellapi.CustomEntry{Language: "sv-se", Text: "x"},
 				})
+
 				return err
 			}},
 			{"set invalid level", func() error {
@@ -268,39 +273,45 @@ func TestAPI(t *testing.T) {
 						Level: spellapi.CorrectionLevel(99),
 					},
 				})
+
 				return err
 			}},
 			{"delete missing language", func() error {
 				_, err := stack.Dictionaries.DeleteEntry(ctx,
 					&spellapi.DeleteEntryRequest{Text: "x"})
+
 				return err
 			}},
 			{"get missing text", func() error {
 				_, err := stack.Dictionaries.GetEntry(ctx,
 					&spellapi.GetEntryRequest{Language: "sv-se"})
+
 				return err
 			}},
 			{"list entries bad query", func() error {
 				_, err := stack.Dictionaries.ListEntries(ctx,
 					&spellapi.ListEntriesRequest{Query: "a%b"})
+
 				return err
 			}},
 			{"check unsupported language", func() error {
 				_, err := stack.Check.Text(ctx, &spellapi.TextRequest{
 					Language: "zz-zz", Text: []string{"hej"},
 				})
+
 				return err
 			}},
 			{"suggestions missing text", func() error {
 				_, err := stack.Check.Suggestions(ctx,
 					&spellapi.SuggestionsRequest{Language: "sv-se"})
+
 				return err
 			}},
 		}
 
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				assertTwirpCode(t, tc.call(), twirp.InvalidArgument)
+				assertCode(t, tc.call(), connect.CodeInvalidArgument)
 			})
 		}
 	})
@@ -341,7 +352,7 @@ func TestAPI(t *testing.T) {
 			Text:     []string{"hej"},
 		})
 
-		assertTwirpCode(t, err, twirp.Unauthenticated)
+		assertCode(t, err, connect.CodeUnauthenticated)
 	})
 
 	t.Run("write_requires_scope", func(t *testing.T) {
@@ -358,7 +369,7 @@ func TestAPI(t *testing.T) {
 				},
 			})
 
-		assertTwirpCode(t, err, twirp.PermissionDenied)
+		assertCode(t, err, connect.CodePermissionDenied)
 	})
 
 	t.Run("moderation_status_flow", func(t *testing.T) {
@@ -453,7 +464,7 @@ func TestAPI(t *testing.T) {
 				Language: "sv-se", Text: "does-not-exist", Status: "accepted",
 			})
 
-		assertTwirpCode(t, err, twirp.NotFound)
+		assertCode(t, err, connect.CodeNotFound)
 	})
 
 	t.Run("search_matches_mistakes_and_description", func(t *testing.T) {
@@ -589,7 +600,7 @@ func TestAPI(t *testing.T) {
 			},
 		})
 
-		assertTwirpCode(t, err, twirp.InvalidArgument)
+		assertCode(t, err, connect.CodeInvalidArgument)
 	})
 
 	t.Run("rule_status_and_delete", func(t *testing.T) {
@@ -635,24 +646,66 @@ func TestAPI(t *testing.T) {
 		_, err = stack.Rules.SetRuleStatus(ctx, &spellapi.SetRuleStatusRequest{
 			Id: 999999, Status: "accepted",
 		})
-		assertTwirpCode(t, err, twirp.NotFound)
+		assertCode(t, err, connect.CodeNotFound)
 	})
 }
 
-// assertTwirpCode fails unless err is a twirp error with the wanted code.
-func assertTwirpCode(t *testing.T, err error, want twirp.ErrorCode) {
+// assertCode checks the RPC code without caring which stack produced it.
+// The suite runs against both, and a Twirp client returns a twirp.Error
+// where a Connect client returns a *connect.Error for the same refusal —
+// so an assertion written against either type passes on one stack and
+// fails on the other for no reason the service is responsible for.
+//
+// The want is a connect.Code because that is what the handlers are written
+// in; the twirp branch maps back through the same table elephantine's
+// interceptor translates forward with.
+func assertCode(t *testing.T, err error, want connect.Code) {
 	t.Helper()
 
 	if err == nil {
 		t.Fatalf("expected a %s error, got nil", want)
 	}
 
-	var twerr twirp.Error
-	if !errors.As(err, &twerr) {
-		t.Fatalf("expected a twirp error, got %T: %v", err, err)
-	}
+	var (
+		cErr  *connect.Error
+		twErr twirp.Error
+	)
 
-	if twerr.Code() != want {
-		t.Fatalf("expected code %s, got %s: %v", want, twerr.Code(), err)
+	switch {
+	case errors.As(err, &cErr):
+		if cErr.Code() != want {
+			t.Fatalf("expected code %s, got %s: %v", want, cErr.Code(), err)
+		}
+	case errors.As(err, &twErr):
+		got := twirpCodeToConnect(twErr.Code())
+		if got != want {
+			t.Fatalf("expected code %s, got %s (twirp %s): %v",
+				want, got, twErr.Code(), err)
+		}
+	default:
+		t.Fatalf("expected a coded RPC error, got %T: %v", err, err)
+	}
+}
+
+// twirpCodeToConnect maps the Twirp codes this suite asserts on back to
+// the Connect codes the handlers raise. Only the codes the tests use are
+// listed; an unexpected one fails loudly rather than comparing as equal to
+// something it is not.
+func twirpCodeToConnect(code twirp.ErrorCode) connect.Code {
+	switch code {
+	case twirp.InvalidArgument, twirp.Malformed:
+		return connect.CodeInvalidArgument
+	case twirp.NotFound:
+		return connect.CodeNotFound
+	case twirp.AlreadyExists:
+		return connect.CodeAlreadyExists
+	case twirp.Unauthenticated:
+		return connect.CodeUnauthenticated
+	case twirp.PermissionDenied:
+		return connect.CodePermissionDenied
+	case twirp.Internal:
+		return connect.CodeInternal
+	default:
+		return connect.Code(0)
 	}
 }

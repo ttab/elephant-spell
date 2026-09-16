@@ -18,10 +18,10 @@ func TestSpellcheck(t *testing.T) {
 		"../dictionaries/sv_SE.aff",
 		"../dictionaries/sv_SE.dic",
 	)
-	test.Must(t, err, "create hunspell checker")
+	test.Mustf(t, err, "create hunspell checker")
 
 	check, err := internal.NewSpellcheck("sv-se", c)
-	test.Must(t, err, "create spellchecker")
+	test.Mustf(t, err, "create spellchecker")
 
 	check.AddPhrase(internal.Phrase{
 		Text:           "fly",
@@ -49,26 +49,26 @@ func TestSpellcheck(t *testing.T) {
 		t.Context(),
 		"Mohammar Khadaffi kan inte bestämma sig för om han ska fly eller rymma. Kanske blir det något mitt emmellan.",
 		false, false)
-	test.Must(t, err, "spellcheck")
+	test.Mustf(t, err, "spellcheck")
 
-	test.TestMessageAgainstGolden(t, regenerate, result,
+	test.MessageAgainstGolden(t, regenerate, result,
 		filepath.Join("..", "testdata", t.Name(), "result.json"))
 
 	resultSugg, err := check.Check(
 		t.Context(),
 		"Mohammar Khadaffi kan inte bestämma sig för om han ska fly eller rymma. Kanske blir det något mitt emmellan.",
 		true, false)
-	test.Must(t, err, "spellcheck")
+	test.Mustf(t, err, "spellcheck")
 
-	test.TestMessageAgainstGolden(t, regenerate, resultSugg,
+	test.MessageAgainstGolden(t, regenerate, resultSugg,
 		filepath.Join("..", "testdata", t.Name(), "result-suggestions.json"))
 
 	resultCustom, err := check.Check(
 		t.Context(),
 		"Mohammar Khadaffi kan inte bestämma sig för om han ska fly eller rymma. Kanske blir det något mitt emmellan.",
 		true, true)
-	test.Must(t, err, "spellcheck custom-only")
+	test.Mustf(t, err, "spellcheck custom-only")
 
-	test.TestMessageAgainstGolden(t, regenerate, resultCustom,
+	test.MessageAgainstGolden(t, regenerate, resultCustom,
 		filepath.Join("..", "testdata", t.Name(), "result-custom-only.json"))
 }

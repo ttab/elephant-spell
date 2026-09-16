@@ -4,7 +4,7 @@ Everything from v1.0.0 forward is documented here; the releases before it are
 in the git history only. Entries are derived from the release tags, and the
 linked PRs hold the detail.
 
-## [v1.6.0] - Unreleased
+## [v1.6.0] - 2026-09-16
 
 **New (the services are served on Connect as well as Twirp):** each of `Check`, `Dictionaries` and `Rules` is now mounted twice — on `/twirp/elephant.spell.<Service>/` as before, and on `/elephant.spell.<Service>/` for Connect and gRPC. Both are served by the same implementation, so behaviour, scopes and error codes are identical; nothing about the Twirp mount changes and no caller has to move. A Go client moves by swapping `spell.New<Service>ProtobufClient` for `spellconnect.New<Service>ServiceClient`, which satisfies the same interface. (ELE-1504)
 

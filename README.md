@@ -95,6 +95,7 @@ All flags can also be set via environment variables.
 | `--key-file` | `TLS_KEY` | | TLS key file |
 | `--db` | `CONN_STRING` | `postgres://elephant-spell:pass@localhost/elephant-spell` | Primary database connection (used for LISTEN/NOTIFY) |
 | `--db-bouncer` | `BOUNCER_CONN_STRING` | | Optional PgBouncer connection for regular queries |
+| `--db-max-conns` | `DB_MAX_CONNS` | `8` | Size of the pool queries run on: the bouncer pool when `BOUNCER_CONN_STRING` is set, otherwise the direct pool. With a bouncer the direct pool is fixed at 2. Zero or less leaves it to pgx |
 | `--log-level` | `LOG_LEVEL` | `debug` | Log level |
 | `--cors-host` | `CORS_HOSTS` | | CORS hosts (supports wildcards) |
 | `--oidc-provider` | `OIDC_PROVIDER` | | OIDC provider URL (required for web UI) |
@@ -364,11 +365,9 @@ docker run -e CONN_STRING=postgres://... -e OIDC_PROVIDER=... elephant-spell
 
 ## Pending work
 
-**No metrics of its own.** The service registers no collectors: everything on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. Nothing counts spellchecks, nothing reports how many entries or rules a replica has loaded, and — the one that bites — **eventlog lag is not exported**, so "is this replica serving the current dictionary?" cannot be answered from monitoring. [`docs/observability.md`](docs/observability.md#what-is-missing) has the full list and what stands in for it meanwhile.
+**No metrics of its own.** The service registers no collectors beyond the pool statistics `main` wires up: everything else on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. Nothing counts spellchecks, nothing reports how many entries or rules a replica has loaded, and — the one that bites — **eventlog lag is not exported**, so "is this replica serving the current dictionary?" cannot be answered from monitoring. [`docs/observability.md`](docs/observability.md#what-is-missing) has the full list and what stands in for it meanwhile.
 
 **No readiness check.** Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`, so a replica reports itself alive as soon as the HTTP listener is up — including while it is still paging through the startup preload. During a rollout that is a window in which a fresh replica answers checks against a partial dictionary. A check here wants `AddOptionalReadyFunction`, since a required one that touches the pool takes replicas out of service exactly when the pool is saturated.
-
-**No pool statistics, and no `MaxConns`.** Neither pool is registered with `pg.NewPoolStatCollector`, so saturation is invisible; and neither sets `MaxConns`, so each takes `max(4, runtime.NumCPU())` read from the cpuset rather than the cgroup quota. On Kubernetes with the default CPU manager policy that tracks the node's vCPU count, which makes pool size a property of where the pod landed and changes it silently on reschedule.
 
 **The Twirp mount is still carrying the traffic.** Both stacks are served, but nothing has moved onto Connect yet. `rpc_protocol_responses_total{protocol="twirp"}` going to zero for a method is what says its Twirp mount can be removed, and the `client_id` label names the callers that have to move first.
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"os"
 	"runtime/debug"
 	"time"
@@ -18,10 +19,33 @@ import (
 	"github.com/ttab/elephant-spell/docs"
 	"github.com/ttab/elephant-spell/internal"
 	"github.com/ttab/elephantine"
+	"github.com/ttab/elephantine/pg"
 	"github.com/ttab/howdah"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/oauth2"
 )
+
+// DefaultDBMaxConns is the size of the pool queries run on, set here rather
+// than left to pgx: its default is max(4, NumCPU()) read from the node's cpuset
+// rather than the cgroup quota, so an unset pool tracks whichever node the pod
+// lands on and changes size invisibly on reschedule.
+//
+// Spellchecking never touches the database — Text and Suggestions answer from
+// the in-memory checkers — so the pool only carries the dictionary and rule
+// management RPCs and the background work. The background work is the entry
+// updater draining the eventlog (one query at a time), the eventlog pruner and
+// its job lock, and, when no bouncer is configured, the subscriber's ping. That
+// is at most four connections. The management writes are editor-driven and
+// serialise on the eventlog's exclusive lock, so extra concurrent writers queue
+// on the lock while each holding a connection; eight leaves room for a handful
+// of them on top of the background work. Trim it once
+// pgxpool_empty_acquire_wait_seconds_total says what it actually needs.
+const DefaultDBMaxConns = 8
+
+// ListenPoolMaxConns is the size of the direct pool when queries go through a
+// bouncer: it then carries only the LISTEN session, which the subscriber
+// hijacks out of the pool, and the subscriber's ping.
+const ListenPoolMaxConns = 2
 
 func main() {
 	err := godotenv.Load()
@@ -85,6 +109,17 @@ func main() {
 			&cli.StringFlag{
 				Name:    "db-bouncer",
 				Sources: cli.EnvVars("BOUNCER_CONN_STRING"),
+			},
+			&cli.IntFlag{
+				Name:    "db-max-conns",
+				Sources: cli.EnvVars("DB_MAX_CONNS"),
+				Value:   DefaultDBMaxConns,
+				Usage: "Maximum size of the Postgres connection pool used for" +
+					" queries. Overrides pool_max_conns in the connection string." +
+					" Zero or less leaves the pool to size itself, which means" +
+					" max(4, NumCPU()) read from the node's cpuset. With a bouncer" +
+					" configured the direct pool is fixed at 2 and this applies" +
+					" to the bouncer pool.",
 			},
 			&cli.StringSliceFlag{
 				Name:    "cors-host",
@@ -173,6 +208,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		corsHosts         = c.StringSlice("cors-host")
 		connString        = c.String("db")
 		bouncerConnString = c.String("db-bouncer")
+		dbMaxConns        = c.Int("db-max-conns")
 		pingInterval      = c.Duration("ping-interval")
 		pingGrace         = c.Duration("ping-grace")
 		oidcProviderURL   = c.String("oidc-provider")
@@ -196,9 +232,20 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		}
 	}()
 
-	pubsubPool, err := pgxpool.New(ctx, connString)
+	// LISTEN cannot go through PgBouncer in transaction pooling mode, so the
+	// subscriber always runs on the direct pool. With a bouncer configured
+	// everything else goes through it and the direct pool is kept small;
+	// without one the direct pool is the only pool.
+	useBouncer := bouncerConnString != "" && bouncerConnString != connString
+
+	pubsubMaxConns := dbMaxConns
+	if useBouncer {
+		pubsubMaxConns = ListenPoolMaxConns
+	}
+
+	pubsubPool, err := newPool(ctx, connString, pubsubMaxConns)
 	if err != nil {
-		return fmt.Errorf("create pubsub connection pool: %w", err)
+		return fmt.Errorf("pubsub database: %w", err)
 	}
 
 	defer func() {
@@ -206,27 +253,39 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		go pubsubPool.Close()
 	}()
 
-	err = pubsubPool.Ping(ctx)
-	if err != nil {
-		return fmt.Errorf("connect to pubsub database: %w", err)
-	}
-
 	dbpool := pubsubPool
 
-	if bouncerConnString != "" && bouncerConnString != connString {
-		dbpool, err = pgxpool.New(ctx, bouncerConnString)
+	if useBouncer {
+		dbpool, err = newPool(ctx, bouncerConnString, dbMaxConns)
 		if err != nil {
-			return fmt.Errorf("create bouncer connection pool: %w", err)
+			return fmt.Errorf("bouncer database: %w", err)
 		}
 
 		defer func() {
 			go dbpool.Close()
 		}()
+	}
 
-		err = dbpool.Ping(ctx)
-		if err != nil {
-			return fmt.Errorf("connect to bouncer database: %w", err)
-		}
+	logger.InfoContext(ctx, "created connection pools",
+		"max_conns", dbMaxConns,
+		"direct_max_conns", pubsubMaxConns,
+		"bouncer", useBouncer)
+
+	// The pubsub pool doubles as the main pool when no bouncer is
+	// configured, and is only registered on its own when it is separate.
+	poolMetrics := elephantine.NewMetricsHelper(prometheus.DefaultRegisterer)
+
+	poolMetrics.Collector("main",
+		pg.NewPoolStatCollector(dbpool, "main"))
+
+	if pubsubPool != dbpool {
+		poolMetrics.Collector("pubsub",
+			pg.NewPoolStatCollector(pubsubPool, "pubsub"))
+	}
+
+	err = poolMetrics.Err()
+	if err != nil {
+		return fmt.Errorf("register pool metrics: %w", err)
 	}
 
 	auth, err := elephantine.AuthenticationConfigFromCLI(
@@ -303,6 +362,41 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	}
 
 	return nil
+}
+
+// newPool creates a connection pool and verifies that the database answers.
+// A positive maxConns sizes the pool; zero or less leaves that to the
+// connection string or pgx.
+func newPool(
+	ctx context.Context, connString string, maxConns int,
+) (*pgxpool.Pool, error) {
+	conf, err := pgxpool.ParseConfig(connString)
+	if err != nil {
+		return nil, fmt.Errorf("parse connection string: %w", err)
+	}
+
+	if maxConns > math.MaxInt32 {
+		return nil, fmt.Errorf("max conns %d exceeds %d",
+			maxConns, math.MaxInt32)
+	}
+
+	if maxConns > 0 {
+		conf.MaxConns = int32(maxConns)
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, conf)
+	if err != nil {
+		return nil, fmt.Errorf("create connection pool: %w", err)
+	}
+
+	err = pool.Ping(ctx)
+	if err != nil {
+		pool.Close()
+
+		return nil, fmt.Errorf("connect to database: %w", err)
+	}
+
+	return pool, nil
 }
 
 func mustSubFS(f fs.FS, directory string) fs.FS {

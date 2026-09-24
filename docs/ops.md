@@ -172,7 +172,8 @@ Out of order, the common one is (2): a rollout where every pod crashloops on `no
 | `no cookie keys configured…` | `COOKIE_KEY_1` is missing. |
 | `read cookie keyring: …` | A key is malformed — the format is `<RFC 3339>_<base64 of 32 bytes>`. |
 | `create OIDC provider` | `oidc-provider` is wrong or the provider is unreachable. |
-| `connect to pubsub database` | `CONN_STRING` is wrong or Postgres is down. |
+| `pubsub database: …` | `CONN_STRING` is wrong or Postgres is down. |
+| `bouncer database: …` | `BOUNCER_CONN_STRING` is wrong or the bouncer is down. |
 | `create dictionary directory` | No writable temp space. |
 
 ### The eventlog is growing without bound
@@ -229,5 +230,4 @@ Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`, so 
 
 - **No readiness check**, so a preloading replica reports itself alive.
 - **No metrics of this service's own** — no eventlog lag, no dictionary size, no spellcheck counters. See [observability.md](observability.md#what-is-missing).
-- **No pool statistics and no `MaxConns`**, so pool saturation is invisible and pool size depends on the node the pod landed on.
 - **No incident history.** The catalogue above is read off the code. The first real incident should be written in with its numbers.

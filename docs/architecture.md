@@ -38,9 +38,16 @@ Language codes are derived from the filenames — `sv_SE.dic` becomes `sv-se` �
 
 `CONN_STRING` opens the direct pool. If `BOUNCER_CONN_STRING` is set and differs, a second pool is opened for general queries and the direct pool is left to the subscriber alone; otherwise both are the same pool.
 
+| | Queries run on | Query pool size | Direct pool size | Registered as |
+|---|---|---|---|---|
+| No bouncer | the direct pool | `DB_MAX_CONNS` | (the same pool) | `main` |
+| Bouncer | the bouncer pool | `DB_MAX_CONNS` | 2 | `main`, `pubsub` |
+
 **`LISTEN` cannot go through PgBouncer in transaction pooling mode** — the connection that registered the listener is returned to the pool and the notifications go nowhere — which is the whole reason the split exists. A deployment that points `CONN_STRING` at a bouncer has a service that starts cleanly, serves reads, and silently never sees a dictionary change until the fallback poll picks it up a minute later.
 
-Neither pool sets `MaxConns`, so both take pgx's default of `max(4, runtime.NumCPU())`, read from the cpuset rather than the cgroup CPU quota. See [Pending work](#pending-work).
+**Both pools are sized explicitly**, because pgx's own default of `max(4, runtime.NumCPU())` reads the cpuset rather than the cgroup CPU quota — on Kubernetes that is the node's vCPU count, which makes the pool size a property of where the pod landed. `DB_MAX_CONNS` sizes the pool queries run on and defaults to `DefaultDBMaxConns`, 8. Spellchecking never touches the database, so that pool carries only the dictionary and rule management RPCs — whose writes serialise on the eventlog lock anyway — the entry updater, the pruner and its job lock, and the subscriber's ping when there is no bouncer. The comment on the constant has the arithmetic. With a bouncer the direct pool is `ListenPoolMaxConns`, 2: the `LISTEN` session, which the subscriber hijacks out of the pool, and the ping.
+
+Both are registered with `pg.NewPoolStatCollector`, the query pool as `pool="main"` and the direct pool as `pool="pubsub"` only when it is a separate pool; see [observability.md](observability.md#connection-pools).
 
 ## Data flow
 
@@ -212,10 +219,6 @@ Queries are compiled by sqlc from `postgres/queries.sql`. `postgres/entry.go` is
 
 ## Pending work
 
-**No metrics of its own.** The service registers no collectors: everything on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. There is no counter of spellchecks by language, no gauge of entries or rules loaded per replica, and no measure of eventlog lag — so "is this replica's dictionary current?" is not answerable from monitoring, only from the logs. See [observability.md](observability.md#what-is-missing).
-
-**No pool statistics.** Neither pool is registered with `pg.NewPoolStatCollector`, so pool saturation — the thing most likely to make the service slow rather than broken — is invisible.
+**No metrics of its own.** The service registers no collectors beyond the pool statistics `main` wires up: everything else on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. There is no counter of spellchecks by language, no gauge of entries or rules loaded per replica, and no measure of eventlog lag — so "is this replica's dictionary current?" is not answerable from monitoring, only from the logs. See [observability.md](observability.md#what-is-missing).
 
 **No readiness check.** Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`; `/health/alive` is elephantine's and answers as soon as the HTTP server is up. A replica that is still preloading, or whose `entry_updater` is failing to drain, reports itself alive and takes traffic with a stale or empty dictionary.
-
-**Unbounded pool sizing.** Neither pool sets `MaxConns`, so each takes `max(4, runtime.NumCPU())` read from the cpuset. On Kubernetes with the default CPU manager policy that tracks the *node's* vCPU count and changes on reschedule, which makes the pool size a property of where the pod landed.

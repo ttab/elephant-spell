@@ -4,6 +4,24 @@ Everything from v1.0.0 forward is documented here; the releases before it are
 in the git history only. Entries are derived from the release tags, and the
 linked PRs hold the detail.
 
+## [v1.7.0] - Unreleased
+
+**Behaviour change (the connection pools are sized explicitly):** the pool
+queries run on is now sized by `DB_MAX_CONNS` (`--db-max-conns`), default 8,
+where both pools used to take pgx's `max(4, NumCPU())` read from the node's
+cpuset, so their size changed with the node a pod landed on. That pool is the
+`BOUNCER_CONN_STRING` pool when one is set and the `CONN_STRING` pool
+otherwise. With a bouncer the direct pool, which carries only the `LISTEN`
+session, is fixed at 2. A `pool_max_conns` in a connection string is
+overridden; setting `DB_MAX_CONNS=0` restores pgx's own sizing.
+
+Changes:
+
+- Both connection pools are exported as `pgxpool_*` series, labelled
+  `pool="main"` and — when `BOUNCER_CONN_STRING` makes it a separate pool —
+  `pool="pubsub"`. See
+  [connection pools](docs/observability.md#connection-pools).
+
 ## [v1.6.0] - 2026-09-16
 
 **New (the services are served on Connect as well as Twirp):** each of `Check`, `Dictionaries` and `Rules` is now mounted twice — on `/twirp/elephant.spell.<Service>/` as before, and on `/elephant.spell.<Service>/` for Connect and gRPC. Both are served by the same implementation, so behaviour, scopes and error codes are identical; nothing about the Twirp mount changes and no caller has to move. A Go client moves by swapping `spell.New<Service>ProtobufClient` for `spellconnect.New<Service>ServiceClient`, which satisfies the same interface. (ELE-1504)

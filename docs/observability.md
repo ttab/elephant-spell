@@ -17,7 +17,7 @@ This document does not tell you what to do when a number is wrong — that is [`
 
 `/metrics` is on the profiling listener, port **1081** by default, not on the API port.
 
-**Every series this service exposes is registered by a library, not by this repository.** `internal` passes `prometheus.DefaultRegisterer` down from `main` and registers no collectors of its own. That is a gap rather than a design choice; see [What is missing](#what-is-missing) at the end, and read the rest of this document knowing that nothing here measures spellchecking.
+**Every series this service exposes is registered by a library, not by this repository.** `internal` passes `prometheus.DefaultRegisterer` down from `main` and registers no collectors of its own; `main` registers elephantine's pool statistics collector for each pool it opens. That is a gap rather than a design choice; see [What is missing](#what-is-missing) at the end, and read the rest of this document knowing that nothing here measures spellchecking.
 
 | Source | Series |
 |---|---|
@@ -25,6 +25,7 @@ This document does not tell you what to do when a number is wrong — that is [`
 | `elephantine.ErrGroup` | `task_restarts_total` |
 | `elephantine/pg` FanOut recovery | `pg_fanout_eventlog_*` |
 | `elephantine/pg/joblock` | `pg_job_lock_*` |
+| `elephantine/pg` pool statistics, registered in `main` | `pgxpool_*` |
 | `elephantine` health | `health_check_up` |
 | Go runtime and process collectors | `go_*`, `process_*` |
 
@@ -54,6 +55,15 @@ The only lock is `eventlog-prune`.
 - `pg_job_lock_transitions_total{name="eventlog-prune"}` — acquisitions and releases. A steady low rate is replicas rolling; a high rate is the lock being stolen repeatedly, which means the holder is not renewing it in time.
 - `pg_job_lock_restarts_total{name="eventlog-prune"}` — restarts after the pruner returned an error. **Any sustained rate here means pruning is failing persistently and only backoff is keeping it alive**; the eventlog is growing meanwhile.
 
+## Connection pools
+
+Every series carries a `pool` label: `main` is the pool queries run on, and `pubsub` is the direct pool, present only when `BOUNCER_CONN_STRING` puts queries on a separate pool. Without a bouncer there is one pool and it is `main`.
+
+- `pgxpool_acquired_conns` against `pgxpool_max_conns` — **a `main` pool sitting at its maximum is the service queueing for connections**, and the next two series say how badly. `pgxpool_max_conns{pool="main"}` is `DB_MAX_CONNS`, 8 by default; `pubsub` is 2.
+- `pgxpool_empty_acquires_total` and `pgxpool_empty_acquire_wait_seconds_total` — how often a caller found no idle connection, and how long it waited for one. Read them as rates. Zero is the healthy value; a sustained wait rate on `main` is an undersized `DB_MAX_CONNS`, and it presents as slow management RPCs and a lagging entry updater rather than as an error. Spellchecks are unaffected, since they never touch the pool.
+- `pgxpool_total_conns` — **the `LISTEN` connection is not counted.** The subscriber hijacks it out of the pool, so `pubsub` reads 0 or 1 (the ping) with a healthy listener, and without a bouncer `main` reads one fewer than the connections Postgres sees.
+- `pgxpool_canceled_acquires_total` — acquires abandoned because the caller's context ended first. A rate here alongside the wait is requests timing out on the pool.
+
 ## Task supervision
 
 - `task_restarts_total` — restarts of the tasks under the `ErrGroup`. All four tasks in this service are `Required`, so this is close to a process-death counter: an increment means something exited and took the process with it. Read it against pod restarts; if they disagree, the difference is crashes that were not task exits.
@@ -75,8 +85,6 @@ This is the honest list, and it is long enough to matter when reading everything
 **Nothing measures spellchecking.** There is no counter of checks by language, no histogram of matches per request, no gauge of entries or rules loaded. `rpc_duration_seconds` on `Check/Text` is the only evidence that the core of the service works at all.
 
 **Nothing measures dictionary freshness.** The eventlog cursor a replica has reached is not exported, and neither is the newest event id in the database, so **eventlog lag — the one number that answers "is this replica serving the current dictionary?" — cannot be computed from metrics.** `pg_fanout_eventlog_poll_saved_streak` says the notification path is broken; it does not say how far behind a replica is, and it reads zero for a replica whose `entry_updater` is failing to drain for some other reason, because a failed drain relays nothing to count.
-
-**No pool statistics.** Neither pool is registered with `pg.NewPoolStatCollector`, so acquisition waits and saturation are invisible. With `MaxConns` also unset, the pool size itself is unknown at runtime.
 
 **No readiness check.** A replica reports alive as soon as the HTTP listener is up, including while it is still preloading.
 

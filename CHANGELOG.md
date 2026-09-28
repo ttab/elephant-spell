@@ -21,6 +21,13 @@ Changes:
   `pool="main"` and — when `BOUNCER_CONN_STRING` makes it a separate pool —
   `pool="pubsub"`. See
   [connection pools](docs/observability.md#connection-pools).
+- A database that can't be reached at startup is now reported as
+  `create database pools: create main pool: …` or `… create pubsub pool: …`,
+  where it used to be `connect to bouncer database: …` or `connect to pubsub
+  database: …`. The
+  [startup crashloop table](docs/ops.md#the-service-crashloops-on-startup)
+  says which connection string each one points at.
+- Dependency upgrades: elephantine to v0.30.2.
 
 ## [v1.6.0] - 2026-09-16
 

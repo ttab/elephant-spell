@@ -14,7 +14,7 @@ require (
 	github.com/prometheus/client_golang v1.24.1
 	github.com/ttab/clitools v1.0.3
 	github.com/ttab/elephant-api v0.25.0
-	github.com/ttab/elephantine v0.29.1
+	github.com/ttab/elephantine v0.30.2
 	github.com/ttab/eltest v0.5.0
 	github.com/ttab/howdah v0.5.0
 	github.com/ttab/mage v0.13.1

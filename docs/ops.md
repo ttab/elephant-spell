@@ -172,8 +172,8 @@ Out of order, the common one is (2): a rollout where every pod crashloops on `no
 | `no cookie keys configured…` | `COOKIE_KEY_1` is missing. |
 | `read cookie keyring: …` | A key is malformed — the format is `<RFC 3339>_<base64 of 32 bytes>`. |
 | `create OIDC provider` | `oidc-provider` is wrong or the provider is unreachable. |
-| `pubsub database: …` | `CONN_STRING` is wrong or Postgres is down. |
-| `bouncer database: …` | `BOUNCER_CONN_STRING` is wrong or the bouncer is down. |
+| `create database pools: create main pool: …` | The pool queries run on can't connect: `BOUNCER_CONN_STRING` is wrong or the bouncer is down when one is set, otherwise `CONN_STRING` is wrong or Postgres is down. |
+| `create database pools: create pubsub pool: …` | Only with a bouncer: `CONN_STRING` is wrong or Postgres is down. |
 | `create dictionary directory` | No writable temp space. |
 
 ### The eventlog is growing without bound

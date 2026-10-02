@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"math"
 	"os"
 	"runtime/debug"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
 	spell "github.com/ttab/elephant-spell"
@@ -41,11 +39,6 @@ import (
 // of them on top of the background work. Trim it once
 // pgxpool_empty_acquire_wait_seconds_total says what it actually needs.
 const DefaultDBMaxConns = 8
-
-// ListenPoolMaxConns is the size of the direct pool when queries go through a
-// bouncer: it then carries only the LISTEN session, which the subscriber
-// hijacks out of the pool, and the subscriber's ping.
-const ListenPoolMaxConns = 2
 
 func main() {
 	err := godotenv.Load()
@@ -233,60 +226,27 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	}()
 
 	// LISTEN cannot go through PgBouncer in transaction pooling mode, so the
-	// subscriber always runs on the direct pool. With a bouncer configured
-	// everything else goes through it and the direct pool is kept small;
-	// without one the direct pool is the only pool.
-	useBouncer := bouncerConnString != "" && bouncerConnString != connString
-
-	pubsubMaxConns := dbMaxConns
-	if useBouncer {
-		pubsubMaxConns = ListenPoolMaxConns
-	}
-
-	pubsubPool, err := newPool(ctx, connString, pubsubMaxConns)
+	// subscriber always runs on a direct pool. WithPubSub gives it one of
+	// its own, sized pg.DefaultPubSubMaxConns, when a bouncer is configured
+	// and everything else goes through the bouncer; without one the direct
+	// pool is the only pool.
+	pools, err := pg.NewPools(ctx,
+		prometheus.DefaultRegisterer, connString, dbMaxConns,
+		pg.WithBouncer(bouncerConnString),
+		pg.WithPubSub(),
+	)
 	if err != nil {
-		return fmt.Errorf("pubsub database: %w", err)
+		return fmt.Errorf("create database pools: %w", err)
 	}
 
 	defer func() {
 		// Don't block for close
-		go pubsubPool.Close()
+		go pools.Close()
 	}()
-
-	dbpool := pubsubPool
-
-	if useBouncer {
-		dbpool, err = newPool(ctx, bouncerConnString, dbMaxConns)
-		if err != nil {
-			return fmt.Errorf("bouncer database: %w", err)
-		}
-
-		defer func() {
-			go dbpool.Close()
-		}()
-	}
 
 	logger.InfoContext(ctx, "created connection pools",
 		"max_conns", dbMaxConns,
-		"direct_max_conns", pubsubMaxConns,
-		"bouncer", useBouncer)
-
-	// The pubsub pool doubles as the main pool when no bouncer is
-	// configured, and is only registered on its own when it is separate.
-	poolMetrics := elephantine.NewMetricsHelper(prometheus.DefaultRegisterer)
-
-	poolMetrics.Collector("main",
-		pg.NewPoolStatCollector(dbpool, "main"))
-
-	if pubsubPool != dbpool {
-		poolMetrics.Collector("pubsub",
-			pg.NewPoolStatCollector(pubsubPool, "pubsub"))
-	}
-
-	err = poolMetrics.Err()
-	if err != nil {
-		return fmt.Errorf("register pool metrics: %w", err)
-	}
+		"separate_pubsub_pool", pools.PubSub != pools.Main)
 
 	auth, err := elephantine.AuthenticationConfigFromCLI(
 		ctx, c, nil)
@@ -301,8 +261,8 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		CertFile:        certFile,
 		KeyFile:         keyFile,
 		Logger:          logger,
-		Database:        dbpool,
-		PubsubDatabase:  pubsubPool,
+		Database:        pools.Main,
+		PubsubDatabase:  pools.PubSub,
 		AuthInfoParser:  auth.AuthParser,
 		Registerer:      prometheus.DefaultRegisterer,
 		CORSHosts:       corsHosts,
@@ -362,41 +322,6 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	}
 
 	return nil
-}
-
-// newPool creates a connection pool and verifies that the database answers.
-// A positive maxConns sizes the pool; zero or less leaves that to the
-// connection string or pgx.
-func newPool(
-	ctx context.Context, connString string, maxConns int,
-) (*pgxpool.Pool, error) {
-	conf, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		return nil, fmt.Errorf("parse connection string: %w", err)
-	}
-
-	if maxConns > math.MaxInt32 {
-		return nil, fmt.Errorf("max conns %d exceeds %d",
-			maxConns, math.MaxInt32)
-	}
-
-	if maxConns > 0 {
-		conf.MaxConns = int32(maxConns)
-	}
-
-	pool, err := pgxpool.NewWithConfig(ctx, conf)
-	if err != nil {
-		return nil, fmt.Errorf("create connection pool: %w", err)
-	}
-
-	err = pool.Ping(ctx)
-	if err != nil {
-		pool.Close()
-
-		return nil, fmt.Errorf("connect to database: %w", err)
-	}
-
-	return pool, nil
 }
 
 func mustSubFS(f fs.FS, directory string) fs.FS {

@@ -4,7 +4,7 @@ Everything from v1.0.0 forward is documented here; the releases before it are
 in the git history only. Entries are derived from the release tags, and the
 linked PRs hold the detail.
 
-## [v1.7.0] - Unreleased
+## [v1.7.0] - 2026-11-03
 
 **Behaviour change (the connection pools are sized explicitly):** the pool
 queries run on is now sized by `DB_MAX_CONNS` (`--db-max-conns`), default 8,

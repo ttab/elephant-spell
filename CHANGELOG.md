@@ -17,6 +17,12 @@ overridden; setting `DB_MAX_CONNS=0` restores pgx's own sizing.
 
 Changes:
 
+- Phone numbers, email addresses and URLs are no longer spellchecked or
+  matched by rules, so an event description full of contact details only has
+  its real misspellings flagged. Number ranges (`12-15`) and words mixing
+  letters and digits (`2o24`) are still checked. See
+  [what is never flagged](docs/guide/index.md#what-is-never-flagged).
+  (ELELOG-1387)
 - Both connection pools are exported as `pgxpool_*` series, labelled
   `pool="main"` and — when `BOUNCER_CONN_STRING` makes it a separate pool —
   `pool="pubsub"`. See

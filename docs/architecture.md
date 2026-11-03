@@ -144,6 +144,20 @@ Entries are case-insensitive by default: a lowercase common mistake is caught wh
 
 **An entry lives in exactly one pair, chosen at insert time**, so a lookup consults both and the routing decision is never made on the hot path.
 
+### Phone numbers, email addresses and URLs are masked first
+
+`Check` blanks out these before any pass runs. The segmenter would otherwise take them apart at `/`, `@` and `-` and hand hunspell the pieces (`forms`, `gle`, `ouiwJ6gJapE98Rru5`), and the `{digit}-{digit}` dash rule would fire inside a phone number. `ignoredSpans` finds them as whitespace-delimited tokens in the raw text, with wrapping punctuation trimmed, and `maskSpans` overwrites each one with spaces, one per byte, so the byte offsets every pass reports still address the source text and the reported spans are computed from the source.
+
+The shapes are deliberately narrow, because a false positive here hides a real error:
+
+| Ignored | Not ignored |
+|---|---|
+| `+46`, `0720-349665`, `08/692`, `010-123` — digits joined by `+ - / ( )`, starting with `+` or with a `0` trunk prefix of at least two digits and five digits in all | `0-2`, `08-12`, `1990-1995`, `2024-11-03`, a plain number |
+| `name@example.com`, `mailto:info@tt.se` | `@ttnyheter` |
+| `https://…`, `www.tt.se`, `forms.gle/abc`, `tt.se` | `t.ex.`, `p.g.a.`, `kl.14`, `Rom.Sedan` — a bare domain needs labels of two or more characters and a lowercase top-level domain |
+
+A word that mixes letters and digits (`2o24`) is not a number and is still checked. This runs on the raw text rather than on tokens for the same reason the rules do; see [ADR-0001](adr/0001-patterns-compile-to-regex.md).
+
 ### Phrase matching
 
 A sliding window of up to three words runs over the text via `PhraseIterator`, and each window is looked up in the tries. Longer matches win: `resolveLongest` sorts candidates by length and suppresses any that overlap an accepted longer one, so "Mexico City" is not also reported as a match on "Mexico".

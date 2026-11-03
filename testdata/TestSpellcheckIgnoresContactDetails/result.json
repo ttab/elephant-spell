@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "text": "12-15",
+      "suggestions": [
+        {
+          "text": "12–15"
+        }
+      ],
+      "level": "LEVEL_ERROR",
+      "spans": [
+        {
+          "start": "165",
+          "end": "170"
+        }
+      ]
+    },
+    {
+      "text": "2o24",
+      "level": "LEVEL_ERROR"
+    },
+    {
+      "text": "persnoer",
+      "suggestions": [
+        {
+          "text": "personer"
+        }
+      ],
+      "level": "LEVEL_ERROR"
+    }
+  ]
+}

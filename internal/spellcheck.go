@@ -434,8 +434,13 @@ func (s *Spellcheck) Check(
 		return &res, nil
 	}
 
+	// Phone numbers, email addresses and URLs are not words, and the
+	// segmenter would hand their pieces to hunspell as if they were. Blank
+	// them out before any pass runs, keeping the byte offsets intact so the
+	// spans still address the source text.
 	source := text
-	textData := []byte(text)
+	masked := maskSpans(source, ignoredSpans(source))
+	textData := []byte(masked)
 	replacements := []string{}
 
 	s.m.RLock()
@@ -478,7 +483,7 @@ func (s *Spellcheck) Check(
 		// neighbours. The trie already located the match, so this is an O(1)
 		// check per hit. A guarded-out occurrence is skipped; the same phrase
 		// elsewhere can still match.
-		if !p.Guards.pass(source, m.Start, m.End) {
+		if !p.Guards.pass(masked, m.Start, m.End) {
 			continue
 		}
 
@@ -519,7 +524,7 @@ func (s *Spellcheck) Check(
 
 	// Pattern rules match over the token stream rather than the trie windows,
 	// so they run as a separate pass over the whole text.
-	ruleCands := s.ruleCandidates(text, withSuggestions)
+	ruleCands := s.ruleCandidates(masked, withSuggestions)
 
 	s.m.RUnlock()
 
@@ -601,7 +606,7 @@ func (s *Spellcheck) Check(
 
 		buf.Reset()
 
-		_, _ = repl.WriteString(buf, text)
+		_, _ = repl.WriteString(buf, masked)
 
 		textReader = buf
 	} else {

@@ -20,30 +20,40 @@ const eventBatchSize = 500
 const preloadPageSize = 200
 
 // preloadAll pages through a list query, applying process to every row, until
-// the source is exhausted. It is the shared startup-baseline loader for entries
-// and rules.
+// a short page says the source is exhausted. fetch is handed the last row of
+// the previous page, nil for the first, and reads the rows that follow it in
+// key order. Paging by key rather than by offset is what keeps a concurrent
+// delete from shifting an unread row onto a page already read: the next page
+// starts after a key, not after a count. It is the shared startup-baseline
+// loader for entries and rules. afterPage, when not nil, runs after each
+// page has been processed.
 func preloadAll[T any](
-	ctx context.Context,
-	fetch func(ctx context.Context, limit, offset int64) ([]T, error),
+	ctx context.Context, pageSize int64,
+	fetch func(ctx context.Context, after *T, limit int64) ([]T, error),
 	process func(row T),
+	afterPage func(),
 ) error {
-	var offset int64
+	var after *T
 
 	for {
-		rows, err := fetch(ctx, preloadPageSize, offset)
+		rows, err := fetch(ctx, after, pageSize)
 		if err != nil {
 			return err
-		}
-
-		if len(rows) == 0 {
-			return nil
 		}
 
 		for _, row := range rows {
 			process(row)
 		}
 
-		offset += preloadPageSize
+		if afterPage != nil {
+			afterPage()
+		}
+
+		if int64(len(rows)) < pageSize {
+			return nil
+		}
+
+		after = &rows[len(rows)-1]
 	}
 }
 
@@ -51,12 +61,26 @@ func preloadAll[T any](
 // spellchecker. It is the startup baseline for entries that predate the
 // eventlog; incremental changes are then applied from the log.
 func (a *Application) preloadEntries(ctx context.Context) error {
-	return preloadAll(ctx,
-		func(ctx context.Context, limit, offset int64) ([]postgres.Entry, error) {
-			rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
-				Limit:  limit,
-				Offset: offset,
-			})
+	return a.preloadEntryPages(ctx, preloadPageSize, nil)
+}
+
+// preloadEntryPages is preloadEntries with the page size and a hook that runs
+// after each page.
+func (a *Application) preloadEntryPages(
+	ctx context.Context, pageSize int64, afterPage func(),
+) error {
+	return preloadAll(ctx, pageSize,
+		func(
+			ctx context.Context, after *postgres.Entry, limit int64,
+		) ([]postgres.Entry, error) {
+			params := postgres.PreloadEntriesParams{Limit: limit}
+
+			if after != nil {
+				params.AfterLanguage = after.Language
+				params.AfterEntry = after.Entry
+			}
+
+			rows, err := a.q.PreloadEntries(ctx, params)
 			if err != nil {
 				return nil, fmt.Errorf("list entries: %w", err)
 			}
@@ -75,18 +99,32 @@ func (a *Application) preloadEntries(ctx context.Context) error {
 
 			spell.AddPhrase(entryAsPhrase(row))
 		},
+		afterPage,
 	)
 }
 
 // preloadRules loads every current rule into its language's spellchecker, the
 // startup baseline before the eventlog takes over.
 func (a *Application) preloadRules(ctx context.Context) error {
-	return preloadAll(ctx,
-		func(ctx context.Context, limit, offset int64) ([]postgres.Rule, error) {
-			rows, err := a.q.ListRules(ctx, postgres.ListRulesParams{
-				Limit:  limit,
-				Offset: offset,
-			})
+	return a.preloadRulePages(ctx, preloadPageSize, nil)
+}
+
+// preloadRulePages is preloadRules with the page size and a hook that runs
+// after each page.
+func (a *Application) preloadRulePages(
+	ctx context.Context, pageSize int64, afterPage func(),
+) error {
+	return preloadAll(ctx, pageSize,
+		func(
+			ctx context.Context, after *postgres.Rule, limit int64,
+		) ([]postgres.Rule, error) {
+			params := postgres.PreloadRulesParams{Limit: limit}
+
+			if after != nil {
+				params.AfterID = after.ID
+			}
+
+			rows, err := a.q.PreloadRules(ctx, params)
 			if err != nil {
 				return nil, fmt.Errorf("list rules: %w", err)
 			}
@@ -106,6 +144,7 @@ func (a *Application) preloadRules(ctx context.Context) error {
 					elephantine.LogKeyError, err)
 			}
 		},
+		afterPage,
 	)
 }
 
@@ -160,13 +199,15 @@ func (a *Application) drainEventlog(
 func (a *Application) applyEvent(
 	ctx context.Context, e postgres.Eventlog,
 ) error {
+	// A rule is keyed by its id alone, and its row names its language, so
+	// the rule event finds its own spellchecker.
+	if e.Kind == eventKindRule {
+		return a.applyRuleEvent(ctx, e)
+	}
+
 	spell, ok := a.languages[e.Language]
 	if !ok {
 		return nil
-	}
-
-	if e.Kind == eventKindRule {
-		return a.applyRuleEvent(ctx, spell, e)
 	}
 
 	return a.applyEntryEvent(ctx, spell, e)
@@ -230,8 +271,14 @@ func (a *Application) loadableEntry(
 	return false
 }
 
+// applyRuleEvent brings the spellcheckers in line with a rule event. Rule ids
+// are unique across languages, and the row's own language decides which
+// spellchecker holds the rule, not the language recorded on the event: the
+// rule is removed from every other language, so an event that names the wrong
+// language can neither activate the rule there nor leave its own language
+// stale.
 func (a *Application) applyRuleEvent(
-	ctx context.Context, s *Spellcheck, e postgres.Eventlog,
+	ctx context.Context, e postgres.Eventlog,
 ) error {
 	// The eventlog carries the rule id as text for rule events.
 	id, err := strconv.ParseInt(e.Entry, 10, 64)
@@ -240,18 +287,31 @@ func (a *Application) applyRuleEvent(
 	}
 
 	if e.Deleted {
-		s.RemoveRule(id)
+		a.removeRuleExcept(id, "")
 
 		return nil
 	}
 
 	row, err := a.q.GetRule(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		s.RemoveRule(id)
+		a.removeRuleExcept(id, "")
 
 		return nil
 	} else if err != nil {
 		return fmt.Errorf("read rule from database: %w", err)
+	}
+
+	if row.Language != e.Language {
+		a.logger.WarnContext(ctx, "rule event names another language than the rule",
+			"rule", row.ID, "event_language", e.Language,
+			"language", row.Language)
+	}
+
+	a.removeRuleExcept(id, row.Language)
+
+	s, ok := a.languages[row.Language]
+	if !ok {
+		return nil
 	}
 
 	// A rule that fails to compile is logged and skipped rather than stalling
@@ -264,6 +324,18 @@ func (a *Application) applyRuleEvent(
 	}
 
 	return nil
+}
+
+// removeRuleExcept removes a rule from every language's spellchecker but the
+// one named by keep; an empty keep removes it from all of them.
+func (a *Application) removeRuleExcept(id int64, keep string) {
+	for code, s := range a.languages {
+		if code == keep {
+			continue
+		}
+
+		s.RemoveRule(id)
+	}
 }
 
 func ruleDefFromRule(r postgres.Rule) RuleDef {

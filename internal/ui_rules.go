@@ -306,12 +306,12 @@ func (d *RulesUI) rulePage(
 		return nil, howdah.InternalHTTPError(err)
 	}
 
-	res, err := d.rules.GetRule(svcCtx, &spell.GetRuleRequest{Id: id})
+	stored, err := d.ruleInLanguage(svcCtx, lang, id)
 	if err != nil {
-		return nil, rpcErrorToHTTP(err)
+		return nil, err
 	}
 
-	rule := ruleToUI(res.Rule)
+	rule := ruleToUI(stored)
 
 	if isHtmx(r) {
 		return &howdah.Page{
@@ -366,11 +366,12 @@ func (d *RulesUI) saveRuleForm(
 		return nil, err
 	}
 
-	if !hasWriteScope(ctx) {
-		return nil, forbiddenScope()
-	}
-
 	lang := r.PathValue("language")
+
+	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
+	if err != nil {
+		return nil, howdah.InternalHTTPError(err)
+	}
 
 	var id int64
 
@@ -379,6 +380,17 @@ func (d *RulesUI) saveRuleForm(
 		if err != nil {
 			return nil, err
 		}
+
+		// Before the scope check: reading the rule needs the same scope
+		// as writing it, so a caller without it is refused either way.
+		_, err = d.ruleInLanguage(svcCtx, lang, id)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if !hasWriteScope(ctx) {
+		return nil, forbiddenScope()
 	}
 
 	if err := parseForm(r); err != nil {
@@ -396,11 +408,6 @@ func (d *RulesUI) saveRuleForm(
 				},
 			},
 		}, nil
-	}
-
-	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
-	if err != nil {
-		return nil, howdah.InternalHTTPError(err)
 	}
 
 	id, err = d.setRuleFromForm(svcCtx, lang, id, r)
@@ -431,10 +438,6 @@ func (d *RulesUI) deleteRule(
 		return nil, err
 	}
 
-	if !hasWriteScope(ctx) {
-		return nil, forbiddenScope()
-	}
-
 	lang := r.PathValue("language")
 
 	id, err := ruleIDParam(r)
@@ -445,6 +448,17 @@ func (d *RulesUI) deleteRule(
 	svcCtx, err := bridgeServiceAuth(ctx, d.authParser)
 	if err != nil {
 		return nil, howdah.InternalHTTPError(err)
+	}
+
+	// Before the scope check: reading the rule needs the same scope as
+	// deleting it, so a caller without it is refused either way.
+	_, err = d.ruleInLanguage(svcCtx, lang, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if !hasWriteScope(ctx) {
+		return nil, forbiddenScope()
 	}
 
 	_, err = d.rules.DeleteRule(svcCtx, &spell.DeleteRuleRequest{Id: id})
@@ -588,6 +602,29 @@ func (d *RulesUI) testRule(
 		Template: tmplRuleTest,
 		Contents: contents,
 	}, nil
+}
+
+// ruleInLanguage reads a rule for a /rules/{language}/{id} route. A rule of
+// another language is not found, as one that does not exist is: the page
+// would otherwise show, save or delete it under a language it does not
+// belong to.
+func (d *RulesUI) ruleInLanguage(
+	ctx context.Context, lang string, id int64,
+) (*spell.Rule, error) {
+	res, err := d.rules.GetRule(ctx, &spell.GetRuleRequest{Id: id})
+	if err != nil {
+		return nil, rpcErrorToHTTP(err)
+	}
+
+	if res.Rule.Language != lookupLanguage(lang) {
+		return nil, howdah.NewHTTPError(
+			http.StatusNotFound, "Error", "rule does not exist",
+			fmt.Errorf("rule %d belongs to %q, not %q",
+				id, res.Rule.Language, lang),
+		)
+	}
+
+	return res.Rule, nil
 }
 
 // ruleIDParam reads and parses the {id} path value.

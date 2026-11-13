@@ -84,7 +84,8 @@ Every series carries a `pool` label: `main` is the pool queries run on, and `pub
 
 ## Health
 
-- `health_check_up{name=...}` — this service registers no checks of its own, so there is nothing here but whatever elephantine registers by default. **Do not build an alert on the absence of a failing check**: a dictionary that has stopped updating produces no health-check signal at all. See [What is missing](#what-is-missing).
+- `health_check_up{name="custom_dictionary"}` — 1 once the replica has preloaded the custom dictionary and rules and caught up with the eventlog, 0 before that. It is a required check, so `/health/ready` fails while it is 0 and the replica gets no traffic; it only reads a flag, so it cannot fail because the replica is busy. A replica that stays at 0 is stuck in its preload; see [A replica does not become ready](ops.md#a-replica-does-not-become-ready). It never goes back to 0 once set, so **do not read it as dictionary freshness**: a dictionary that has stopped updating after startup produces no health-check signal at all. See [What is missing](#what-is-missing).
+- `health_check_up{name="api_liveness"}` — registered by elephantine: the API listener answers `/health/alive`.
 
 ## Runtime
 
@@ -99,7 +100,5 @@ This is the honest list, and it is long enough to matter when reading everything
 **Little measures spellchecking.** The hunspell handle pools say whether checks are queueing for hunspell, but there is no counter of checks by language, no histogram of matches per request, no gauge of entries or rules loaded. `rpc_duration_seconds` on `Check/Text` is the only evidence that the core of the service works at all.
 
 **Nothing measures dictionary freshness.** The eventlog cursor a replica has reached is not exported, and neither is the newest event id in the database, so **eventlog lag — the one number that answers "is this replica serving the current dictionary?" — cannot be computed from metrics.** `pg_fanout_eventlog_poll_saved_streak` says the notification path is broken; it does not say how far behind a replica is, and it reads zero for a replica whose `entry_updater` is failing to drain for some other reason, because a failed drain relays nothing to count.
-
-**No readiness check.** A replica reports alive as soon as the HTTP listener is up, including while it is still preloading.
 
 Until these exist, the logs are the instrumentation: `drain eventlog on notification`, `poll eventlog` and `prune eventlog` at error level, and `pruned eventlog` with a count at info.

@@ -51,17 +51,17 @@ func (a *Application) ListRules(
 		pattern = "%" + req.Query + "%"
 	}
 
-	limit := req.PageSize
-	if limit <= 0 {
-		limit = 100
+	limit, offset, err := pageWindow(req.Page, req.PageSize)
+	if err != nil {
+		return nil, err
 	}
 
 	rows, err := a.q.ListRules(ctx, postgres.ListRulesParams{
-		Language: pg.TextOrNull(req.Language),
+		Language: pg.TextOrNull(lookupLanguage(req.Language)),
 		Query:    pg.TextOrNull(pattern),
 		Status:   pg.TextOrNull(req.Status),
 		Limit:    limit,
-		Offset:   limit * req.Page,
+		Offset:   offset,
 	})
 	if err != nil {
 		return nil, rpc.Internalf("read from database: %w", err)
@@ -112,7 +112,8 @@ func (a *Application) GetRule(
 }
 
 // SetRule implements spell.Rules. A zero id creates a new rule; a non-zero id
-// updates the existing rule.
+// updates the existing rule, which must belong to the language the request
+// names: an update never moves a rule to another language.
 func (a *Application) SetRule(
 	ctx context.Context, req *spell.SetRuleRequest,
 ) (_ *spell.SetRuleResponse, outErr error) {
@@ -125,14 +126,9 @@ func (a *Application) SetRule(
 		return nil, rpc.RequiredArgument("rule")
 	}
 
-	if req.Rule.Language == "" {
-		return nil, rpc.RequiredArgument("rule.language")
-	}
-
-	_, ok := a.languages[req.Rule.Language]
-	if !ok {
-		return nil, rpc.InvalidArgument("rule.language",
-			"unknown language")
+	language, err := a.writeLanguage("rule.language", req.Rule.Language)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Rule.Name == "" {
@@ -173,7 +169,7 @@ func (a *Application) SetRule(
 
 	if id == 0 {
 		id, err = q.InsertRule(ctx, postgres.InsertRuleParams{
-			Language:    req.Rule.Language,
+			Language:    language,
 			Name:        req.Rule.Name,
 			Status:      req.Rule.Status,
 			Description: req.Rule.Description,
@@ -188,7 +184,7 @@ func (a *Application) SetRule(
 			return nil, rpc.Internalf("write to database: %w", err)
 		}
 	} else {
-		affected, err := q.UpdateRule(ctx, postgres.UpdateRuleParams{
+		stored, err := q.UpdateRule(ctx, postgres.UpdateRuleParams{
 			ID:          id,
 			Name:        req.Rule.Name,
 			Status:      req.Rule.Status,
@@ -200,17 +196,21 @@ func (a *Application) SetRule(
 			Updated:     now,
 			UpdatedBy:   auth.Claims.Subject,
 		})
-		if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, rpc.NotFound("rule does not exist")
+		} else if err != nil {
 			return nil, rpc.Internalf("write to database: %w", err)
 		}
 
-		if affected == 0 {
-			return nil, rpc.NotFound("rule does not exist")
+		// Returning the error rolls the update back.
+		if stored != language {
+			return nil, rpc.InvalidArgumentf("rule.language",
+				"rule %d belongs to %q, not %q", id, stored, language)
 		}
 	}
 
 	err = a.recordChange(ctx, q, tx,
-		req.Rule.Language, strconv.FormatInt(id, 10), false, eventKindRule)
+		language, strconv.FormatInt(id, 10), false, eventKindRule)
 	if err != nil {
 		return nil, rpc.Internalf("record rule change: %w", err)
 	}

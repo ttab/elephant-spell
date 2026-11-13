@@ -18,8 +18,9 @@ const moderationPageSize = 10
 
 // moderationFetch bounds how many pending items of each kind are pulled per
 // language before paging in memory. A moderation backlog is small, so this is
-// comfortably above any realistic queue.
-const moderationFetch = 500
+// comfortably above any realistic queue. It is the most the list RPCs return
+// in one page.
+const moderationFetch = MaxPageSize
 
 // moderationLang is a language together with its count of pending items (words
 // and rules). It drives the at-a-glance queue badges and the language switcher.
@@ -193,7 +194,12 @@ func (d *DictionariesUI) moderationData(
 		return items[i].Updated > items[j].Updated
 	})
 
-	start := min(int(page)*moderationPageSize, len(items))
+	// Compare before multiplying, so that a page far past the end cannot
+	// overflow into a negative start.
+	start := len(items)
+	if page <= int64(len(items)/moderationPageSize) {
+		start = int(page) * moderationPageSize
+	}
 
 	end := min(start+moderationPageSize, len(items))
 
@@ -395,7 +401,8 @@ func (d *DictionariesUI) moderate(
 	}, nil
 }
 
-// pageParam reads the optional "page" query parameter.
+// pageParam reads the optional "page" query parameter, a page number from
+// zero.
 func pageParam(r *http.Request) (int64, error) {
 	p := r.URL.Query().Get("page")
 	if p == "" {
@@ -407,6 +414,13 @@ func pageParam(r *http.Request) (int64, error) {
 		return 0, howdah.NewHTTPError(
 			http.StatusBadRequest, "Error", "Invalid page number",
 			fmt.Errorf("parse page parameter: %w", err),
+		)
+	}
+
+	if page < 0 {
+		return 0, howdah.NewHTTPError(
+			http.StatusBadRequest, "Error", "Invalid page number",
+			fmt.Errorf("negative page parameter %d", page),
 		)
 	}
 

@@ -749,6 +749,258 @@ func TestAPI(t *testing.T) {
 		})
 		assertCode(t, err, connect.CodeNotFound)
 	})
+
+	t.Run("rule_update_keeps_its_language", func(t *testing.T) {
+		rule := &spellapi.Rule{
+			Language: "sv-se", Name: "mm-rule", Status: "accepted",
+			Pattern: "{digit} mm", Replacement: "{1} millimeter",
+		}
+
+		created, err := stack.Rules.SetRule(ctx,
+			&spellapi.SetRuleRequest{Rule: rule})
+		if err != nil {
+			t.Fatalf("set rule: %v", err)
+		}
+
+		// An update that names another language is refused and changes
+		// nothing.
+		_, err = stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Id: created.Id, Language: "en-gb", Name: "moved-rule",
+				Status: "accepted", Pattern: "{digit} mm",
+				Replacement: "{1} millimetre",
+			},
+		})
+		assertCode(t, err, connect.CodeInvalidArgument)
+
+		got, err := stack.Rules.GetRule(ctx,
+			&spellapi.GetRuleRequest{Id: created.Id})
+		if err != nil {
+			t.Fatalf("get rule: %v", err)
+		}
+
+		if got.Rule.Language != "sv-se" || got.Rule.Name != "mm-rule" {
+			t.Errorf("refused update changed the rule: %+v", got.Rule)
+		}
+
+		// An update of a rule that does not exist is still not found.
+		_, err = stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Id: 999999, Language: "sv-se", Name: "missing",
+				Status: "accepted", Pattern: "{digit} mm",
+			},
+		})
+		assertCode(t, err, connect.CodeNotFound)
+	})
+
+	t.Run("get_entry_missing", func(t *testing.T) {
+		_, err := stack.Dictionaries.GetEntry(ctx, &spellapi.GetEntryRequest{
+			Language: "sv-se", Text: "does-not-exist",
+		})
+		assertCode(t, err, connect.CodeNotFound)
+	})
+
+	t.Run("negative_page", func(t *testing.T) {
+		_, err := stack.Dictionaries.ListEntries(ctx,
+			&spellapi.ListEntriesRequest{Language: "sv-se", Page: -1})
+		assertCode(t, err, connect.CodeInvalidArgument)
+
+		_, err = stack.Rules.ListRules(ctx,
+			&spellapi.ListRulesRequest{Language: "sv-se", Page: -1})
+		assertCode(t, err, connect.CodeInvalidArgument)
+
+		// A page size over the maximum is capped, not refused.
+		_, err = stack.Dictionaries.ListEntries(ctx,
+			&spellapi.ListEntriesRequest{Language: "sv-se", PageSize: 100000})
+		if err != nil {
+			t.Errorf("list entries with a large page size: %v", err)
+		}
+	})
+
+	t.Run("rename_onto_concurrent_create", func(t *testing.T) {
+		const (
+			source = "Racesource"
+			target = "Racetarget"
+		)
+
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language: "sv-se", Text: source, Status: "accepted",
+			},
+		})
+		if err != nil {
+			t.Fatalf("set entry: %v", err)
+		}
+
+		// Another writer creates the target and has not committed yet, so
+		// the rename finds no target and then waits on the key.
+		tx, err := stack.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatalf("begin transaction: %v", err)
+		}
+
+		defer func() {
+			_ = tx.Rollback(ctx)
+		}()
+
+		_, err = tx.Exec(ctx, `
+			INSERT INTO entry(language, entry, status, description,
+			       common_mistakes, level, updated_by)
+			VALUES ('sv-se', $1, 'accepted', '', '{}', 'error', 'test')`,
+			target)
+		if err != nil {
+			t.Fatalf("create the target: %v", err)
+		}
+
+		renamed := make(chan error, 1)
+
+		go func() {
+			_, err := stack.Dictionaries.RenameEntry(ctx,
+				&spellapi.RenameEntryRequest{
+					Language: "sv-se", Text: source, NewText: target,
+				})
+
+			renamed <- err
+		}()
+
+		integration.WaitFor(t, "the rename to wait for the target's key",
+			func() bool {
+				var waiting int
+
+				err := stack.Pool.QueryRow(ctx, `
+					SELECT COUNT(*) FROM pg_stat_activity
+					WHERE wait_event_type = 'Lock'
+					      AND query LIKE '%UPDATE entry%'`,
+				).Scan(&waiting)
+				if err != nil {
+					t.Fatalf("read pg_stat_activity: %v", err)
+				}
+
+				return waiting > 0
+			})
+
+		err = tx.Commit(ctx)
+		if err != nil {
+			t.Fatalf("commit the target: %v", err)
+		}
+
+		assertCode(t, <-renamed, connect.CodeAlreadyExists)
+	})
+
+	t.Run("language_codes_resolve_like_checks", func(t *testing.T) {
+		const text = "Kasusland"
+
+		_, err := stack.Dictionaries.SetEntry(ctx, &spellapi.SetEntryRequest{
+			Entry: &spellapi.CustomEntry{
+				Language:       "SV-SE",
+				Text:           text,
+				Status:         "accepted",
+				CommonMistakes: []string{"Kasuslant"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("set entry with an upper-case language: %v", err)
+		}
+
+		for _, lang := range []string{"sv-se", "SV-SE"} {
+			got, err := stack.Dictionaries.GetEntry(ctx,
+				&spellapi.GetEntryRequest{Language: lang, Text: text})
+			if err != nil {
+				t.Fatalf("get entry as %s: %v", lang, err)
+			}
+
+			if got.Entry.Language != "sv-se" {
+				t.Errorf("stored language %q, want sv-se",
+					got.Entry.Language)
+			}
+		}
+
+		// The entry reaches the spellchecker that Text resolves "SV-SE" to.
+		integration.WaitFor(t, "entry to propagate", func() bool {
+			res, err := stack.Check.Text(ctx, &spellapi.TextRequest{
+				Language:   "SV-SE",
+				Text:       []string{"Kasuslant"},
+				CustomOnly: true,
+			})
+			if err != nil {
+				t.Fatalf("spellcheck: %v", err)
+			}
+
+			return len(res.Misspelled) == 1 &&
+				len(res.Misspelled[0].Entries) > 0
+		})
+
+		rule, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+			Rule: &spellapi.Rule{
+				Language: "SV-SE", Name: "cm-rule", Status: "accepted",
+				Pattern: "{digit} cm", Replacement: "{1} centimeter",
+			},
+		})
+		if err != nil {
+			t.Fatalf("set rule with an upper-case language: %v", err)
+		}
+
+		gotRule, err := stack.Rules.GetRule(ctx,
+			&spellapi.GetRuleRequest{Id: rule.Id})
+		if err != nil {
+			t.Fatalf("get rule: %v", err)
+		}
+
+		if gotRule.Rule.Language != "sv-se" {
+			t.Errorf("stored rule language %q, want sv-se",
+				gotRule.Rule.Language)
+		}
+
+		unknown := []struct {
+			name string
+			call func() error
+		}{
+			{"delete entry", func() error {
+				_, err := stack.Dictionaries.DeleteEntry(ctx,
+					&spellapi.DeleteEntryRequest{Language: "zz-zz", Text: text})
+
+				return err
+			}},
+			{"rename entry", func() error {
+				_, err := stack.Dictionaries.RenameEntry(ctx,
+					&spellapi.RenameEntryRequest{
+						Language: "zz-zz", Text: text, NewText: "x",
+					})
+
+				return err
+			}},
+			{"set entry status", func() error {
+				_, err := stack.Dictionaries.SetEntryStatus(ctx,
+					&spellapi.SetEntryStatusRequest{
+						Language: "zz-zz", Text: text, Status: "accepted",
+					})
+
+				return err
+			}},
+			{"set rule", func() error {
+				_, err := stack.Rules.SetRule(ctx, &spellapi.SetRuleRequest{
+					Rule: &spellapi.Rule{
+						Language: "zz-zz", Name: "x", Status: "accepted",
+						Pattern: "{digit} cm",
+					},
+				})
+
+				return err
+			}},
+		}
+
+		for _, tc := range unknown {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.call()
+
+				assertCode(t, err, connect.CodeInvalidArgument)
+
+				if !strings.Contains(err.Error(), "unsupported language") {
+					t.Errorf("error does not name the language: %v", err)
+				}
+			})
+		}
+	})
 }
 
 // assertCode checks the RPC code without caring which stack produced it.

@@ -84,9 +84,10 @@ One goroutine per replica keeps that replica's in-memory tries in line with the 
 ```
   ┌─ startup ────────────────────────────────────────────────┐
   │  1. cursor := GetLastEventID()                           │
-  │  2. preloadEntries()   pages of 200, all languages       │
-  │  3. preloadRules()                                       │
+  │  2. preloadEntries()   pages of 200 by key, all languages│
+  │  3. preloadRules()     pages of 200 by id                │
   │  4. drainEventlog(cursor)   catch up on startup writes   │
+  │  5. loaded = true      /health/ready passes              │
   └──────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -100,6 +101,10 @@ One goroutine per replica keeps that replica's in-memory tries in line with the 
 
 **The cursor is read *before* the preload, and that order is the correctness argument.** The preload then sees a database state at least as new as the cursor, so every event up to the cursor is already reflected in what was loaded and only later events need replaying. Reading the cursor after the preload would open a window in which a write lands between the two and is both missed by the preload and skipped by the cursor. Events that land between the two reads are simply replayed, which is harmless — see below.
 
+The preload pages by key — entries after the last `(language, entry)` read, rules after the last id — rather than by offset. With an offset, a row deleted from a page already read would shift the next unread row back onto that page, and no event would bring it back, since nothing about that row changed.
+
+**The replica is not ready until step 5.** `Run` registers a required readiness check, `custom_dictionary`, on the API server's health server, and it fails until the preload and the initial drain have completed, so a replica that is still loading is kept out of service rather than answering checks against a partial dictionary. The check only reads a flag the updater sets, so it competes with request handling for nothing and cannot fail because the replica is busy — the reason it can be required.
+
 `drainEventlog` reads batches of 500 and keeps reading until a short batch tells it the log is exhausted, so a replica that has been unreachable catches up in one drain rather than one event per tick. The whole catch-up counts as a single `Polled` call regardless of backlog.
 
 #### Replay is idempotent by construction
@@ -108,7 +113,7 @@ One goroutine per replica keeps that replica's in-memory tries in line with the 
 
 This is what makes the preload/replay overlap safe, and it is why the eventlog can carry only `(language, entry, deleted, kind)` and no payload.
 
-An event for a language this replica has no dictionary for is dropped silently.
+An event for a language this replica has no dictionary for is dropped silently. A rule event goes to the language in the rule's row, not the one recorded on the event, and the rule is taken out of every other language's spellchecker; `SetRule` refuses an update whose language differs from the stored one, so the two only disagree in an event written by an older version.
 
 ### Recovery: when `LISTEN` is quietly dead
 
@@ -225,6 +230,10 @@ Three Twirp services, all mounted through `elephantine.APIServer` with `ServiceA
 
 `requireWriteScope` is the single gate for the second and third groups.
 
+Every RPC lower-cases the language code it is given, so `SV-SE` and `sv-se` name the same dictionary for writes, reads and checks alike. A write (`SetEntry`, `SetEntryStatus`, `RenameEntry`, `DeleteEntry`, `SetRule`) refuses a language with no spellchecker with `InvalidArgument`. A rule keeps the language it was created in: `SetRule` refuses an update that names another one.
+
+`ListEntries` and `ListRules` return pages of `page_size` rows, 100 when it is unset and at most `MaxPageSize` (500) — a larger size is capped, not refused. A negative `page` is refused with `InvalidArgument`.
+
 ### One implementation, two mounts
 
 Each service is mounted twice: `RegisterAPI` puts it on `/twirp/elephant.spell.<Service>/` and `RegisterConnect` on `/elephant.spell.<Service>/`. Both are served by the same `*Application` — the generated `spellconnect.New<Service>ServiceHandler` adapts the plain `spell.<Service>` interface, so there is no second set of methods to keep in step.
@@ -257,4 +266,4 @@ Queries are compiled by sqlc from `postgres/queries.sql`. `postgres/entry.go` is
 
 **No metrics of its own.** The service registers no collectors beyond the pool statistics `main` wires up: everything else on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. There is no counter of spellchecks by language, no gauge of entries or rules loaded per replica, and no measure of eventlog lag — so "is this replica's dictionary current?" is not answerable from monitoring, only from the logs. See [observability.md](observability.md#what-is-missing).
 
-**No readiness check.** Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`; `/health/alive` is elephantine's and answers as soon as the HTTP server is up. A replica that is still preloading, or whose `entry_updater` is failing to drain, reports itself alive and takes traffic with a stale or empty dictionary.
+**Readiness covers startup only.** The `custom_dictionary` check keeps a replica out of service until its first preload and drain are done, but once set it stays set: a replica whose `entry_updater` later fails to drain keeps taking traffic with a stale dictionary.

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -51,6 +53,23 @@ const (
 
 	// eventlogPruneInterval is how often the prune job runs.
 	eventlogPruneInterval = 15 * time.Minute
+
+	// DefaultPageSize is the page size ListEntries and ListRules use when
+	// the request leaves page_size unset.
+	DefaultPageSize = 100
+
+	// MaxPageSize is the largest page ListEntries and ListRules return; a
+	// larger page_size is capped to it. The moderation queue reads up to
+	// this many pending entries and rules per language in one page.
+	MaxPageSize = 500
+
+	// ReadyCheckDictionary is the name of the readiness check that passes
+	// once the custom dictionary and rules have been loaded.
+	ReadyCheckDictionary = "custom_dictionary"
+
+	// entryKeyConstraint is the primary key of the entry table, (language,
+	// entry).
+	entryKeyConstraint = "entry_pkey"
 )
 
 var (
@@ -218,6 +237,10 @@ type Application struct {
 	// maxExpansions is the most strings an entry's common mistakes may
 	// expand to.
 	maxExpansions int
+
+	// loaded is set once the entry updater has preloaded the custom
+	// dictionary and rules and caught up with the eventlog.
+	loaded atomic.Bool
 }
 
 func (a *Application) Run(ctx context.Context) error {
@@ -268,6 +291,8 @@ func (a *Application) Run(ctx context.Context) error {
 		return fmt.Errorf("set up web UI: %w", err)
 	}
 
+	a.registerReadyChecks(server.Health)
+
 	grp := elephantine.NewErrGroup(ctx, a.logger)
 
 	grp.Required("server", func(ctx context.Context) error {
@@ -293,6 +318,24 @@ func (a *Application) Run(ctx context.Context) error {
 	err = grp.Wait()
 	if err != nil {
 		return fmt.Errorf("run server: %w", err)
+	}
+
+	return nil
+}
+
+// registerReadyChecks adds the readiness checks that keep a replica out of
+// service until it can answer spellchecks with the custom dictionary.
+func (a *Application) registerReadyChecks(health *elephantine.HealthServer) {
+	// Required, because it only reads a flag: it competes with request
+	// handling for nothing, so it cannot fail because the replica is busy.
+	health.AddReadyFunction(ReadyCheckDictionary, a.dictionaryReady)
+}
+
+// dictionaryReady reports whether the custom dictionary and rules have been
+// loaded, the readiness check registered as ReadyCheckDictionary.
+func (a *Application) dictionaryReady(_ context.Context) error {
+	if !a.loaded.Load() {
+		return errors.New("the custom dictionary has not been loaded yet")
 	}
 
 	return nil
@@ -368,6 +411,9 @@ func (a *Application) runEntryUpdater(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("initial eventlog drain: %w", err)
 	}
+
+	// The replica now answers spellchecks with the custom dictionary.
+	a.loaded.Store(true)
 
 	ticker := time.NewTicker(eventPollInterval)
 	defer ticker.Stop()
@@ -479,6 +525,56 @@ func (a *Application) SupportedLanguages(
 	return &res, nil
 }
 
+// lookupLanguage lower-cases a language code, the way the check RPCs resolve
+// one. Reads use it alone; writes go through writeLanguage.
+func lookupLanguage(language string) string {
+	return strings.ToLower(language)
+}
+
+// writeLanguage resolves the language of a dictionary or rule write the way
+// the check RPCs resolve it, and refuses one that is missing or has no
+// spellchecker, with an error that names the field.
+func (a *Application) writeLanguage(field, language string) (string, error) {
+	if language == "" {
+		return "", rpc.RequiredArgument(field)
+	}
+
+	code := lookupLanguage(language)
+
+	_, ok := a.languages[code]
+	if !ok {
+		return "", rpc.InvalidArgumentf(field,
+			"unsupported language %q", language)
+	}
+
+	return code, nil
+}
+
+// pageWindow turns a page number and page size from a list request into a
+// limit and offset. An unset page size means DefaultPageSize, a larger one
+// than MaxPageSize is capped to it, and a negative page, or one so far out
+// that its offset overflows, is refused.
+func pageWindow(page, pageSize int64) (limit, offset int64, err error) {
+	limit = pageSize
+
+	switch {
+	case limit <= 0:
+		limit = DefaultPageSize
+	case limit > MaxPageSize:
+		limit = MaxPageSize
+	}
+
+	if page < 0 {
+		return 0, 0, rpc.InvalidArgument("page", "must not be negative")
+	}
+
+	if page > math.MaxInt64/limit {
+		return 0, 0, rpc.InvalidArgument("page", "too large")
+	}
+
+	return limit, page * limit, nil
+}
+
 // requireWriteScope authorizes a dictionary or rule write. The error is
 // returned as the *connect.Error the check produced: the Connect mount
 // renders it directly, and the Twirp mount's interceptor — installed by
@@ -502,8 +598,9 @@ func (a *Application) DeleteEntry(
 		return nil, err
 	}
 
-	if req.Language == "" {
-		return nil, rpc.RequiredArgument("language")
+	language, err := a.writeLanguage("language", req.Language)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Text == "" {
@@ -520,14 +617,14 @@ func (a *Application) DeleteEntry(
 	q := a.q.WithTx(tx)
 
 	err = q.DeleteEntry(ctx, postgres.DeleteEntryParams{
-		Language: req.Language,
+		Language: language,
 		Entry:    req.Text,
 	})
 	if err != nil {
 		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
-	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
+	err = a.recordChange(ctx, q, tx, language, req.Text, true, eventKindEntry)
 	if err != nil {
 		return nil, rpc.Internalf("record entry change: %w", err)
 	}
@@ -549,8 +646,9 @@ func (a *Application) RenameEntry(
 		return nil, err
 	}
 
-	if req.Language == "" {
-		return nil, rpc.RequiredArgument("language")
+	language, err := a.writeLanguage("language", req.Language)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Text == "" {
@@ -584,7 +682,7 @@ func (a *Application) RenameEntry(
 
 	// Refuse to clobber an existing entry with the target text.
 	_, err = q.GetEntry(ctx, postgres.GetEntryParams{
-		Language: req.Language,
+		Language: language,
 		Entry:    req.NewText,
 	})
 	if err == nil {
@@ -595,13 +693,18 @@ func (a *Application) RenameEntry(
 	}
 
 	affected, err := q.RenameEntry(ctx, postgres.RenameEntryParams{
-		Language:  req.Language,
+		Language:  language,
 		Entry:     req.Text,
 		NewEntry:  req.NewText,
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		UpdatedBy: auth.Claims.Subject,
 	})
-	if err != nil {
+	if pg.IsConstraintError(err, entryKeyConstraint) {
+		// An entry with the target text was created after the check
+		// above.
+		return nil, rpc.AlreadyExists(
+			"an entry with that text already exists")
+	} else if err != nil {
 		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
@@ -611,12 +714,12 @@ func (a *Application) RenameEntry(
 
 	// A rename is a remove of the old text plus an add of the new one, so the
 	// listener clears the stale phrase and loads the renamed one.
-	err = a.recordChange(ctx, q, tx, req.Language, req.Text, true, eventKindEntry)
+	err = a.recordChange(ctx, q, tx, language, req.Text, true, eventKindEntry)
 	if err != nil {
 		return nil, rpc.Internalf("record entry change: %w", err)
 	}
 
-	err = a.recordChange(ctx, q, tx, req.Language, req.NewText, false, eventKindEntry)
+	err = a.recordChange(ctx, q, tx, language, req.NewText, false, eventKindEntry)
 	if err != nil {
 		return nil, rpc.Internalf("record entry change: %w", err)
 	}
@@ -647,10 +750,12 @@ func (a *Application) GetEntry(
 	}
 
 	row, err := a.q.GetEntry(ctx, postgres.GetEntryParams{
-		Language: req.Language,
+		Language: lookupLanguage(req.Language),
 		Entry:    req.Text,
 	})
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, rpc.NotFound("entry does not exist")
+	} else if err != nil {
 		return nil, rpc.Internalf("read from database: %w", err)
 	}
 
@@ -780,15 +885,13 @@ func (a *Application) ListEntries(
 		pattern = "%" + req.Query + "%"
 	}
 
-	limit := req.PageSize
-	if limit <= 0 {
-		limit = 100
+	limit, offset, err := pageWindow(req.Page, req.PageSize)
+	if err != nil {
+		return nil, err
 	}
 
-	offset := limit * req.Page
-
 	rows, err := a.q.ListEntries(ctx, postgres.ListEntriesParams{
-		Language: pg.TextOrNull(req.Language),
+		Language: pg.TextOrNull(lookupLanguage(req.Language)),
 		Query:    pg.TextOrNull(pattern),
 		Status:   pg.TextOrNull(req.Status),
 		Limit:    limit,
@@ -855,14 +958,9 @@ func (a *Application) SetEntry(
 		return nil, rpc.RequiredArgument("entry")
 	}
 
-	if req.Entry.Language == "" {
-		return nil, rpc.RequiredArgument("entry.language")
-	}
-
-	_, ok := a.languages[req.Entry.Language]
-	if !ok {
-		return nil, rpc.InvalidArgument("entry.language",
-			fmt.Sprintf("unknown language %q", req.Entry.Language))
+	language, err := a.writeLanguage("entry.language", req.Entry.Language)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Entry.Text == "" {
@@ -894,7 +992,7 @@ func (a *Application) SetEntry(
 	q := a.q.WithTx(tx)
 
 	err = q.SetEntry(ctx, postgres.SetEntryParams{
-		Language:       req.Entry.Language,
+		Language:       language,
 		Entry:          req.Entry.Text,
 		Status:         req.Entry.Status,
 		Description:    req.Entry.Description,
@@ -915,7 +1013,7 @@ func (a *Application) SetEntry(
 		return nil, rpc.Internalf("write to database: %w", err)
 	}
 
-	err = a.recordChange(ctx, q, tx, req.Entry.Language, req.Entry.Text, false, eventKindEntry)
+	err = a.recordChange(ctx, q, tx, language, req.Entry.Text, false, eventKindEntry)
 	if err != nil {
 		return nil, rpc.Internalf("record entry change: %w", err)
 	}
@@ -967,8 +1065,9 @@ func (a *Application) SetEntryStatus(
 		return nil, err
 	}
 
-	if req.Language == "" {
-		return nil, rpc.RequiredArgument("language")
+	language, err := a.writeLanguage("language", req.Language)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Text == "" {
@@ -989,7 +1088,7 @@ func (a *Application) SetEntryStatus(
 	q := a.q.WithTx(tx)
 
 	affected, err := q.SetEntryStatus(ctx, postgres.SetEntryStatusParams{
-		Language:  req.Language,
+		Language:  language,
 		Entry:     req.Text,
 		Status:    req.Status,
 		Updated:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
@@ -1003,7 +1102,7 @@ func (a *Application) SetEntryStatus(
 		return nil, rpc.NotFound("entry does not exist")
 	}
 
-	err = a.recordChange(ctx, q, tx, req.Language, req.Text, false, eventKindEntry)
+	err = a.recordChange(ctx, q, tx, language, req.Text, false, eventKindEntry)
 	if err != nil {
 		return nil, rpc.Internalf("record entry change: %w", err)
 	}
@@ -1089,7 +1188,7 @@ func (a *Application) Text(
 		return nil, rpc.Unauthenticated("unauthenticated")
 	}
 
-	langCode := strings.ToLower(req.Language)
+	langCode := lookupLanguage(req.Language)
 
 	lang, ok := a.languages[langCode]
 	if !ok {
@@ -1134,7 +1233,7 @@ func (a *Application) Suggestions(
 		return nil, rpc.RequiredArgument("text")
 	}
 
-	langCode := strings.ToLower(req.Language)
+	langCode := lookupLanguage(req.Language)
 
 	lang, ok := a.languages[langCode]
 	if !ok {

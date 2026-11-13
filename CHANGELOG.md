@@ -33,6 +33,16 @@ is skipped with a "skip entry that cannot be matched" warning when it is
 loaded, and stops matching until it is split or `MAX_EXPANSIONS` is raised.
 See [phrase matching](docs/architecture.md#phrase-matching).
 
+**Behaviour change (languages and paging in the dictionary and rule RPCs):**
+the dictionary and rule RPCs now lower-case the language code, as `Text` and
+`Suggestions` already did, and `SetEntryStatus`, `RenameEntry` and
+`DeleteEntry` refuse a language with no spellchecker with `InvalidArgument`,
+where they used to answer `NotFound` or do nothing. `SetRule` refuses an
+update whose language differs from the rule's own with `InvalidArgument` on
+`rule.language`; it used to apply it and make the rule active for the wrong
+language until restart. `ListEntries` and `ListRules` refuse a negative
+`page` with `InvalidArgument` and cap `page_size` at 500.
+
 **Behaviour change (hunspell memory grows under load):** each language now
 loads up to `HUNSPELL_HANDLES` (`--hunspell-handles`, default 4) hunspell
 handles, so that checks run hunspell in parallel instead of one at a time. A
@@ -83,6 +93,19 @@ Changes:
   cancelled rather than as an internal error.
 - The service now refuses to start when a dictionary file is missing, where it
   used to start with a language that accepted no words.
+- A replica reports ready on `/health/ready` only once it has loaded the
+  custom dictionary and rules, through the new `custom_dictionary` check, so a
+  new pod no longer answers checks without its custom entries during a
+  rollout. See
+  [A replica does not become ready](docs/ops.md#a-replica-does-not-become-ready).
+- An entry or rule deleted while a replica starts no longer makes it skip
+  loading another one until its next restart.
+- `GetEntry` answers `NotFound` for a missing entry, and `RenameEntry`
+  answers `AlreadyExists` when the target text is created at the same time,
+  where both used to return an internal error.
+- In the UI, the moderation page refuses a negative page number instead of
+  failing, and a rule's page answers 404 when the rule belongs to another
+  language than the address names.
 - Dependency upgrades: elephantine to v0.32.0, elephant-api to v0.29.0, howdah
   to v0.5.3, pgx to v5.13.0, Connect to v1.21.1, and the rest of the module
   graph to its latest versions.

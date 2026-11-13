@@ -19,6 +19,11 @@ import (
 	"github.com/ttab/howdah"
 )
 
+// entriesPageSize is the entry list page size requested from the service. It
+// is sent explicitly so the "is there another page?" check (a full page
+// implies more) doesn't drift from the service-side default.
+const entriesPageSize = 100
+
 type DictionariesUI struct {
 	log             *slog.Logger
 	auth            howdah.Authenticator
@@ -1181,13 +1186,16 @@ func (d *DictionariesUI) listEntries(
 		Language: lang,
 		Query:    query,
 		Page:     page,
+		PageSize: entriesPageSize,
 	})
 	if err != nil {
 		return nil, false, fmt.Errorf("list entries for %q page %d: %w",
 			lang, page, err)
 	}
 
-	hasMore := len(res.Entries) == 100
+	// A full page implies there may be another; the request fixes the size
+	// so this cannot drift from the service-side default.
+	hasMore := len(res.Entries) == entriesPageSize
 
 	return customEntriesToUI(res.Entries), hasMore, nil
 }

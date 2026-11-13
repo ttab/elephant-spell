@@ -63,7 +63,7 @@ Exactly one replica holds the `eventlog-prune` job lock at a time. That is the o
 | Port | Default | What is on it |
 |---|---|---|
 | API | 1080 | The three Twirp services, the web UI, `/health/alive`. |
-| Profiling | 1081 | `/metrics` and pprof. **Never expose this.** |
+| Profiling | 1081 | `/metrics`, `/health/ready` and pprof. **Never expose this.** |
 | TLS | 1443 | The same API surface, when `TLS_CERT_PATH` and `TLS_KEY_PATH` are set. |
 
 ## Data flows
@@ -141,7 +141,7 @@ No database access is on this path. **A spellcheck is served entirely from memor
 1. **Migrations, before the deploy.** `go run ./cmd/setup db migrate` in elephant-platform. The service never migrates itself.
 2. **`COOKIE_KEY_1` in the environment.** Without it the process exits at startup. If this is a first deploy of a version on howdah v0.5.0 or later, provision it *before* rolling, not after the first pod fails.
 3. **The OIDC client must exist** and `callback-url` must be registered as a redirect URI for it. Provider discovery happens during startup, so a wrong `oidc-provider` is a startup failure rather than a login failure.
-4. **Then the replicas.** Each preloads the full dictionary before serving correctly; see the readiness gap below.
+4. **Then the replicas.** Each preloads the full dictionary and only reports ready on `/health/ready` once it has; see [A replica does not become ready](#a-replica-does-not-become-ready).
 
 Out of order, the common one is (2): a rollout where every pod crashloops on `no cookie keys configured, expected at least one COOKIE_KEY_* environment variable`.
 
@@ -194,13 +194,13 @@ Every call into hunspell borrows one of the language's handles, and a check with
 
 **What to do:** if the replicas have idle CPU, raise `HUNSPELL_HANDLES`; each extra handle costs 4–41 MiB depending on the language (see [the hunspell handle pool](architecture.md#the-hunspell-handle-pool)), and only languages under load grow. If the CPU is saturated, more handles will not help: add replicas. Waits while the pool is still below its maximum are a pool that is growing and settle by themselves.
 
-### A replica takes traffic before its dictionary is loaded
+### A replica does not become ready
 
-**The signal:** none. This is the gap, not the symptom.
+**The signal:** `/health/ready` on the profiling port answers 500 with `"custom_dictionary": {"ok": false}`, and `health_check_up{name="custom_dictionary"}` reads 0. A rollout stalls with the new pods running but not ready.
 
-Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`, so `/health/alive` answers as soon as the HTTP listener is up — while the replica may still be paging through the preload. During a rollout of a large dictionary this is a window in which a fresh replica answers checks against a partial dictionary and reports itself healthy.
+The `custom_dictionary` check is required: it passes once the `entry_updater` has preloaded every entry and rule and caught up with the eventlog, and until then the replica is kept out of service, so it never answers checks against a partial dictionary. The preload pages through the tables by key, a few hundred rows at a time, so it should take seconds; a failed preload or initial drain exits the process rather than leaving it unready.
 
-**What to do:** nothing operationally; this needs a readiness check. Until then, roll slowly enough that a replica has finished preloading before the next is replaced.
+**What to do:** a replica that stays unready while running is still reading the tables. Look at Postgres first (slow queries on `entry` or `rule`, a saturated `DB_MAX_CONNS` pool), then the logs for `preload entries`, `preload rules` or `initial eventlog drain` errors, which come with a restart.
 
 ## What to watch, in order
 
@@ -237,6 +237,5 @@ Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`, so 
 
 ## Not in place yet
 
-- **No readiness check**, so a preloading replica reports itself alive.
 - **Few metrics of this service's own** — the hunspell handle pools only; no eventlog lag, no dictionary size, no spellcheck counters. See [observability.md](observability.md#what-is-missing).
 - **No incident history.** The catalogue above is read off the code. The first real incident should be written in with its numbers.

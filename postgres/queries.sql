@@ -56,6 +56,17 @@ WHERE
 ORDER BY language, entry
 LIMIT sqlc.arg('limit')::bigint OFFSET sqlc.arg('offset')::bigint;
 
+-- PreloadEntries reads a page of entries in key order, starting after the
+-- given key. Paging by key rather than by offset means a row deleted on an
+-- earlier page cannot shift a later row back across the page boundary.
+-- name: PreloadEntries :many
+SELECT language, entry, status, description, common_mistakes, level, data,
+       updated, updated_by
+FROM entry
+WHERE (language, entry) > (@after_language::text, @after_entry::text)
+ORDER BY language, entry
+LIMIT sqlc.arg('limit')::bigint;
+
 -- name: ListDictionaries :many
 SELECT language, COUNT(*) AS entries,
        COUNT(*) FILTER (WHERE status = 'pending') AS pending
@@ -102,7 +113,10 @@ INSERT INTO rule(
 )
 RETURNING id;
 
--- name: UpdateRule :execrows
+-- UpdateRule updates a rule by id and returns its stored language, which the
+-- update never changes, so the change can be recorded for the right
+-- spellchecker and checked against the language the caller named.
+-- name: UpdateRule :one
 UPDATE rule
 SET name = @name,
     status = @status,
@@ -113,7 +127,8 @@ SET name = @name,
     data = @data,
     updated = @updated,
     updated_by = @updated_by
-WHERE id = @id;
+WHERE id = @id
+RETURNING language;
 
 -- name: GetRule :one
 SELECT id, language, name, status, description, level, pattern, replacement,
@@ -151,6 +166,15 @@ WHERE
         AND (sqlc.narg('status')::text IS NULL OR status = @status)
 ORDER BY language, name
 LIMIT sqlc.arg('limit')::bigint OFFSET sqlc.arg('offset')::bigint;
+
+-- PreloadRules reads a page of rules in id order, starting after the given id.
+-- name: PreloadRules :many
+SELECT id, language, name, status, description, level, pattern, replacement,
+       data, updated, updated_by
+FROM rule
+WHERE id > @after_id::bigint
+ORDER BY id
+LIMIT sqlc.arg('limit')::bigint;
 
 -- name: ListRuleCounts :many
 SELECT language, COUNT(*) AS rules,

@@ -58,6 +58,7 @@ func NewDictionariesUI(
 func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"pathEscape":    url.PathEscape,
+		"entryPath":     entryPath,
 		"add":           func(a, b int64) int64 { return a + b },
 		"subtract":      func(a, b int64) int64 { return a - b },
 		"expandPreview": mistakesPreview,
@@ -65,23 +66,60 @@ func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
 }
 
 func (d *DictionariesUI) RegisterRoutes(mux *howdah.PageMux) {
+	d.registerRoutes(mux)
+}
+
+// pageRouter is the part of howdah.PageMux that registerRoutes uses, so that
+// the route table can be exercised in tests.
+type pageRouter interface {
+	HandleFunc(pattern string, handler howdah.PageHandlerFunc)
+}
+
+// registerRoutes registers the dictionary UI's routes. An entry's pages live
+// under the fixed "entries" segment (see entryPath), so no entry text can
+// collide with the language's own routes such as "new" or "_validate".
+func (d *DictionariesUI) registerRoutes(mux pageRouter) {
 	mux.HandleFunc("GET /{$}", d.listPage)
 	mux.HandleFunc("GET /api/keepalive", d.keepalivePage)
 	mux.HandleFunc("GET /dictionaries/{language}/{$}", d.languagePage)
 	mux.HandleFunc("GET /dictionaries/{language}/entries", d.entriesPage)
 	mux.HandleFunc("GET /dictionaries/{language}/new", d.newEntryPage)
-	mux.HandleFunc("GET /dictionaries/{language}/{text}", d.entryPage)
+	mux.HandleFunc("GET /dictionaries/{language}/{text}", d.legacyEntryRedirect)
 	mux.HandleFunc("POST /dictionaries/{language}/_new", d.saveNewEntry)
 	mux.HandleFunc("POST /dictionaries/{language}/_validate", d.validateMistakes)
 	mux.HandleFunc("POST /dictionaries/{language}/_expansions", d.listExpansions)
-	mux.HandleFunc("POST /dictionaries/{language}/{text}", d.saveEntry)
-	mux.HandleFunc("POST /dictionaries/{language}/{text}/delete", d.deleteEntry)
-	mux.HandleFunc("GET /dictionaries/{language}/{text}/rename", d.renameEntryForm)
-	mux.HandleFunc("POST /dictionaries/{language}/{text}/rename", d.renameEntry)
+	mux.HandleFunc("GET /dictionaries/{language}/entries/{text}", d.entryPage)
+	mux.HandleFunc("POST /dictionaries/{language}/entries/{text}", d.saveEntry)
+	mux.HandleFunc("POST /dictionaries/{language}/entries/{text}/delete", d.deleteEntry)
+	mux.HandleFunc("GET /dictionaries/{language}/entries/{text}/rename", d.renameEntryForm)
+	mux.HandleFunc("POST /dictionaries/{language}/entries/{text}/rename", d.renameEntry)
 	mux.HandleFunc("GET /moderation/{$}", d.moderationRedirect)
 	mux.HandleFunc("GET /moderation/{language}/{$}", d.moderationPage)
 	mux.HandleFunc("POST /moderation/{language}/{kind}/{ident}/accept", d.moderationAccept)
 	mux.HandleFunc("POST /moderation/{language}/{kind}/{ident}/reject", d.moderationReject)
+}
+
+// entryPath is the path of a dictionary entry's page. Entry pages live under
+// the fixed "entries" segment so that no entry text can collide with one of
+// the language's own routes, such as "new" or "_validate".
+func entryPath(lang, text string) string {
+	return "/dictionaries/" + url.PathEscape(lang) + "/entries/" +
+		url.PathEscape(text)
+}
+
+// legacyEntryRedirect sends links to an entry's page from before entry pages
+// moved under "entries/" to their current location.
+func (d *DictionariesUI) legacyEntryRedirect(
+	_ context.Context, w http.ResponseWriter, r *http.Request,
+) (*howdah.Page, error) {
+	// Not an open redirect: entryPath always returns a path on this host
+	// under "/dictionaries/", with the caller's values path-escaped into
+	// single segments.
+	http.Redirect(w, r, //nolint:gosec // see above.
+		entryPath(r.PathValue("language"), r.PathValue("text")),
+		http.StatusMovedPermanently)
+
+	return nil, howdah.ErrSkipRender
 }
 
 func (d *DictionariesUI) MenuHook(hooks *howdah.MenuHooks) {
@@ -558,7 +596,7 @@ func (d *DictionariesUI) saveNewEntry(
 		return nil, rpcErrorToHTTP(err)
 	}
 
-	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(text))
+	w.Header().Set("HX-Push-Url", entryPath(lang, text))
 
 	return d.entryDetailResponse(ctx, svcCtx, lang, text, &flashMessage{
 		Type:    flashSuccess,
@@ -797,7 +835,7 @@ func (d *DictionariesUI) renameEntry(
 		})
 	}
 
-	w.Header().Set("HX-Push-Url", "/dictionaries/"+lang+"/"+url.PathEscape(newText))
+	w.Header().Set("HX-Push-Url", entryPath(lang, newText))
 
 	return d.entryDetailResponse(ctx, svcCtx, lang, newText, &flashMessage{
 		Type:    flashSuccess,

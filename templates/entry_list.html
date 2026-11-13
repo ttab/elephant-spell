@@ -1,8 +1,8 @@
 {{range .Contents.Entries}}
 <a
   class="entry-item {{if eq .Entry $.Contents.ActiveEntry}}active{{end}}"
-  href="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Entry}}"
-  hx-get="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Entry}}"
+  href="{{entryPath $.Contents.Language .Entry}}"
+  hx-get="{{entryPath $.Contents.Language .Entry}}"
   hx-target="#entry-detail"
   hx-push-url="true"
 >

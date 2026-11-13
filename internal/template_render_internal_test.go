@@ -25,6 +25,7 @@ func renderEntryForm(t *testing.T, contents dictionariesContents) string {
 		"tl":            func(_ ...any) string { return "" },
 		"td":            func(_ ...any) string { return "" },
 		"pathEscape":    url.PathEscape,
+		"entryPath":     entryPath,
 		"expandPreview": mistakesPreview,
 	}
 
@@ -216,6 +217,7 @@ func TestEntryRenameRender(t *testing.T) {
 		},
 		"tl":         func(_ ...any) string { return "" },
 		"pathEscape": url.PathEscape,
+		"entryPath":  entryPath,
 	}
 
 	tpl, err := template.New("entry_rename.html").Funcs(funcs).
@@ -243,7 +245,7 @@ func TestEntryRenameRender(t *testing.T) {
 	for _, want := range []string{
 		`name="new_text"`,
 		`value="Mexico City"`,
-		"/sv-se/Mexico%20City/rename",
+		"/dictionaries/sv-se/entries/Mexico%20City/rename",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rename form missing %q", want)

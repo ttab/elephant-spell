@@ -43,6 +43,8 @@ func TestSpellcheckIgnoresContactDetails(t *testing.T) {
 		true, false)
 	test.Mustf(t, err, "spellcheck")
 
+	headOfHunspellSuggestions(result)
+
 	test.MessageAgainstGolden(t, regenerate, result,
 		filepath.Join("..", "testdata", t.Name(), "result.json"))
 }

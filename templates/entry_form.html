@@ -14,13 +14,13 @@
   <div class="entry-form-header">
     <a class="btn btn-sm mobile-back" href="/dictionaries/{{.Language}}/">← {{t "Back" "Back"}}</a>
     <h2>{{if .NewEntry}}{{t "NewEntry" "New entry"}}{{else}}{{.Entry.Entry}}{{if .CanWrite}}<a class="entry-rename-btn" title="{{t "RenameEntry" "Rename entry"}}"
-        href="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/rename"
-        hx-get="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/rename"
+        href="{{entryPath .Language .Entry.Entry}}/rename"
+        hx-get="{{entryPath .Language .Entry.Entry}}/rename"
         hx-target="#entry-detail" hx-push-url="true"><span class="icon icon-pen"></span></a>{{end}}{{end}}</h2>
   </div>
   <form
     class="entry-form"
-    hx-post="/dictionaries/{{.Language}}/{{if .NewEntry}}_new{{else}}{{pathEscape .Entry.Entry}}{{end}}"
+    hx-post="{{if .NewEntry}}/dictionaries/{{.Language}}/_new{{else}}{{entryPath .Language .Entry.Entry}}{{end}}"
     hx-target="#entry-detail"
   >
     <div class="form-group">
@@ -135,7 +135,7 @@
       <button
         type="button"
         class="btn btn-danger"
-        hx-post="/dictionaries/{{.Language}}/{{pathEscape .Entry.Entry}}/delete"
+        hx-post="{{entryPath .Language .Entry.Entry}}/delete"
         hx-target="#entry-detail"
         hx-confirm="{{t "ConfirmDelete" "Are you sure you want to delete this entry?"}}"
       >{{t "Delete" "Delete"}}</button>

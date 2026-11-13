@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/hunspell"
 	"github.com/ttab/elephant-spell/internal"
 	"github.com/ttab/elephant-spell/postgres"
@@ -60,6 +61,8 @@ func TestSpellcheck(t *testing.T) {
 		true, false)
 	test.Mustf(t, err, "spellcheck")
 
+	headOfHunspellSuggestions(resultSugg)
+
 	test.MessageAgainstGolden(t, regenerate, resultSugg,
 		filepath.Join("..", "testdata", t.Name(), "result-suggestions.json"))
 
@@ -71,4 +74,19 @@ func TestSpellcheck(t *testing.T) {
 
 	test.MessageAgainstGolden(t, regenerate, resultCustom,
 		filepath.Join("..", "testdata", t.Name(), "result-custom-only.json"))
+}
+
+// headOfHunspellSuggestions cuts the suggestion lists of hunspell's entries
+// down to their first suggestion before a result is compared against a golden
+// file. Hunspell bounds its suggestion search by wall-clock time, and the
+// n-gram suggestions after the edit-distance hit at the head of the list also
+// vary between hunspell versions, so only the head is deterministic. The
+// entries hunspell produces are the ones without spans; entries from custom
+// phrases and rules carry the spans they matched.
+func headOfHunspellSuggestions(res *spell.Misspelled) {
+	for _, e := range res.Entries {
+		if len(e.Spans) == 0 && len(e.Suggestions) > 1 {
+			e.Suggestions = e.Suggestions[:1]
+		}
+	}
 }

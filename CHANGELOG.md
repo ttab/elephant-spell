@@ -16,6 +16,11 @@ sets no scope prefix has nothing to do.
 
 Changes:
 
+- A dictionary entry's page in the UI is now at
+  `/dictionaries/{language}/entries/{text}`, so entries whose text is `new`,
+  `entries`, `_new`, `_validate` or `_expansions` can be opened and saved.
+  Links to the old `/dictionaries/{language}/{text}` address redirect to the
+  new one.
 - Dependency upgrades: elephantine to v0.32.0, elephant-api to v0.29.0, howdah
   to v0.5.3, pgx to v5.13.0, Connect to v1.21.1, and the rest of the module
   graph to its latest versions.

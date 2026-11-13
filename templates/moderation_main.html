@@ -12,7 +12,7 @@
   {{range .Contents.Items}}
   <div class="mod-card">
     <div class="mod-card-head">
-      <a class="mod-card-text" href="{{if .IsRule}}/rules/{{$.Contents.Language}}/{{.Ident}}{{else}}/dictionaries/{{$.Contents.Language}}/{{pathEscape .Name}}{{end}}">{{.Name}}</a>
+      <a class="mod-card-text" href="{{if .IsRule}}/rules/{{$.Contents.Language}}/{{.Ident}}{{else}}{{entryPath $.Contents.Language .Name}}{{end}}">{{.Name}}</a>
       <span class="mod-card-kind">{{if .IsRule}}{{t "RuleKind" "Rule"}}{{else}}{{t "WordKind" "Word"}}{{end}}</span>
       <span class="mod-card-level level-{{.Level}}">{{if eq .Level "suggestion"}}{{t "Suggestion" "Suggestion"}}{{else}}{{t "Error" "Error"}}{{end}}</span>
       {{if .CaseSensitive}}<span class="mod-card-cs">{{t "CaseSensitive" "Case sensitive"}}</span>{{end}}
@@ -55,7 +55,7 @@
         {{if .IsRule}}
         <a href="/rules/{{$.Contents.Language}}/{{.Ident}}">{{t "Edit" "Edit"}}</a>
         {{else}}
-        <a href="/dictionaries/{{$.Contents.Language}}/{{pathEscape .Name}}">{{t "Edit" "Edit"}}</a>
+        <a href="{{entryPath $.Contents.Language .Name}}">{{t "Edit" "Edit"}}</a>
         {{end}}
         {{if .Updated}}<small>{{.Updated}}{{if .UpdatedBy}} · {{.UpdatedBy}}{{end}}</small>{{end}}
       </div>

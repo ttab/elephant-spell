@@ -23,7 +23,7 @@ The editor-managed layer, as opposed to the hunspell dictionaries that ship in t
 _Avoid_: user dictionary, local dictionary
 
 **Common mistake**:
-A misspelling recorded on an entry so that it is flagged and corrected to the entry's text. Written with `{A|B}` expansion, which generates every combination.
+A misspelling recorded on an entry so that it is flagged and corrected to the entry's text. Written with `{A|B}` expansion, which generates every combination; an entry's common mistakes may expand to at most `MAX_EXPANSIONS` strings together (`DefaultMaxExpansions`, 200).
 _Avoid_: typo, misspelling (as a noun for the stored thing), error string
 
 **Form**:

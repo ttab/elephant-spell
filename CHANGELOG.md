@@ -23,6 +23,16 @@ skipped with a "skip entry that cannot be matched" warning when it is loaded;
 shorten it to bring it back. See
 [phrase matching](docs/architecture.md#phrase-matching).
 
+**Behaviour change (expansion limit):** an entry's common mistakes may now
+expand to at most 200 strings in total, all of its `{A|B}` patterns together,
+set by `MAX_EXPANSIONS` (`--max-expansions`). `SetEntry` refuses a larger
+entry with `InvalidArgument` on `entry.common_mistakes`, where any pattern
+used to be expanded in full, so that a short pattern could exhaust every
+replica's memory. **Check before deploying**: a stored entry over the limit
+is skipped with a "skip entry that cannot be matched" warning when it is
+loaded, and stops matching until it is split or `MAX_EXPANSIONS` is raised.
+See [phrase matching](docs/architecture.md#phrase-matching).
+
 **Behaviour change (hunspell memory grows under load):** each language now
 loads up to `HUNSPELL_HANDLES` (`--hunspell-handles`, default 4) hunspell
 handles, so that checks run hunspell in parallel instead of one at a time. A
@@ -55,6 +65,10 @@ Changes:
 - Texts over 64 KB are now checked in full. A custom-only check of such a text
   used to return no corrections, and a full check failed with an internal
   error.
+- The entry form's common-mistakes preview counts combinations without
+  generating them, and marks the line that takes the entry over the
+  expansion limit. A common mistake whose pattern fails to parse is now
+  logged when the entry is loaded, where it used to be dropped silently.
 - Deleting or updating an entry for a word in the base dictionary no longer
   makes that word and its inflections misspelled until restart.
 - Large texts with many matches are checked much faster: guards no longer

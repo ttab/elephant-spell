@@ -140,9 +140,9 @@ func TestFiveWordEntriesMatch(t *testing.T) {
 	}
 }
 
-// TestCheckPhraseLengths checks that phrases longer than the window are
+// TestCheckEntryLimits checks that phrases longer than the window are
 // refused, counting words the way the window does.
-func TestCheckPhraseLengths(t *testing.T) {
+func TestCheckEntryLimits(t *testing.T) {
 	cases := []struct {
 		name      string
 		text      string
@@ -182,7 +182,8 @@ func TestCheckPhraseLengths(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := CheckPhraseLengths(tc.text, tc.mistakes, tc.forms)
+			err := CheckEntryLimits(tc.text, tc.mistakes, tc.forms,
+				DefaultMaxExpansions)
 
 			if tc.wantField == "" {
 				if err != nil {

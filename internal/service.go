@@ -80,6 +80,11 @@ type Parameters struct {
 	// at once. Zero means hunspell.DefaultHandles.
 	HunspellHandles int
 
+	// MaxExpansions is the most strings an entry's common mistakes may
+	// expand to, all of its "{a|b}" patterns together. Zero means
+	// DefaultMaxExpansions.
+	MaxExpansions int
+
 	// OIDC configuration for the web UI. When OIDCProvider is nil the
 	// web UI is not served.
 	OIDCProvider *oidc.Provider
@@ -118,6 +123,11 @@ func NewApplication(
 		handles = hunspell.DefaultHandles
 	}
 
+	maxExpansions := p.MaxExpansions
+	if maxExpansions == 0 {
+		maxExpansions = DefaultMaxExpansions
+	}
+
 	languages := make(map[string]*Spellcheck)
 
 	// Instantiate one spellchecker per language. Each checker loads its
@@ -141,7 +151,9 @@ func NewApplication(
 		// Convert from sv_SE to sv-se.
 		code := strings.ToLower(strings.Replace(lang, "_", "-", 1))
 
-		spell, err := NewSpellcheck(code, checker)
+		spell, err := NewSpellcheck(code, checker,
+			WithMaxExpansions(maxExpansions),
+			WithSpellcheckLogger(p.Logger.With("language", code)))
 		if err != nil {
 			return nil, fmt.Errorf("create spellchecker: %w", err)
 		}
@@ -186,6 +198,8 @@ func NewApplication(
 		languages:  languages,
 		updates:    updates,
 		subscriber: subscriber,
+
+		maxExpansions: maxExpansions,
 	}
 
 	return &app, nil
@@ -200,6 +214,10 @@ type Application struct {
 	subscriber *pg.Subscriber
 
 	languages map[string]*Spellcheck
+
+	// maxExpansions is the most strings an entry's common mistakes may
+	// expand to.
+	maxExpansions int
 }
 
 func (a *Application) Run(ctx context.Context) error {
@@ -407,6 +425,7 @@ func (a *Application) setupUI(mux *http.ServeMux) error {
 	cDicts := NewDictionariesUI(
 		a.logger, cAuth, a.p.AuthInfoParser, a, a,
 		supportedLanguages, a.p.DefaultLanguage,
+		WithDictionariesMaxExpansions(a.maxExpansions),
 	)
 
 	cRules := NewRulesUI(
@@ -549,7 +568,7 @@ func (a *Application) RenameEntry(
 
 	// The entry's common mistakes and forms were checked when it was
 	// written; only the text changes.
-	err = phraseLengthArgument("new_", req.NewText, nil, nil)
+	err = a.entryLimitsArgument("new_", req.NewText, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -854,7 +873,7 @@ func (a *Application) SetEntry(
 		return nil, rpc.RequiredArgument("entry.status")
 	}
 
-	err = phraseLengthArgument("entry.",
+	err = a.entryLimitsArgument("entry.",
 		req.Entry.Text, req.Entry.CommonMistakes, req.Entry.Forms)
 	if err != nil {
 		return nil, err
@@ -909,20 +928,27 @@ func (a *Application) SetEntry(
 	return &spell.SetEntryResponse{}, nil
 }
 
-// phraseLengthArgument refuses an entry text, common mistake or form that has
+// entryLimitsArgument refuses common mistakes that expand to more strings
+// than an entry may have, and an entry text, common mistake or form that has
 // more words than the phrase window holds, with an InvalidArgument error that
 // names the field. The prefix is prepended to the field name.
-func phraseLengthArgument(
+func (a *Application) entryLimitsArgument(
 	prefix string, text string, commonMistakes []string,
 	forms map[string]string,
 ) error {
-	err := CheckPhraseLengths(text, commonMistakes, forms)
+	err := CheckEntryLimits(text, commonMistakes, forms, a.maxExpansions)
 
-	var lengthErr *PhraseLengthError
+	var (
+		lengthErr    *PhraseLengthError
+		expansionErr *ExpansionLimitError
+	)
 
 	switch {
 	case err == nil:
 		return nil
+	case errors.As(err, &expansionErr):
+		return rpc.InvalidArgument(prefix+"common_mistakes",
+			expansionErr.Error())
 	case errors.As(err, &lengthErr):
 		return rpc.InvalidArgument(prefix+lengthErr.Field, lengthErr.Error())
 	default:

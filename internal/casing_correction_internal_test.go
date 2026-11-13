@@ -10,7 +10,7 @@ import (
 	"github.com/ttab/elephant-spell/postgres"
 )
 
-func newCasingCheck(tb testing.TB) *Spellcheck {
+func newCasingCheck(tb testing.TB, opts ...SpellcheckOption) *Spellcheck {
 	tb.Helper()
 
 	c, err := hunspell.NewChecker(
@@ -19,7 +19,7 @@ func newCasingCheck(tb testing.TB) *Spellcheck {
 		tb.Fatalf("create hunspell checker: %v", err)
 	}
 
-	check, err := NewSpellcheck("sv-se", c)
+	check, err := NewSpellcheck("sv-se", c, opts...)
 	if err != nil {
 		tb.Fatalf("create spellchecker: %v", err)
 	}

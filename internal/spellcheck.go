@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/hunspell"
 	"github.com/ttab/elephant-spell/postgres"
+	"github.com/ttab/elephantine"
 )
 
 type Phrase struct {
@@ -37,9 +39,33 @@ type Phrase struct {
 	Guards guards
 }
 
-func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) {
-	return &Spellcheck{
+// SpellcheckOption configures a Spellcheck.
+type SpellcheckOption func(s *Spellcheck)
+
+// WithMaxExpansions sets the most strings an entry's common mistakes may
+// expand to, all of its patterns together. The default is
+// DefaultMaxExpansions.
+func WithMaxExpansions(n int) SpellcheckOption {
+	return func(s *Spellcheck) {
+		s.maxExpansions = n
+	}
+}
+
+// WithSpellcheckLogger sets the logger that reports common mistakes
+// AddPhrase skips. The default is slog.Default().
+func WithSpellcheckLogger(logger *slog.Logger) SpellcheckOption {
+	return func(s *Spellcheck) {
+		s.logger = logger
+	}
+}
+
+func NewSpellcheck(
+	lang string, checker *hunspell.Checker, opts ...SpellcheckOption,
+) (*Spellcheck, error) {
+	s := Spellcheck{
 		lang:          lang,
+		logger:        slog.Default(),
+		maxExpansions: DefaultMaxExpansions,
 		trie:          trie.NewRuneTrie(),
 		mistakeTrie:   trie.NewRuneTrie(),
 		ciTrie:        trie.NewRuneTrie(),
@@ -48,12 +74,22 @@ func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) 
 		words:         make(map[string]*wordClaim),
 		hunspell:      checker,
 		rules:         make(map[int64]*compiledRule),
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(&s)
+	}
+
+	return &s, nil
 }
 
 type Spellcheck struct {
-	lang string
-	m    sync.RWMutex
+	lang   string
+	logger *slog.Logger
+	// maxExpansions is the most strings an entry's common mistakes may
+	// expand to.
+	maxExpansions int
+	m             sync.RWMutex
 	// trie and mistakeTrie hold case-sensitive entries, keyed by exact text.
 	// Every key holds a []*Phrase of all the entries that claim it.
 	trie        *trie.RuneTrie
@@ -576,18 +612,30 @@ func (s *Spellcheck) clearPhrase(p *Phrase) {
 
 // AddPhrase adds an entry, replacing the entry with the same exact text if
 // there is one.
+//
+// The common mistakes are expanded to at most the spellchecker's expansion
+// limit in total. A common mistake that cannot be parsed, or that would take
+// the entry over the limit, is skipped and logged.
 func (s *Spellcheck) AddPhrase(p Phrase) {
 	s.m.Lock()
 	defer s.m.Unlock()
 
 	var commonMistakes []string
 
+	budget := s.maxExpansions
+
 	// Expand the common mistakes to get all permutations.
 	for _, cm := range p.CommonMistakes {
-		expanded, err := Expand(cm)
+		expanded, err := Expand(cm, budget)
 		if err != nil {
+			s.logger.Warn("skip common mistake that cannot be expanded",
+				"language", s.lang, "entry", p.Text,
+				"common_mistake", cm, elephantine.LogKeyError, err)
+
 			continue
 		}
+
+		budget -= len(expanded)
 
 		commonMistakes = append(commonMistakes, expanded...)
 	}
@@ -596,7 +644,9 @@ func (s *Spellcheck) AddPhrase(p Phrase) {
 	// Treat the leading-letter miscasings as implicit common mistakes — both of
 	// the correct form and of each listed mistake, so the casing correction is
 	// symmetric — e.g. "mexico city"/"Mexico city" are corrected to
-	// "Mexico City".
+	// "Mexico City". The variants don't count towards the expansion limit,
+	// but leadingCaseVariants makes at most 63 of each phrase, so an entry
+	// has at most 64 × (limit + 1) mistake keys from its text and patterns.
 	if p.CaseSensitive {
 		var variants []string
 

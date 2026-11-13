@@ -123,9 +123,16 @@ This expands to "Khan Younis" and "Khan Yunes".
 A pattern without any `{...}` groups is treated as a literal string and used
 as-is.
 
+An entry's common mistakes can expand to at most 200 combinations in total,
+counting every line. The limit keeps one entry from filling the
+spellchecker's memory; an entry over it is refused when it is saved. Split
+a pattern that needs more into separate entries, or ask for the limit to be
+raised (the service's `MAX_EXPANSIONS` setting).
+
 In the entry editor the common-mistakes field highlights the `{A|B}` syntax and
-shows a live count of how many combinations each line expands to. Click that
-count to open a list of every expansion.
+shows a live count of how many combinations each line expands to, and marks
+the line that takes the entry over the limit. Click the total to open a list
+of every expansion.
 
 ## Forms
 

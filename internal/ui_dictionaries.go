@@ -27,6 +27,19 @@ type DictionariesUI struct {
 	rules           spell.Rules
 	languages       []string
 	defaultLanguage string
+	maxExpansions   int
+}
+
+// DictionariesUIOption configures a DictionariesUI.
+type DictionariesUIOption func(d *DictionariesUI)
+
+// WithDictionariesMaxExpansions sets the expansion limit the common-mistakes
+// preview checks against, which should be the one the service enforces. The
+// default is DefaultMaxExpansions.
+func WithDictionariesMaxExpansions(n int) DictionariesUIOption {
+	return func(d *DictionariesUI) {
+		d.maxExpansions = n
+	}
 }
 
 func NewDictionariesUI(
@@ -37,6 +50,7 @@ func NewDictionariesUI(
 	rules spell.Rules,
 	languages []string,
 	defaultLanguage string,
+	opts ...DictionariesUIOption,
 ) *DictionariesUI {
 	slices.Sort(languages)
 
@@ -44,7 +58,7 @@ func NewDictionariesUI(
 		defaultLanguage = languages[0]
 	}
 
-	return &DictionariesUI{
+	d := DictionariesUI{
 		log:             logger,
 		auth:            auth,
 		authParser:      authParser,
@@ -52,7 +66,14 @@ func NewDictionariesUI(
 		rules:           rules,
 		languages:       languages,
 		defaultLanguage: defaultLanguage,
+		maxExpansions:   DefaultMaxExpansions,
 	}
+
+	for _, opt := range opts {
+		opt(&d)
+	}
+
+	return &d
 }
 
 func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
@@ -61,7 +82,7 @@ func (d *DictionariesUI) GetTemplateFuncs() template.FuncMap {
 		"entryPath":     entryPath,
 		"add":           func(a, b int64) int64 { return a + b },
 		"subtract":      func(a, b int64) int64 { return a - b },
-		"expandPreview": mistakesPreview,
+		"expandPreview": d.mistakesPreview,
 	}
 }
 
@@ -980,16 +1001,17 @@ func (d *DictionariesUI) validateMistakes(
 
 	return &howdah.Page{
 		Template: tmplPatternPreview,
-		Contents: mistakesPreview(
+		Contents: d.mistakesPreview(
 			strings.Split(r.FormValue("common_mistakes"), "\n")),
 	}, nil
 }
 
-// mistakesPreview expands each common-mistakes line and reports how many
-// combinations it yields, plus any brace errors. Shared by the live validation
-// endpoint and the form's at-load preview so they can't drift from what the
-// spellchecker actually does.
-func mistakesPreview(lines []string) patternPreviewContents {
+// mistakesPreview counts the combinations each common-mistakes line yields,
+// and reports brace errors and the line that takes the entry over the
+// expansion limit. Shared by the live validation endpoint and the form's
+// at-load preview so they can't drift from what the spellchecker actually
+// does.
+func (d *DictionariesUI) mistakesPreview(lines []string) patternPreviewContents {
 	var (
 		results []patternLine
 		total   int
@@ -1003,18 +1025,35 @@ func mistakesPreview(lines []string) patternPreviewContents {
 
 		res := patternLine{Line: line}
 
-		expanded, err := Expand(line)
+		n, err := d.countWithinLimit(line, total)
 		if err != nil {
 			res.Error = err.Error()
 		} else {
-			res.Count = len(expanded)
-			total += len(expanded)
+			res.Count = n
+			total += n
 		}
 
 		results = append(results, res)
 	}
 
 	return patternPreviewContents{Results: results, Total: total}
+}
+
+// countWithinLimit counts the expansions of a common-mistakes line, without
+// generating them, and returns an error if the line fails to parse or if it
+// takes the entry's total, with the lines before it, over the expansion
+// limit.
+func (d *DictionariesUI) countWithinLimit(line string, total int) (int, error) {
+	n, err := CountExpansions(line)
+	if err != nil {
+		return 0, err
+	}
+
+	if sum := saturatingAdd(total, n); sum > d.maxExpansions {
+		return 0, &ExpansionLimitError{Count: sum, Limit: d.maxExpansions}
+	}
+
+	return n, nil
 }
 
 // parseForms pairs the parallel forms_incorrect/forms_correct inputs from the
@@ -1089,7 +1128,15 @@ func (d *DictionariesUI) listExpansions(
 
 		group := expansionGroup{Line: line}
 
-		expanded, err := Expand(line)
+		n, err := d.countWithinLimit(line, total)
+		if err != nil {
+			group.Error = err.Error()
+			groups = append(groups, group)
+
+			continue
+		}
+
+		expanded, err := Expand(line, n)
 		if err != nil {
 			group.Error = err.Error()
 			groups = append(groups, group)

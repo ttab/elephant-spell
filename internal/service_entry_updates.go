@@ -205,9 +205,10 @@ func (a *Application) applyEntryEvent(
 }
 
 // loadableEntry reports whether an entry row can be loaded into a
-// spellchecker. A row with a text, common mistake or form longer than the
-// phrase window predates the write validation and could never match; it is
-// logged and skipped rather than failing the load.
+// spellchecker. A row whose common mistakes expand to more strings than the
+// expansion limit, or with a text, common mistake or form longer than the
+// phrase window, predates the write validation (or a lowered limit) and is
+// logged and skipped rather than failing the load or exhausting memory.
 func (a *Application) loadableEntry(
 	ctx context.Context, row postgres.Entry,
 ) bool {
@@ -216,7 +217,8 @@ func (a *Application) loadableEntry(
 		forms = row.Data.Forms
 	}
 
-	err := CheckPhraseLengths(row.Entry, row.CommonMistakes, forms)
+	err := CheckEntryLimits(
+		row.Entry, row.CommonMistakes, forms, a.maxExpansions)
 	if err == nil {
 		return true
 	}

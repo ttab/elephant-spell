@@ -2,6 +2,7 @@ package integration_test
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -632,6 +633,26 @@ func TestAPI(t *testing.T) {
 					Forms: map[string]string{sixWords: "ett"},
 				})
 			}},
+			{"common mistakes over the expansion limit", "entry.common_mistakes", func() error {
+				// 3 × 67 = 201 strings, one more than the default limit.
+				options := make([]string, 67)
+				for i := range options {
+					options[i] = fmt.Sprintf("x%d", i)
+				}
+
+				return set(&spellapi.CustomEntry{
+					Text: "ett",
+					CommonMistakes: []string{
+						"{a|b|c} {" + strings.Join(options, "|") + "}",
+					},
+				})
+			}},
+			{"pathological pattern", "entry.common_mistakes", func() error {
+				return set(&spellapi.CustomEntry{
+					Text:           "ett",
+					CommonMistakes: []string{strings.Repeat("{a|b}", 100)},
+				})
+			}},
 			{"rename", "new_text", func() error {
 				_, err := stack.Dictionaries.RenameEntry(ctx,
 					&spellapi.RenameEntryRequest{
@@ -655,6 +676,19 @@ func TestAPI(t *testing.T) {
 				}
 			})
 		}
+
+		t.Run("expansion limit named", func(t *testing.T) {
+			err := set(&spellapi.CustomEntry{
+				Text:           "ett",
+				CommonMistakes: []string{strings.Repeat("{a|b}", 8)},
+			})
+
+			assertCode(t, err, connect.CodeInvalidArgument)
+
+			if !strings.Contains(err.Error(), "256 strings, more than the 200") {
+				t.Errorf("error does not name the count and limit: %v", err)
+			}
+		})
 	})
 
 	t.Run("invalid_rule_rejected", func(t *testing.T) {

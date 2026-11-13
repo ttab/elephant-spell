@@ -98,7 +98,7 @@ func TestExpand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			got, err := internal.Expand(tt.Input)
+			got, err := internal.Expand(tt.Input, internal.DefaultMaxExpansions)
 
 			switch {
 			case (err != nil) != tt.ExpectErr:

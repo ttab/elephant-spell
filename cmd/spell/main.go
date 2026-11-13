@@ -124,6 +124,14 @@ func main() {
 					" once. Each language loads one at startup and another" +
 					" whenever a check finds every handle busy.",
 			},
+			&cli.IntFlag{
+				Name:    "max-expansions",
+				Sources: cli.EnvVars("MAX_EXPANSIONS"),
+				Value:   internal.DefaultMaxExpansions,
+				Usage: "Maximum number of strings an entry's common mistakes" +
+					" may expand to, all of its {a|b} patterns together." +
+					" Larger entries are refused on write and skipped on load.",
+			},
 			&cli.StringSliceFlag{
 				Name:    "cors-host",
 				Usage:   "CORS hosts to allow, supports wildcards",
@@ -213,6 +221,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		bouncerConnString = c.String("db-bouncer")
 		dbMaxConns        = c.Int("db-max-conns")
 		hunspellHandles   = c.Int("hunspell-handles")
+		maxExpansions     = c.Int("max-expansions")
 		pingInterval      = c.Duration("ping-interval")
 		pingGrace         = c.Duration("ping-grace")
 		oidcProviderURL   = c.String("oidc-provider")
@@ -228,6 +237,11 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	if hunspellHandles < 1 {
 		return fmt.Errorf("--hunspell-handles must be at least 1, got %d",
 			hunspellHandles)
+	}
+
+	if maxExpansions < 1 {
+		return fmt.Errorf("--max-expansions must be at least 1, got %d",
+			maxExpansions)
 	}
 
 	defer func() {
@@ -286,6 +300,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		PingGrace:       pingGrace,
 		DefaultLanguage: defaultLanguage,
 		HunspellHandles: hunspellHandles,
+		MaxExpansions:   maxExpansions,
 		InsecureCookies: c.Bool("insecure-cookies"),
 	}
 

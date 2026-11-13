@@ -297,14 +297,23 @@ func (e *PhraseLengthError) Error() string {
 		e.Phrase, e.Words, MaxPhraseWords)
 }
 
-// CheckPhraseLengths checks that an entry's text, its common mistakes after
-// expansion, and both sides of its forms are short enough to be matched. It
-// returns a *PhraseLengthError naming the first phrase that is too long. A
-// common mistake that fails to expand is skipped, as it is when the entry is
-// loaded.
-func CheckPhraseLengths(
+// CheckEntryLimits checks that an entry's common mistakes expand to at most
+// maxExpansions strings, returning an *ExpansionLimitError if they do not,
+// and that its text, its common mistakes after expansion, and both sides of
+// its forms are short enough to be matched, returning a *PhraseLengthError
+// naming the first phrase that is too long. A common mistake that fails to
+// expand is skipped, as it is when the entry is loaded.
+func CheckEntryLimits(
 	text string, commonMistakes []string, forms map[string]string,
+	maxExpansions int,
 ) error {
+	// Check the expansion count first, so that the length check below
+	// never expands more than maxExpansions strings.
+	err := CheckExpansions(commonMistakes, maxExpansions)
+	if err != nil {
+		return err
+	}
+
 	check := func(field, phrase string) error {
 		n, err := PhraseWordCount(phrase)
 		if err != nil {
@@ -318,13 +327,13 @@ func CheckPhraseLengths(
 		return nil
 	}
 
-	err := check("text", text)
+	err = check("text", text)
 	if err != nil {
 		return err
 	}
 
 	for _, cm := range commonMistakes {
-		expanded, err := Expand(cm)
+		expanded, err := Expand(cm, maxExpansions)
 		if err != nil {
 			continue
 		}

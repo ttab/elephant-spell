@@ -26,7 +26,7 @@ func renderEntryForm(t *testing.T, contents dictionariesContents) string {
 		"td":            func(_ ...any) string { return "" },
 		"pathEscape":    url.PathEscape,
 		"entryPath":     entryPath,
-		"expandPreview": mistakesPreview,
+		"expandPreview": (&DictionariesUI{maxExpansions: DefaultMaxExpansions}).mistakesPreview,
 	}
 
 	tpl, err := template.New("entry_form.html").Funcs(funcs).

@@ -47,6 +47,12 @@ Changes:
   error.
 - Deleting or updating an entry for a word in the base dictionary no longer
   makes that word and its inflections misspelled until restart.
+- Large texts with many matches are checked much faster: guards no longer
+  scan the whole text before each hit, and the span bookkeeping is no longer
+  quadratic. A 57 KB text with 800 guarded hits went from 2 s to 25 ms, and
+  one with 8,000 matches from 730 ms to 45 ms.
+- A spellcheck stops once the client has gone away or its deadline has
+  passed, instead of running hunspell over the rest of the text.
 - Dependency upgrades: elephantine to v0.32.0, elephant-api to v0.29.0, howdah
   to v0.5.3, pgx to v5.13.0, Connect to v1.21.1, and the rest of the module
   graph to its latest versions.

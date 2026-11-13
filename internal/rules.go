@@ -348,10 +348,69 @@ func wordCharAfter(text string, pos int) bool {
 	return isWordRune(r)
 }
 
-var (
-	trailingWordRE = regexp.MustCompile(`([\p{L}\d]+)\s*$`)
-	leadingWordRE  = regexp.MustCompile(`^\s*([\p{L}\d]+)`)
-)
+// isNeighbourRune reports whether r belongs to a neighbouring word for the
+// guards: a letter or an ASCII digit.
+func isNeighbourRune(r rune) bool {
+	return unicode.IsLetter(r) || ('0' <= r && r <= '9')
+}
+
+// isNeighbourSpace reports whether b is whitespace that may separate a match
+// from its neighbouring word: ASCII space, tab, newline, form feed or
+// carriage return.
+func isNeighbourSpace(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\f', '\r':
+		return true
+	default:
+		return false
+	}
+}
+
+// wordBefore returns the word that ends right before pos in text, skipping
+// whitespace in between, or "" if something else comes first. It only looks
+// at the characters it returns or skips, so the cost does not grow with the
+// length of the text.
+func wordBefore(text string, pos int) string {
+	end := pos
+	for end > 0 && isNeighbourSpace(text[end-1]) {
+		end--
+	}
+
+	start := end
+
+	for start > 0 {
+		r, size := utf8.DecodeLastRuneInString(text[:start])
+		if !isNeighbourRune(r) {
+			break
+		}
+
+		start -= size
+	}
+
+	return text[start:end]
+}
+
+// wordAfter returns the word that starts right after pos in text, skipping
+// whitespace in between, or "" if something else comes first.
+func wordAfter(text string, pos int) string {
+	start := pos
+	for start < len(text) && isNeighbourSpace(text[start]) {
+		start++
+	}
+
+	end := start
+
+	for end < len(text) {
+		r, size := utf8.DecodeRuneInString(text[end:])
+		if !isNeighbourRune(r) {
+			break
+		}
+
+		end += size
+	}
+
+	return text[start:end]
+}
 
 // pass reports whether the match at [start, end] in text satisfies the guards,
 // inspecting the immediately neighbouring words.
@@ -360,8 +419,8 @@ func (g guards) pass(text string, start, end int) bool {
 		return true
 	}
 
-	prev := matchGroup(trailingWordRE, text[:start])
-	next := matchGroup(leadingWordRE, text[end:])
+	prev := wordBefore(text, start)
+	next := wordAfter(text, end)
 
 	if !g.caseSensitive {
 		prev = foldKey(prev)
@@ -385,15 +444,6 @@ func (g guards) pass(text string, start, end int) bool {
 	}
 
 	return true
-}
-
-func matchGroup(re *regexp.Regexp, s string) string {
-	m := re.FindStringSubmatch(s)
-	if m == nil {
-		return ""
-	}
-
-	return m[1]
 }
 
 // expandTemplate fills {1}, {2}, … placeholders with the captured strings.

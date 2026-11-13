@@ -97,6 +97,10 @@ func (s *Spellcheck) RemoveRule(id int64) {
 
 // candidateMatch is a potential correction together with its byte span in the
 // source, so overlapping matches can be resolved before they are reported.
+// ctxCheckInterval is how many phrases the trie pass matches between checks of
+// the context.
+const ctxCheckInterval = 1024
+
 type candidateMatch struct {
 	start int
 	end   int
@@ -104,17 +108,23 @@ type candidateMatch struct {
 }
 
 // ruleCandidates runs the user rules over the text and returns every match as a
-// candidate with its span. The caller must hold at least a read lock.
+// candidate with its span. It returns the context's error if the context ends
+// between two rules. The caller must hold at least a read lock.
 func (s *Spellcheck) ruleCandidates(
-	text string, withSuggestions bool,
-) []candidateMatch {
+	ctx context.Context, text string, withSuggestions bool,
+) ([]candidateMatch, error) {
 	if len(s.rules) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var cands []candidateMatch
 
 	for _, r := range s.rules {
+		err := ctx.Err()
+		if err != nil {
+			return nil, err
+		}
+
 		for _, m := range matchRule(text, r) {
 			level, _ := entryLevelToRPC(r.level)
 
@@ -137,16 +147,40 @@ func (s *Spellcheck) ruleCandidates(
 		}
 	}
 
-	return cands
+	return cands, nil
 }
 
 // resolveLongest applies longest-match-wins: it returns a keep flag per
 // candidate, accepting matches from longest to shortest and dropping any that
 // overlap an already-accepted, strictly longer match. Equal-length overlaps are
 // both kept (e.g. a word that is valid yet also carries a softer suggestion).
-// Ties break towards the earlier candidate.
+// Ties break towards the earlier candidate. Candidates are never empty.
+//
+// The candidates are taken one length at a time, longest first. A candidate
+// is kept if it overlaps none of the matches accepted at greater lengths,
+// which is the same as not overlapping the area they cover; the matches it
+// keeps are added to that area once its whole length has been taken, so that
+// equal-length matches never suppress each other. The area is tracked over
+// the segments between the candidates' distinct offsets, which keeps the
+// whole resolution at O(n log n).
 func resolveLongest(cands []candidateMatch) []bool {
 	keep := make([]bool, len(cands))
+
+	points := make([]int, 0, 2*len(cands))
+	for _, c := range cands {
+		points = append(points, c.start, c.end)
+	}
+
+	slices.Sort(points)
+	points = slices.Compact(points)
+
+	segmentOf := func(offset int) int {
+		i, _ := slices.BinarySearch(points, offset)
+
+		return i
+	}
+
+	area := newCoverage(len(points))
 
 	order := make([]int, len(cands))
 	for i := range order {
@@ -164,41 +198,134 @@ func resolveLongest(cands []candidateMatch) []bool {
 		return a - b
 	})
 
-	var accepted []candidateMatch
+	for lo := 0; lo < len(order); {
+		clen := cands[order[lo]].end - cands[order[lo]].start
 
-	for _, idx := range order {
-		c := cands[idx]
-		clen := c.end - c.start
-		suppressed := false
+		hi := lo
+		for hi < len(order) &&
+			cands[order[hi]].end-cands[order[hi]].start == clen {
+			hi++
+		}
 
-		for _, k := range accepted {
-			longer := (k.end - k.start) > clen
-			if longer && c.start < k.end && k.start < c.end {
-				suppressed = true
+		for _, idx := range order[lo:hi] {
+			c := cands[idx]
 
-				break
+			keep[idx] = !area.any(segmentOf(c.start), segmentOf(c.end))
+		}
+
+		for _, idx := range order[lo:hi] {
+			if keep[idx] {
+				c := cands[idx]
+
+				area.cover(segmentOf(c.start), segmentOf(c.end))
 			}
 		}
 
-		if !suppressed {
-			keep[idx] = true
-
-			accepted = append(accepted, c)
-		}
+		lo = hi
 	}
 
 	return keep
 }
 
-// hasSpan reports whether spans already contains a span with the same offsets.
-func hasSpan(spans []*spell.TextSpan, s *spell.TextSpan) bool {
-	for _, e := range spans {
-		if e.Start == s.Start && e.End == s.End {
-			return true
-		}
+// coverage tracks which of n segments are covered, with covering and
+// querying a range of segments in O(log n) per segment changed or query.
+type coverage struct {
+	// counts is a Fenwick tree over the covered segments.
+	counts []int
+	// next[i] leads to the first uncovered segment at or after i, so that
+	// covering a range only visits each segment once.
+	next []int
+}
+
+func newCoverage(n int) *coverage {
+	next := make([]int, n+1)
+	for i := range next {
+		next[i] = i
 	}
 
-	return false
+	return &coverage{
+		counts: make([]int, n+1),
+		next:   next,
+	}
+}
+
+// uncovered returns the first uncovered segment at or after i.
+func (c *coverage) uncovered(i int) int {
+	root := i
+	for c.next[root] != root {
+		root = c.next[root]
+	}
+
+	for c.next[i] != root {
+		c.next[i], i = root, c.next[i]
+	}
+
+	return root
+}
+
+// cover marks the segments lo to hi-1 as covered.
+func (c *coverage) cover(lo, hi int) {
+	for i := c.uncovered(lo); i < hi; i = c.uncovered(i) {
+		for j := i + 1; j < len(c.counts); j += j & -j {
+			c.counts[j]++
+		}
+
+		c.next[i] = i + 1
+	}
+}
+
+// coveredBefore returns the number of covered segments before i.
+func (c *coverage) coveredBefore(i int) int {
+	var n int
+
+	for ; i > 0; i -= i & -i {
+		n += c.counts[i]
+	}
+
+	return n
+}
+
+// any reports whether any of the segments lo to hi-1 is covered.
+func (c *coverage) any(lo, hi int) bool {
+	return c.coveredBefore(hi)-c.coveredBefore(lo) > 0
+}
+
+// runeOffsets converts byte offsets in a text to rune offsets.
+type runeOffsets struct {
+	bytes []int
+	runes []int
+}
+
+// newRuneOffsets counts the runes before each of the byte offsets in one
+// pass over the text.
+func newRuneOffsets(text string, offsets []int) *runeOffsets {
+	slices.Sort(offsets)
+	offsets = slices.Compact(offsets)
+
+	runes := make([]int, len(offsets))
+
+	var pos, n int
+
+	for i, o := range offsets {
+		n += utf8.RuneCountInString(text[pos:o])
+		pos = o
+		runes[i] = n
+	}
+
+	return &runeOffsets{bytes: offsets, runes: runes}
+}
+
+// at returns the rune offset of a byte offset given to newRuneOffsets.
+func (r *runeOffsets) at(offset int) int64 {
+	i, _ := slices.BinarySearch(r.bytes, offset)
+
+	return int64(r.runes[i])
+}
+
+// spanKey identifies a span reported for an entry text.
+type spanKey struct {
+	text       string
+	start, end int64
 }
 
 // ruleSuggestions returns the suggestions produced by matching the rules
@@ -568,8 +695,11 @@ func appendSuggestions(
 	return list
 }
 
+// Check checks a text against the entries, the rules and, unless customOnly
+// is set, hunspell. It stops and returns the context's error when the context
+// ends.
 func (s *Spellcheck) Check(
-	_ context.Context,
+	ctx context.Context,
 	text string,
 	withSuggestions bool,
 	customOnly bool,
@@ -598,7 +728,21 @@ func (s *Spellcheck) Check(
 		validCands []candidateMatch
 	)
 
+	var (
+		ctxErr  error
+		phrases int
+	)
+
 	err := EachPhrase(textData, MaxPhraseWords, func(m PhraseMatch) bool {
+		phrases++
+
+		if phrases%ctxCheckInterval == 0 {
+			ctxErr = ctx.Err()
+			if ctxErr != nil {
+				return false
+			}
+		}
+
 		text := m.Text
 		folded := foldKey(text)
 
@@ -630,6 +774,10 @@ func (s *Spellcheck) Check(
 
 		return true
 	})
+	if err == nil {
+		err = ctxErr
+	}
+
 	if err != nil {
 		s.m.RUnlock()
 
@@ -638,9 +786,13 @@ func (s *Spellcheck) Check(
 
 	// Pattern rules match over the token stream rather than the trie windows,
 	// so they run as a separate pass over the whole text.
-	ruleCands := s.ruleCandidates(masked, withSuggestions)
+	ruleCands, err := s.ruleCandidates(ctx, masked, withSuggestions)
 
 	s.m.RUnlock()
+
+	if err != nil {
+		return nil, fmt.Errorf("match rules: %w", err)
+	}
 
 	// Longest-match-wins: a longer match suppresses any shorter one that
 	// overlaps it, so e.g. a "Mexico City" casing correction takes precedence
@@ -664,6 +816,19 @@ func (s *Spellcheck) Check(
 	// and rule groups so a text matched by both a dictionary entry and a rule is
 	// reported once, with the union of their spans.
 	byText := make(map[string]*spell.MisspelledEntry)
+	seenSpans := make(map[spanKey]bool)
+
+	// Report spans in character (rune) offsets, not bytes, so clients can map
+	// them onto their own string model.
+	var offsets []int
+
+	for i, c := range combined[entryStart:] {
+		if keep[entryStart+i] {
+			offsets = append(offsets, c.start, c.end)
+		}
+	}
+
+	runeOffset := newRuneOffsets(source, offsets)
 
 	emit := func(lo, hi int) {
 		for i := lo; i < hi; i++ {
@@ -673,12 +838,19 @@ func (s *Spellcheck) Check(
 
 			c := combined[i]
 
-			// Report spans in character (rune) offsets, not bytes, so clients
-			// can map them onto their own string model.
 			span := &spell.TextSpan{
-				Start: int64(utf8.RuneCountInString(source[:c.start])),
-				End:   int64(utf8.RuneCountInString(source[:c.end])),
+				Start: runeOffset.at(c.start),
+				End:   runeOffset.at(c.end),
 			}
+
+			key := spanKey{
+				text: c.entry.Text, start: span.Start, end: span.End,
+			}
+			if seenSpans[key] {
+				continue
+			}
+
+			seenSpans[key] = true
 
 			e, ok := byText[c.entry.Text]
 			if !ok {
@@ -689,9 +861,7 @@ func (s *Spellcheck) Check(
 				continue
 			}
 
-			if !hasSpan(e.Spans, span) {
-				e.Spans = append(e.Spans, span)
-			}
+			e.Spans = append(e.Spans, span)
 		}
 	}
 
@@ -711,6 +881,13 @@ func (s *Spellcheck) Check(
 	err = segmentTokens(unhandled, func(t token) bool {
 		if t.Type != segment.Letter {
 			return true
+		}
+
+		// Hunspell is the slow part, so stop as soon as nobody is
+		// waiting for the result.
+		ctxErr = ctx.Err()
+		if ctxErr != nil {
+			return false
 		}
 
 		word := string(unhandled[t.Start:t.End])
@@ -749,6 +926,10 @@ func (s *Spellcheck) Check(
 
 		return true
 	})
+	if err == nil {
+		err = ctxErr
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("check words: %w", err)
 	}
@@ -806,9 +987,9 @@ func mistakeEntry(
 
 	for _, p := range ps {
 		// Honour the entry's context guards against this occurrence's
-		// neighbours. The trie already located the match, so this is an
-		// O(1) check per hit. A guarded-out occurrence is skipped; the same
-		// phrase elsewhere can still match.
+		// neighbours. The trie already located the match, so this only
+		// looks at the words right next to it. A guarded-out occurrence is
+		// skipped; the same phrase elsewhere can still match.
 		if !p.Guards.pass(source, start, end) {
 			continue
 		}

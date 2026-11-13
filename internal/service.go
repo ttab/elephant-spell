@@ -1095,6 +1095,12 @@ func (a *Application) Text(
 	}
 
 	for i := range req.Text {
+		// Stop between texts once nobody is waiting for the result.
+		err := ctx.Err()
+		if err != nil {
+			return nil, fmt.Errorf("spellcheck text %d: %w", i+1, err)
+		}
+
 		m, err := lang.Check(ctx, req.Text[i], req.Suggestions, req.CustomOnly)
 		if err != nil {
 			return nil, fmt.Errorf(

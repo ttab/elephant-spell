@@ -10,18 +10,18 @@ import (
 	"github.com/ttab/elephant-spell/postgres"
 )
 
-func newCasingCheck(t *testing.T) *Spellcheck {
-	t.Helper()
+func newCasingCheck(tb testing.TB) *Spellcheck {
+	tb.Helper()
 
 	c, err := hunspell.NewChecker(
 		"../dictionaries/sv_SE.aff", "../dictionaries/sv_SE.dic")
 	if err != nil {
-		t.Fatalf("create hunspell checker: %v", err)
+		tb.Fatalf("create hunspell checker: %v", err)
 	}
 
 	check, err := NewSpellcheck("sv-se", c)
 	if err != nil {
-		t.Fatalf("create spellchecker: %v", err)
+		tb.Fatalf("create spellchecker: %v", err)
 	}
 
 	return check

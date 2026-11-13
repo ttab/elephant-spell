@@ -598,7 +598,7 @@ func (s *Spellcheck) Check(
 		validCands []candidateMatch
 	)
 
-	for m := range PhraseIterator(textData, 3) {
+	err := EachPhrase(textData, MaxPhraseWords, func(m PhraseMatch) bool {
 		text := m.Text
 		folded := foldKey(text)
 
@@ -619,7 +619,7 @@ func (s *Spellcheck) Check(
 		entry := mistakeEntry(ps, masked, m.Start, m.End, text, ci,
 			withSuggestions)
 		if entry == nil {
-			continue
+			return true
 		}
 
 		entryCands = append(entryCands, candidateMatch{
@@ -627,6 +627,13 @@ func (s *Spellcheck) Check(
 		})
 
 		handled = append(handled, span{start: m.Start, end: m.End})
+
+		return true
+	})
+	if err != nil {
+		s.m.RUnlock()
+
+		return nil, fmt.Errorf("match phrases: %w", err)
 	}
 
 	// Pattern rules match over the token stream rather than the trie windows,
@@ -697,19 +704,19 @@ func (s *Spellcheck) Check(
 
 	// Blank out the occurrences handled through the tries, and only those:
 	// the same letters inside another word are still that word's business.
-	seg := segment.NewSegmenter(strings.NewReader(maskSpans(masked, handled)))
+	unhandled := []byte(maskSpans(masked, handled))
 
 	seen := make(map[string]bool)
 
-	for seg.Segment() {
-		if seg.Type() != segment.Letter {
-			continue
+	err = segmentTokens(unhandled, func(t token) bool {
+		if t.Type != segment.Letter {
+			return true
 		}
 
-		word := seg.Text()
+		word := string(unhandled[t.Start:t.End])
 
 		if seen[word] {
-			continue
+			return true
 		}
 
 		seen[word] = true
@@ -717,7 +724,7 @@ func (s *Spellcheck) Check(
 		correct := s.hunspell.Spell(word)
 
 		if correct {
-			continue
+			return true
 		}
 
 		var suggestions []*spell.Suggestion
@@ -739,11 +746,11 @@ func (s *Spellcheck) Check(
 			Suggestions: suggestions,
 			Level:       spell.CorrectionLevel_LEVEL_ERROR,
 		})
-	}
 
-	err := seg.Err()
+		return true
+	})
 	if err != nil {
-		return nil, fmt.Errorf("split into words: %w", err)
+		return nil, fmt.Errorf("check words: %w", err)
 	}
 
 	return &res, nil

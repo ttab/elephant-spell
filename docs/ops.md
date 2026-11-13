@@ -99,7 +99,7 @@ The notification carries an id that nobody reads as data. **Losing a notificatio
 ```
   caller → Check/Text → per-language *Spellcheck (read lock)
                               │
-                              ├── phrase tries: sliding 3-word window
+                              ├── phrase tries: sliding 5-word window
                               ├── mistake tries
                               ├── pattern rules (compiled RE2)
                               └── hunspell            ← skipped if custom_only

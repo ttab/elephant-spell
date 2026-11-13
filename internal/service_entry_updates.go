@@ -69,6 +69,10 @@ func (a *Application) preloadEntries(ctx context.Context) error {
 				return
 			}
 
+			if !a.loadableEntry(ctx, row) {
+				return
+			}
+
 			spell.AddPhrase(entryAsPhrase(row))
 		},
 	)
@@ -189,9 +193,39 @@ func (a *Application) applyEntryEvent(
 		return fmt.Errorf("read entry from database: %w", err)
 	}
 
+	if !a.loadableEntry(ctx, entry) {
+		s.RemovePhrase(e.Entry)
+
+		return nil
+	}
+
 	s.AddPhrase(entryAsPhrase(entry))
 
 	return nil
+}
+
+// loadableEntry reports whether an entry row can be loaded into a
+// spellchecker. A row with a text, common mistake or form longer than the
+// phrase window predates the write validation and could never match; it is
+// logged and skipped rather than failing the load.
+func (a *Application) loadableEntry(
+	ctx context.Context, row postgres.Entry,
+) bool {
+	var forms map[string]string
+	if row.Data != nil {
+		forms = row.Data.Forms
+	}
+
+	err := CheckPhraseLengths(row.Entry, row.CommonMistakes, forms)
+	if err == nil {
+		return true
+	}
+
+	a.logger.WarnContext(ctx, "skip entry that cannot be matched",
+		"language", row.Language, "entry", row.Entry,
+		elephantine.LogKeyError, err)
+
+	return false
 }
 
 func (a *Application) applyRuleEvent(

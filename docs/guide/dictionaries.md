@@ -77,6 +77,12 @@ nouns — and because they are case-sensitive they also flag miscasings like
 The common mistakes field lists words or phrases that the spellchecker should
 flag and suggest replacing with the entry's correct text.
 
+The text, each common mistake and both sides of each form can be at most five
+words long, since that is the longest phrase the spellchecker looks for. A
+number counts as a word, so "Formel 1" and "covid-19" are two words each. An
+entry with a longer phrase, counted after pattern expansion, is refused when
+it is saved.
+
 Patterns use `{A|B|C}` syntax to generate all combinations of alternative
 spellings. This is especially useful for names that have many transliterated
 variants.

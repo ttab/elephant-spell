@@ -79,7 +79,7 @@ The per-language `*Spellcheck`: one hunspell instance, four tries, and the compi
 _Avoid_: checker (which is the hunspell binding), engine
 
 **Phrase**:
-A sequence of up to three words matched as a unit by the sliding window. Every entry is a phrase as far as the tries are concerned, whether or not it contains a space.
+A sequence of up to five words (`MaxPhraseWords`) matched as a unit by the sliding window. Numbers, and tokens mixing letters and digits such as "G7", count as words, so "Formel 1" and "covid-19" are two-word phrases. Every entry is a phrase as far as the tries are concerned, whether or not it contains a space, and an entry text, common mistake or form with more words than the window holds is refused on write.
 _Avoid_: n-gram, token sequence
 
 **Stack**:

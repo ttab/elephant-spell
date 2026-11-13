@@ -566,6 +566,13 @@ func (a *Application) RenameEntry(
 			"must differ from the current text")
 	}
 
+	// The entry's common mistakes and forms were checked when it was
+	// written; only the text changes.
+	err = phraseLengthArgument("new_", req.NewText, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return nil, rpc.Internalf("start transaction: %w", err)
@@ -866,6 +873,12 @@ func (a *Application) SetEntry(
 		return nil, rpc.RequiredArgument("entry.status")
 	}
 
+	err = phraseLengthArgument("entry.",
+		req.Entry.Text, req.Entry.CommonMistakes, req.Entry.Forms)
+	if err != nil {
+		return nil, err
+	}
+
 	level, err := entryLevelFromRPC(req.Entry.Level)
 	if err != nil {
 		return nil, err
@@ -913,6 +926,27 @@ func (a *Application) SetEntry(
 	}
 
 	return &spell.SetEntryResponse{}, nil
+}
+
+// phraseLengthArgument refuses an entry text, common mistake or form that has
+// more words than the phrase window holds, with an InvalidArgument error that
+// names the field. The prefix is prepended to the field name.
+func phraseLengthArgument(
+	prefix string, text string, commonMistakes []string,
+	forms map[string]string,
+) error {
+	err := CheckPhraseLengths(text, commonMistakes, forms)
+
+	var lengthErr *PhraseLengthError
+
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &lengthErr):
+		return rpc.InvalidArgument(prefix+lengthErr.Field, lengthErr.Error())
+	default:
+		return rpc.Internalf("check phrase lengths: %w", err)
+	}
 }
 
 // SetEntryStatus implements spell.Dictionaries. It updates only the moderation

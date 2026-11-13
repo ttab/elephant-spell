@@ -14,6 +14,15 @@ to be accepted as a bearer token; the identity provider's session tokens carry
 none and are unaffected. Both come with elephantine v0.31; a deployment that
 sets no scope prefix has nothing to do.
 
+**Behaviour change (five-word phrase limit):** `SetEntry` and `RenameEntry`
+now refuse an entry text, common mistake (after `{A|B}` expansion) or form
+with more than five words with `InvalidArgument` naming the field
+(`entry.text`, `entry.common_mistakes`, `entry.forms` or `new_text`). Such
+phrases used to be stored and never matched. A stored entry over the limit is
+skipped with a "skip entry that cannot be matched" warning when it is loaded;
+shorten it to bring it back. See
+[phrase matching](docs/architecture.md#phrase-matching).
+
 Changes:
 
 - A dictionary entry's page in the UI is now at
@@ -28,6 +37,14 @@ Changes:
   the same common mistake both suggest, an entry named after another entry's
   form target no longer wipes that entry, and entries that differ only in case
   are kept apart. Removing or updating one leaves the others intact.
+- Entries, common mistakes and forms that start or end on a number, such as
+  "Formel 1", "covid-19" or "G-7", now match, and a valid one no longer gets
+  its letters reported by hunspell. Numbers are still never spellchecked.
+- Entries, common mistakes and forms of up to five words now match, where the
+  limit used to be three.
+- Texts over 64 KB are now checked in full. A custom-only check of such a text
+  used to return no corrections, and a full check failed with an internal
+  error.
 - Deleting or updating an entry for a word in the base dictionary no longer
   makes that word and its inflections misspelled until restart.
 - Dependency upgrades: elephantine to v0.32.0, elephant-api to v0.29.0, howdah

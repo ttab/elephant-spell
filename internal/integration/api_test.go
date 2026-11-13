@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	connect "connectrpc.com/connect"
@@ -587,6 +588,72 @@ func TestAPI(t *testing.T) {
 			return r.Name == "kronor-rule"
 		}) {
 			t.Errorf("rule missing from listing: %+v", list.Rules)
+		}
+	})
+
+	t.Run("phrase_word_limit", func(t *testing.T) {
+		const sixWords = "ett två tre fyra fem sex"
+
+		set := func(e *spellapi.CustomEntry) error {
+			e.Language = "sv-se"
+			e.Status = "accepted"
+
+			_, err := stack.Dictionaries.SetEntry(ctx,
+				&spellapi.SetEntryRequest{Entry: e})
+
+			return err
+		}
+
+		err := set(&spellapi.CustomEntry{
+			Text:           "ett två tre fyra fem",
+			CommonMistakes: []string{"ett två tre fyra fyra"},
+		})
+		if err != nil {
+			t.Fatalf("set five-word entry: %v", err)
+		}
+
+		cases := []struct {
+			name  string
+			field string
+			call  func() error
+		}{
+			{"text", "entry.text", func() error {
+				return set(&spellapi.CustomEntry{Text: sixWords})
+			}},
+			{"common mistake after expansion", "entry.common_mistakes", func() error {
+				return set(&spellapi.CustomEntry{
+					Text:           "ett",
+					CommonMistakes: []string{"{ettan|en två} tre fyra fem sex"},
+				})
+			}},
+			{"form", "entry.forms", func() error {
+				return set(&spellapi.CustomEntry{
+					Text:  "ett",
+					Forms: map[string]string{sixWords: "ett"},
+				})
+			}},
+			{"rename", "new_text", func() error {
+				_, err := stack.Dictionaries.RenameEntry(ctx,
+					&spellapi.RenameEntryRequest{
+						Language: "sv-se",
+						Text:     "ett två tre fyra fem",
+						NewText:  sixWords,
+					})
+
+				return err
+			}},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.call()
+
+				assertCode(t, err, connect.CodeInvalidArgument)
+
+				if !strings.Contains(err.Error(), tc.field) {
+					t.Errorf("error does not name %s: %v", tc.field, err)
+				}
+			})
 		}
 	})
 

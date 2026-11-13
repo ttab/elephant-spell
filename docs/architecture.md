@@ -164,7 +164,11 @@ A word that mixes letters and digits (`2o24`) is not a number and is still check
 
 ### Phrase matching
 
-A sliding window of up to three words runs over the text via `PhraseIterator`, and each window is looked up in the tries. Longer matches win: `resolveLongest` sorts candidates by length and suppresses any that overlap an accepted longer one, so "Mexico City" is not also reported as a match on "Mexico".
+A sliding window of up to five words (`MaxPhraseWords`) runs over the text via `EachPhrase`, and each window is looked up in the tries. Letter tokens, number tokens and tokens that mix the two count as words, so an entry can start or end on a number ("Formel 1", "covid-19", "G-7"); only letter tokens go on to hunspell, so a number is never reported as misspelled.
+
+`SetEntry` and `RenameEntry` refuse an entry text, an expanded common mistake, or either side of a form with more words than the window holds, with `InvalidArgument` naming the field, since such a phrase could never match. Words are counted by `PhraseWordCount`, the same way the window counts them. A stored row that is over the limit, written before the check existed, is skipped with a warning when it is loaded, by the preload and by the eventlog alike, rather than failing the load.
+
+The word segmenter buffers its whole input and returns nothing but an error for anything over 64 KiB, so `segmentTokens` feeds it the text in pieces of at most 32 KiB, cut after ASCII whitespace where the next character always starts a new token, and offsets every token back into the whole text. Both the trie pass and the hunspell pass read the text through it. The window carries over from one piece to the next, so a phrase that straddles a cut still matches. A run of more than 32 KiB with no place to cut is passed on as a single non-word token: it is not checked, and the text around it is. A segmenter error fails the check rather than producing an empty result. Longer matches win: `resolveLongest` sorts candidates by length and suppresses any that overlap an accepted longer one, so "Mexico City" is not also reported as a match on "Mexico".
 
 Context guards are evaluated after the trie has located a match — `before`, `after`, `not_before`, `not_after` against the neighbouring word — which is cheap precisely because it happens last.
 

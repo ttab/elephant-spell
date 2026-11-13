@@ -4,6 +4,22 @@ Everything from v1.0.0 forward is documented here; the releases before it are
 in the git history only. Entries are derived from the release tags, and the
 linked PRs hold the detail.
 
+## [v1.7.1] - Unreleased
+
+**Behaviour change (scope prefix and key-bound tokens):** `JWT_SCOPE_PREFIX`
+(`--jwt-scope-prefix`) is now stripped from the start of each scope only, where
+it used to be stripped at any word boundary inside a scope, and scopes are
+split on spaces only. A token carrying a `cnf` claim is refused, where it used
+to be accepted as a bearer token; the identity provider's session tokens carry
+none and are unaffected. Both come with elephantine v0.31; a deployment that
+sets no scope prefix has nothing to do.
+
+Changes:
+
+- Dependency upgrades: elephantine to v0.32.0, elephant-api to v0.29.0, howdah
+  to v0.5.3, pgx to v5.13.0, Connect to v1.21.1, and the rest of the module
+  graph to its latest versions.
+
 ## [v1.7.0] - 2026-11-03
 
 **Behaviour change (the connection pools are sized explicitly):** the pool

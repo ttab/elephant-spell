@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -131,12 +132,12 @@ func (s *Spellcheck) RemoveRule(id int64) {
 	s.m.Unlock()
 }
 
-// candidateMatch is a potential correction together with its byte span in the
-// source, so overlapping matches can be resolved before they are reported.
 // ctxCheckInterval is how many phrases the trie pass matches between checks of
 // the context.
 const ctxCheckInterval = 1024
 
+// candidateMatch is a potential correction together with its byte span in the
+// source, so overlapping matches can be resolved before they are reported.
 type candidateMatch struct {
 	start int
 	end   int
@@ -833,10 +834,9 @@ func (s *Spellcheck) Check(
 
 		return true
 	})
-	if err == nil {
-		err = ctxErr
-	}
 
+	// A segmenter error comes first; otherwise the context's, if it ended.
+	err = cmp.Or(err, ctxErr)
 	if err != nil {
 		s.m.RUnlock()
 
@@ -995,10 +995,8 @@ func (s *Spellcheck) Check(
 
 		return true
 	})
-	if err == nil {
-		err = ctxErr
-	}
 
+	err = cmp.Or(err, ctxErr)
 	if err != nil {
 		return nil, fmt.Errorf("check words: %w", err)
 	}

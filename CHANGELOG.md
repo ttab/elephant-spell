@@ -4,7 +4,7 @@ Everything from v1.0.0 forward is documented here; the releases before it are
 in the git history only. Entries are derived from the release tags, and the
 linked PRs hold the detail.
 
-## [v1.7.1] - Unreleased
+## [v1.8.0] - Unreleased
 
 **Behaviour change (scope prefix and key-bound tokens):** `JWT_SCOPE_PREFIX`
 (`--jwt-scope-prefix`) is now stripped from the start of each scope only, where
@@ -14,55 +14,47 @@ to be accepted as a bearer token; the identity provider's session tokens carry
 none and are unaffected. Both come with elephantine v0.31; a deployment that
 sets no scope prefix has nothing to do.
 
-**Behaviour change (five-word phrase limit):** `SetEntry` and `RenameEntry`
-now refuse an entry text, common mistake (after `{A|B}` expansion) or form
-with more than five words with `InvalidArgument` naming the field
-(`entry.text`, `entry.common_mistakes`, `entry.forms` or `new_text`). Such
-phrases used to be stored and never matched. A stored entry over the limit is
-skipped with a "skip entry that cannot be matched" warning when it is loaded;
-shorten it to bring it back. See
-[phrase matching](docs/architecture.md#phrase-matching).
-
-**Behaviour change (expansion limit):** an entry's common mistakes may now
-expand to at most 200 strings in total, all of its `{A|B}` patterns together,
-set by `MAX_EXPANSIONS` (`--max-expansions`). `SetEntry` refuses a larger
-entry with `InvalidArgument` on `entry.common_mistakes`, where any pattern
-used to be expanded in full, so that a short pattern could exhaust every
-replica's memory. **Check before deploying**: a stored entry over the limit
-is skipped with a "skip entry that cannot be matched" warning when it is
-loaded, and stops matching until it is split or `MAX_EXPANSIONS` is raised.
-See [phrase matching](docs/architecture.md#phrase-matching).
-
 **Behaviour change (languages and paging in the dictionary and rule RPCs):**
 the dictionary and rule RPCs now lower-case the language code, as `Text` and
 `Suggestions` already did, and `SetEntryStatus`, `RenameEntry` and
 `DeleteEntry` refuse a language with no spellchecker with `InvalidArgument`,
 where they used to answer `NotFound` or do nothing. `SetRule` refuses an
 update whose language differs from the rule's own with `InvalidArgument` on
-`rule.language`; it used to apply it and make the rule active for the wrong
-language until restart. `ListEntries` and `ListRules` refuse a negative
-`page` with `InvalidArgument` and cap `page_size` at 500.
+`rule.language`. `ListEntries` and `ListRules` refuse a negative `page` with
+`InvalidArgument` and cap `page_size` at 500. See
+[RPC surface and scopes](docs/architecture.md#rpc-surface-and-scopes).
+
+**Behaviour change (five-word phrase limit):** `SetEntry` and `RenameEntry`
+refuse an entry text, common mistake (after `{A|B}` expansion) or form with
+more than five words with `InvalidArgument` naming the field (`entry.text`,
+`entry.common_mistakes`, `entry.forms` or `new_text`). Such phrases used to be
+stored and never matched. **Check before deploying**: a stored entry over the
+limit is skipped with a "skip entry that cannot be matched" warning when it is
+loaded; shorten it to bring it back. See
+[phrase matching](docs/architecture.md#phrase-matching).
+
+**Behaviour change (expansion limit):** an entry's common mistakes may expand
+to at most 200 strings in total, all of its `{A|B}` patterns together, set by
+`MAX_EXPANSIONS` (`--max-expansions`). `SetEntry` refuses a larger entry with
+`InvalidArgument` on `entry.common_mistakes`, where any pattern used to be
+expanded in full. **Check before deploying**: a stored entry over the limit
+is skipped with the same warning when it is loaded, and stops matching until
+it is split or `MAX_EXPANSIONS` is raised. See
+[phrase matching](docs/architecture.md#phrase-matching).
 
 **Behaviour change (hunspell memory grows under load):** each language now
 loads up to `HUNSPELL_HANDLES` (`--hunspell-handles`, default 4) hunspell
 handles, so that checks run hunspell in parallel instead of one at a time. A
 language starts with one and loads another whenever a check finds every
 handle busy; each extra handle adds 4–41 MiB of resident memory outside the Go
-heap (9 MiB for Swedish, 41 MiB for Finnish). Review the memory limit, or set
-`HUNSPELL_HANDLES=1` for the old behaviour. The pools are reported as
-`spell_hunspell_*`; see
-[hunspell handle pools](docs/observability.md#hunspell-handle-pools).
+heap. Review the memory limit before deploying, or set `HUNSPELL_HANDLES=1`
+for the old behaviour. See
+[the hunspell handle pool](docs/architecture.md#the-hunspell-handle-pool) and
+[hunspell handle pools](docs/observability.md#hunspell-handle-pools) for the
+new `spell_hunspell_*` metrics.
 
 Changes:
 
-- A dictionary entry's page in the UI is now at
-  `/dictionaries/{language}/entries/{text}`, so entries whose text is `new`,
-  `entries`, `_new`, `_validate` or `_expansions` can be opened and saved.
-  Links to the old `/dictionaries/{language}/{text}` address redirect to the
-  new one.
-- A valid entry or common mistake no longer hides its letters inside other
-  words from the hunspell pass: with an entry "hen", "hennes" used to be
-  checked as "nes".
 - Entries that share a key no longer overwrite each other: two entries with
   the same common mistake both suggest, an entry named after another entry's
   form target no longer wipes that entry, and entries that differ only in case
@@ -72,43 +64,52 @@ Changes:
   its letters reported by hunspell. Numbers are still never spellchecked.
 - Entries, common mistakes and forms of up to five words now match, where the
   limit used to be three.
+- A valid entry or common mistake no longer hides its letters inside other
+  words from the hunspell pass: with an entry "hen", "hennes" used to be
+  checked as "nes".
+- Deleting or updating an entry for a word in the base dictionary no longer
+  makes that word and its inflections misspelled until restart.
 - Texts over 64 KB are now checked in full. A custom-only check of such a text
   used to return no corrections, and a full check failed with an internal
   error.
-- The entry form's common-mistakes preview counts combinations without
-  generating them, and marks the line that takes the entry over the
-  expansion limit. A common mistake whose pattern fails to parse is now
-  logged when the entry is loaded, where it used to be dropped silently.
-- Deleting or updating an entry for a word in the base dictionary no longer
-  makes that word and its inflections misspelled until restart.
-- Large texts with many matches are checked much faster: guards no longer
-  scan the whole text before each hit, and the span bookkeeping is no longer
-  quadratic. A 57 KB text with 800 guarded hits went from 2 s to 25 ms, and
-  one with 8,000 matches from 730 ms to 45 ms.
-- A spellcheck stops once the client has gone away or its deadline has
-  passed, instead of running hunspell over the rest of the text.
-- Concurrent spellchecks for one language now run hunspell in parallel: 24
-  concurrent Swedish checks with suggestions went from 5.4 s to 2.0 s on four
-  cores. A `Suggestions` call whose client has gone away now ends as
-  cancelled rather than as an internal error.
-- The service now refuses to start when a dictionary file is missing, where it
-  used to start with a language that accepted no words.
-- A replica reports ready on `/health/ready` only once it has loaded the
-  custom dictionary and rules, through the new `custom_dictionary` check, so a
-  new pod no longer answers checks without its custom entries during a
-  rollout. See
-  [A replica does not become ready](docs/ops.md#a-replica-does-not-become-ready).
-- An entry or rule deleted while a replica starts no longer makes it skip
-  loading another one until its next restart.
 - `GetEntry` answers `NotFound` for a missing entry, and `RenameEntry`
   answers `AlreadyExists` when the target text is created at the same time,
-  where both used to return an internal error.
+  where both used to return an internal error. A `Suggestions` call whose
+  client has gone away ends as cancelled rather than as an internal error.
+- A dictionary entry's page in the UI is now at
+  `/dictionaries/{language}/entries/{text}`, so entries whose text is `new`,
+  `entries`, `_new`, `_validate` or `_expansions` can be opened and saved.
+  Links to the old `/dictionaries/{language}/{text}` address redirect to the
+  new one.
+- The entry form's common-mistakes preview counts combinations without
+  generating them, and marks the line that takes the entry over the
+  expansion limit.
 - In the UI, the moderation page refuses a negative page number instead of
   failing, and a rule's page answers 404 when the rule belongs to another
   language than the address names.
 - Dependency upgrades: elephantine to v0.32.0, elephant-api to v0.29.0, howdah
   to v0.5.3, pgx to v5.13.0, Connect to v1.21.1, and the rest of the module
   graph to its latest versions.
+- A replica reports ready on `/health/ready` only once it has loaded the
+  custom dictionary and rules, through the new `custom_dictionary` check, so a
+  new pod no longer answers checks without its custom entries during a
+  rollout. See
+  [A replica does not become ready](docs/ops.md#a-replica-does-not-become-ready).
+- The service now refuses to start when a dictionary file is missing, where it
+  used to start with a language that accepted no words.
+- An entry or rule deleted while a replica starts no longer makes it skip
+  loading another one until its next restart.
+- A common mistake whose pattern fails to parse is now logged when the entry
+  is loaded, where it used to be dropped silently.
+- Concurrent spellchecks for one language now run hunspell in parallel: 24
+  concurrent Swedish checks with suggestions went from 5.4 s to 2.0 s on four
+  cores.
+- Large texts with many matches are checked much faster: guards no longer
+  scan the whole text before each hit, and the span bookkeeping is no longer
+  quadratic. A 57 KB text with 800 guarded hits went from 2 s to 25 ms, and
+  one with 8,000 matches from 730 ms to 45 ms.
+- A spellcheck stops once the client has gone away or its deadline has
+  passed, instead of running hunspell over the rest of the text.
 
 ## [v1.7.0] - 2026-11-03
 

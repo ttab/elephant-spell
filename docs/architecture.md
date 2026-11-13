@@ -26,7 +26,7 @@ This document does not cover operating the service — no runbooks, no failure s
 
 The two shutdown signals are not interchangeable. `server` stops on *quit*, which is the later of the two phases: it keeps serving while the background workers are already winding down, so a request in flight still finds a working spellchecker.
 
-### Startup: one hunspell handle per language
+### Startup: one hunspell checker per language
 
 `NewApplication` constructs one `hunspell.Checker` per language with `hunspell.NewCheckerFS`, straight from the embedded dictionaries. Hunspell only reads from the file system, so loading a handle writes the language's `.aff` and `.dic` to a fresh temp directory, calls `Hunspell_create`, which reads both files into its own memory, and removes the directory again. A missing file fails construction: `Hunspell_create` itself reports nothing and would return a handle that accepts no words, so the checker checks the files first.
 
@@ -157,7 +157,7 @@ A hunspell handle is not safe for concurrent use, and a suggestion search on one
 
 The pool starts with one handle and grows to at most `HUNSPELL_HANDLES` (`hunspell.DefaultHandles`, 4). When a call finds every handle busy it starts loading one more in the background, if the pool has room, and waits for whichever handle comes free first; the wait ends with the caller's context. Loading continues while calls are still waiting. A pool never shrinks. **Growing on contention keeps the memory where the traffic is**: an extra handle costs as much as the first one (measured RSS: fi-fi 41 MiB, nb-no 20 MiB, nn-no 13 MiB, da-dk 12 MiB, sv-se 9 MiB, en-gb and en-us 4 MiB each), so a full pool for all seven languages would add about 310 MiB and three seconds of startup, where in practice only the languages under concurrent load grow.
 
-**Custom words reach every handle at once.** `Add` and `Remove` take the checker's write lock, take every handle out of the pool, change each one, and put them all back, so a call sees either none of the handles changed or all of them, and never a handle that is half-way through an update. While that happens, checks for the language wait. Every update is also kept in an ordered log that a newly loaded handle replays before it is handed out. The log is not compacted, because hunspell's add and remove change a word's affix flags, so their combined effect depends on the order of the whole history.
+**Custom words reach every handle at once.** `Add` and `Remove` take the checker's write lock, take every handle out of the pool, change each one, and put them all back, so a call sees either none of the handles changed or all of them, and never a handle that is half-way through an update. While that happens, checks for the language wait. Every update is also kept in an ordered log that a newly loaded handle replays before it is handed out. The log is not compacted, because hunspell's add and remove change a word's affix flags, so their combined effect depends on the order of the whole history; it is dropped once the pool has reached its maximum, since no handle will be loaded to replay it.
 
 **Words are only removed from hunspell if an entry put them there.** An entry's text and form targets are added to hunspell so the hunspell pass accepts them. Each such word is reference-counted across entries, and on the first claim the spellchecker records whether hunspell already accepted it. A word is removed only when the last claim goes away and hunspell did not know it before, because hunspell's remove marks a word forbidden: removing a base dictionary word would make it and its inflections misspelled until restart.
 
@@ -264,6 +264,6 @@ Queries are compiled by sqlc from `postgres/queries.sql`. `postgres/entry.go` is
 
 ## Pending work
 
-**No metrics of its own.** The service registers no collectors beyond the pool statistics `main` wires up: everything else on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. There is no counter of spellchecks by language, no gauge of entries or rules loaded per replica, and no measure of eventlog lag — so "is this replica's dictionary current?" is not answerable from monitoring, only from the logs. See [observability.md](observability.md#what-is-missing).
+**Few metrics of its own.** The service's only collector is the hunspell handle pools (`spell_hunspell_*`), beside the pool statistics `main` wires up: everything else on `/metrics` comes from elephantine, the job lock, the FanOut recovery tracker and the Go runtime. There is no counter of spellchecks by language, no gauge of entries or rules loaded per replica, and no measure of eventlog lag — so "is this replica's dictionary current?" is not answerable from monitoring, only from the logs. See [observability.md](observability.md#what-is-missing).
 
 **Readiness covers startup only.** The `custom_dictionary` check keeps a replica out of service until its first preload and drain are done, but once set it stays set: a replica whose `entry_updater` later fails to drain keeps taking traffic with a stale dictionary.

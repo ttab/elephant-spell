@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	connect "connectrpc.com/connect"
+	"github.com/jackc/pgx/v5"
 	spellapi "github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/internal/integration"
 	"github.com/twitchtv/twirp"
@@ -840,7 +841,11 @@ func TestAPI(t *testing.T) {
 		}
 
 		defer func() {
-			_ = tx.Rollback(ctx)
+			// Only rolls back when the test stopped before the commit.
+			err := tx.Rollback(ctx)
+			if err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+				t.Errorf("roll back the target: %v", err)
+			}
 		}()
 
 		_, err = tx.Exec(ctx, `

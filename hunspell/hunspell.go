@@ -58,7 +58,8 @@ type Checker struct {
 	// log is every update in order, replayed on a handle loaded after
 	// it. Kept whole rather than compacted per word: hunspell's add and
 	// remove change a word's affix flags, so their effect depends on the
-	// whole history of the word. Empty when the pool cannot grow.
+	// whole history of the word. Empty once the pool cannot grow any
+	// more, as no handle will be loaded to replay it.
 	log []wordUpdate
 
 	set *handleSet
@@ -286,7 +287,12 @@ func (c *Checker) grow() {
 		}
 
 		c.set.add(h)
-		c.size.Add(1)
+
+		// A full pool loads no more handles, so nothing will replay the
+		// log again.
+		if c.size.Add(1) >= int64(c.max) {
+			c.log = nil
+		}
 
 		// Done growing before the handle is handed out, so that a
 		// call that is still left waiting after it can grow the pool
@@ -398,13 +404,16 @@ func (c *Checker) update(u wordUpdate) bool {
 	c.write.Lock()
 	defer c.write.Unlock()
 
-	if c.max > 1 {
-		c.log = append(c.log, u)
-	}
-
 	// Growth only adds handles under the write lock, so the size holds
 	// still while the handles are collected.
 	n := int(c.size.Load())
+
+	// Only a handle loaded later needs the update replayed, and a full
+	// pool loads none. A handle that is being loaded right now is added
+	// under the write lock, after this update, so it replays it.
+	if n < c.max {
+		c.log = append(c.log, u)
+	}
 	held := make([]handle, 0, n)
 
 	for range n {

@@ -215,7 +215,10 @@ func TestDictionaryReadiness(t *testing.T) {
 		elephantine.WithHealthServerRegisterer(prometheus.NewRegistry()))
 
 	t.Cleanup(func() {
-		_ = health.Close()
+		err := health.Close()
+		if err != nil {
+			t.Errorf("close the health server: %v", err)
+		}
 	})
 
 	app.registerReadyChecks(health)
@@ -230,8 +233,11 @@ func TestDictionaryReadiness(t *testing.T) {
 		res, err := http.DefaultClient.Do(req)
 		eltest.Must(t, err, "request readiness")
 
-		_, _ = io.Copy(io.Discard, res.Body)
-		_ = res.Body.Close()
+		_, err = io.Copy(io.Discard, res.Body)
+		eltest.Must(t, err, "read the readiness response")
+
+		err = res.Body.Close()
+		eltest.Must(t, err, "close the readiness response")
 
 		return res.StatusCode == http.StatusOK
 	}

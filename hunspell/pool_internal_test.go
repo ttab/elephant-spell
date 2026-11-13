@@ -218,6 +218,77 @@ func TestUpdatesReachEveryHandle(t *testing.T) {
 	}
 }
 
+// updateLogLen returns the number of updates kept for replay on handles
+// loaded later.
+func updateLogLen(c *Checker) int {
+	c.write.Lock()
+	defer c.write.Unlock()
+
+	return len(c.log)
+}
+
+// TestFullPoolKeepsNoUpdateLog checks that updates are only kept for replay
+// while the pool can still grow, so a full pool does not accumulate every
+// update for the life of the process.
+func TestFullPoolKeepsNoUpdateLog(t *testing.T) {
+	single := newTestChecker(t, 1)
+
+	if !single.Add("qzxwvutsa") {
+		t.Fatal("add was refused")
+	}
+
+	if n := updateLogLen(single); n != 0 {
+		t.Errorf("single-handle pool keeps %d updates, want 0", n)
+	}
+
+	c := newTestChecker(t, 2)
+
+	const (
+		early = "qzxwvutsa"
+		late  = "al-Fatiha"
+	)
+
+	if !c.Add(early) {
+		t.Fatal("add was refused")
+	}
+
+	if n := updateLogLen(c); n != 1 {
+		t.Fatalf("growable pool keeps %d updates, want 1", n)
+	}
+
+	held := holdAll(t, c, 2)
+
+	for _, h := range held {
+		h.release()
+	}
+
+	if n := updateLogLen(c); n != 0 {
+		t.Errorf("full pool keeps %d updates, want 0", n)
+	}
+
+	if !c.Add(late) {
+		t.Fatal("add was refused")
+	}
+
+	if n := updateLogLen(c); n != 0 {
+		t.Errorf("full pool keeps %d updates after an add, want 0", n)
+	}
+
+	held = holdAll(t, c, 2)
+
+	for i, h := range held {
+		for _, w := range []string{early, late} {
+			if !h.spell(w) {
+				t.Errorf("handle %d does not accept %q", i+1, w)
+			}
+		}
+	}
+
+	for _, h := range held {
+		h.release()
+	}
+}
+
 // TestConcurrentChecksAndUpdates runs checks against updates and checks that
 // a call never sees a word that has been added on some handles but not on
 // the one it got. Run it with -race.

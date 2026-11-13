@@ -260,15 +260,15 @@ func (a *Application) loadableEntry(
 
 	err := CheckEntryLimits(
 		row.Entry, row.CommonMistakes, forms, a.maxExpansions)
-	if err == nil {
-		return true
+	if err != nil {
+		a.logger.WarnContext(ctx, "skip entry that cannot be matched",
+			"language", row.Language, "entry", row.Entry,
+			elephantine.LogKeyError, err)
+
+		return false
 	}
 
-	a.logger.WarnContext(ctx, "skip entry that cannot be matched",
-		"language", row.Language, "entry", row.Entry,
-		elephantine.LogKeyError, err)
-
-	return false
+	return true
 }
 
 // applyRuleEvent brings the spellcheckers in line with a rule event. Rule ids

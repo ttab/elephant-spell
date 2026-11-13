@@ -23,6 +23,16 @@ skipped with a "skip entry that cannot be matched" warning when it is loaded;
 shorten it to bring it back. See
 [phrase matching](docs/architecture.md#phrase-matching).
 
+**Behaviour change (hunspell memory grows under load):** each language now
+loads up to `HUNSPELL_HANDLES` (`--hunspell-handles`, default 4) hunspell
+handles, so that checks run hunspell in parallel instead of one at a time. A
+language starts with one and loads another whenever a check finds every
+handle busy; each extra handle adds 4–41 MiB of resident memory outside the Go
+heap (9 MiB for Swedish, 41 MiB for Finnish). Review the memory limit, or set
+`HUNSPELL_HANDLES=1` for the old behaviour. The pools are reported as
+`spell_hunspell_*`; see
+[hunspell handle pools](docs/observability.md#hunspell-handle-pools).
+
 Changes:
 
 - A dictionary entry's page in the UI is now at
@@ -53,6 +63,12 @@ Changes:
   one with 8,000 matches from 730 ms to 45 ms.
 - A spellcheck stops once the client has gone away or its deadline has
   passed, instead of running hunspell over the rest of the text.
+- Concurrent spellchecks for one language now run hunspell in parallel: 24
+  concurrent Swedish checks with suggestions went from 5.4 s to 2.0 s on four
+  cores. A `Suggestions` call whose client has gone away now ends as
+  cancelled rather than as an internal error.
+- The service now refuses to start when a dictionary file is missing, where it
+  used to start with a language that accepted no words.
 - Dependency upgrades: elephantine to v0.32.0, elephant-api to v0.29.0, howdah
   to v0.5.3, pgx to v5.13.0, Connect to v1.21.1, and the rest of the module
   graph to its latest versions.

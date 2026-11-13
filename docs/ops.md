@@ -54,7 +54,7 @@ Exactly one replica holds the `eventlog-prune` job lock at a time. That is the o
 | PgBouncer (`BOUNCER_CONN_STRING`) | General queries, optionally | Nothing — queries fall back to the direct pool. It is an optimisation, not a requirement. |
 | OIDC provider | The web UI's login, and token validation for RPCs | The UI cannot log anyone in. **The service will not start**: `oidc-provider`, `client-id`, `client-secret` and `callback-url` are all required flags and provider discovery runs during startup. |
 | `COOKIE_KEY_*` | Sealing the session cookie | **The service will not start.** howdah has no unsealed-cookie mode. |
-| Writable temp space | Unpacking the embedded hunspell dictionaries at startup | The service will not start. Needed during construction only. |
+| Writable temp space | Unpacking a hunspell dictionary for each handle loaded, at startup and under load | The service will not start. Later, the language keeps the handles it has; see `spell_hunspell_handle_create_failures_total`. |
 
 **Truly required: Postgres, the OIDC provider, at least one cookie key, and somewhere to write a temp directory.** Everything else degrades rather than blocks.
 
@@ -186,6 +186,14 @@ Out of order, the common one is (2): a rollout where every pod crashloops on `no
 
 **Not a failure.** elephantine v0.29.0 answers an unparseable or invalid token `unauthenticated` (401) where it previously answered `permission_denied` (403). `permission_denied` now means a caller we identified that lacks `spell_write`. Anything keyed on 403 — an ingress rule, a dashboard panel, a client's retry logic — needs updating, not the service.
 
+### Spellchecks are slow under load
+
+**The signal:** `rate(spell_hunspell_handle_waits_total[5m])` sustained for a language, with `spell_hunspell_handles` at `HUNSPELL_HANDLES` and `spell_hunspell_handles_in_use` sitting at the same value. `Check/Text` and `Check/Suggestions` latency rises with it; `spell_hunspell_handle_canceled_waits_total` rising means callers are giving up on the queue.
+
+Every call into hunspell borrows one of the language's handles, and a check with suggestions holds one for tens of milliseconds per misspelled word. With every handle busy, further checks for that language queue.
+
+**What to do:** if the replicas have idle CPU, raise `HUNSPELL_HANDLES`; each extra handle costs 4–41 MiB depending on the language (see [the hunspell handle pool](architecture.md#the-hunspell-handle-pool)), and only languages under load grow. If the CPU is saturated, more handles will not help: add replicas. Waits while the pool is still below its maximum are a pool that is growing and settle by themselves.
+
 ### A replica takes traffic before its dictionary is loaded
 
 **The signal:** none. This is the gap, not the symptom.
@@ -200,7 +208,8 @@ Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`, so 
 2. **`rpc_responses_total{code="internal"}`** — the service failing on the request path. Everything else here is about freshness; this is about working at all.
 3. **`sum(pg_job_lock_held{name="eventlog-prune"})`** — should be exactly 1. Zero is slow-burning and nothing else will tell you.
 4. **`task_restarts_total`** and pod restarts together — every task is `Required`, so a divergence between the two is a crash that was not a clean task exit.
-5. **`go_memstats_heap_inuse_bytes`** — a proxy for dictionary size, watched for step changes rather than levels, because nothing exports the dictionary size directly.
+5. **`spell_hunspell_handle_waits_total`** — checks queueing for hunspell. See [Spellchecks are slow under load](#spellchecks-are-slow-under-load).
+6. **`go_memstats_heap_inuse_bytes`** — a proxy for dictionary size, watched for step changes rather than levels, because nothing exports the dictionary size directly.
 
 ## Common operations
 
@@ -229,5 +238,5 @@ Nothing is registered with `AddReadyFunction` or `AddOptionalReadyFunction`, so 
 ## Not in place yet
 
 - **No readiness check**, so a preloading replica reports itself alive.
-- **No metrics of this service's own** — no eventlog lag, no dictionary size, no spellcheck counters. See [observability.md](observability.md#what-is-missing).
+- **Few metrics of this service's own** — the hunspell handle pools only; no eventlog lag, no dictionary size, no spellcheck counters. See [observability.md](observability.md#what-is-missing).
 - **No incident history.** The catalogue above is read off the code. The first real incident should be written in with its numbers.

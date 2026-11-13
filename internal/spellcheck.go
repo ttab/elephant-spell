@@ -455,7 +455,16 @@ type wordClaim struct {
 func (s *Spellcheck) claimWord(word string) {
 	c, ok := s.words[word]
 	if !ok {
-		c = &wordClaim{known: s.hunspell.Spell(word)}
+		// The update has to be applied whatever the caller's
+		// context, so this waits for a handle without a deadline.
+		known, err := s.hunspell.Spell(context.Background(), word)
+		if err != nil {
+			// Spell only fails when its context ends, and this
+			// one never does.
+			panic(fmt.Errorf("check word %q: %w", word, err))
+		}
+
+		c = &wordClaim{known: known}
 		s.words[word] = c
 
 		if !c.known {
@@ -898,7 +907,12 @@ func (s *Spellcheck) Check(
 
 		seen[word] = true
 
-		correct := s.hunspell.Spell(word)
+		correct, err := s.hunspell.Spell(ctx, word)
+		if err != nil {
+			ctxErr = err
+
+			return false
+		}
 
 		if correct {
 			return true
@@ -907,7 +921,12 @@ func (s *Spellcheck) Check(
 		var suggestions []*spell.Suggestion
 
 		if withSuggestions {
-			hs := s.hunspell.Suggest(word)
+			hs, err := s.hunspell.Suggest(ctx, word)
+			if err != nil {
+				ctxErr = err
+
+				return false
+			}
 
 			suggestions = make([]*spell.Suggestion, len(hs))
 
@@ -937,8 +956,12 @@ func (s *Spellcheck) Check(
 	return &res, nil
 }
 
+// Suggestions returns the suggestions for a word or phrase: the entries' and
+// the rules', and, unless customOnly is set, hunspell's for a single word. It
+// returns the context's error if the context ends while it waits for
+// hunspell.
 func (s *Spellcheck) Suggestions(
-	text string, customOnly bool,
+	ctx context.Context, text string, customOnly bool,
 ) ([]*spell.Suggestion, error) {
 	var suggestions []*spell.Suggestion
 
@@ -962,12 +985,28 @@ func (s *Spellcheck) Suggestions(
 	}
 
 	// Don't bother running hunspell for phrases, single words only.
-	if !strings.Contains(text, " ") && !s.hunspell.Spell(text) {
-		for _, sugg := range s.hunspell.Suggest(text) {
-			suggestions = append(suggestions, &spell.Suggestion{
-				Text: sugg,
-			})
-		}
+	if strings.Contains(text, " ") {
+		return suggestions, nil
+	}
+
+	correct, err := s.hunspell.Spell(ctx, text)
+	if err != nil {
+		return nil, fmt.Errorf("check word: %w", err)
+	}
+
+	if correct {
+		return suggestions, nil
+	}
+
+	hs, err := s.hunspell.Suggest(ctx, text)
+	if err != nil {
+		return nil, fmt.Errorf("suggest words: %w", err)
+	}
+
+	for _, sugg := range hs {
+		suggestions = append(suggestions, &spell.Suggestion{
+			Text: sugg,
+		})
 	}
 
 	return suggestions, nil

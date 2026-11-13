@@ -7,8 +7,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -77,6 +75,11 @@ type Parameters struct {
 	PingGrace       time.Duration
 	DefaultLanguage string
 
+	// HunspellHandles is the most hunspell handles each language may
+	// load, which bounds how many checks run hunspell for that language
+	// at once. Zero means hunspell.DefaultHandles.
+	HunspellHandles int
+
 	// OIDC configuration for the web UI. When OIDCProvider is nil the
 	// web UI is not served.
 	OIDCProvider *oidc.Provider
@@ -102,22 +105,7 @@ type Parameters struct {
 
 func NewApplication(
 	_ context.Context, p Parameters,
-) (_ *Application, outErr error) {
-	// We need to set up a directory with our dictionaries so that hunspell
-	// can load them.
-	tmpDir, err := os.MkdirTemp("", "spell-dicts-*")
-	if err != nil {
-		return nil, fmt.Errorf("create dictionary directory: %w", err)
-	}
-
-	defer func() {
-		err := os.RemoveAll(tmpDir)
-		if err != nil {
-			outErr = errors.Join(outErr, fmt.Errorf(
-				"clean up temporary dictionary files: %w", err))
-		}
-	}()
-
+) (*Application, error) {
 	dictFS := dictionaries.GetFS()
 
 	dictFiles, err := dictFS.ReadDir(".")
@@ -125,37 +113,25 @@ func NewApplication(
 		return nil, fmt.Errorf("list embedded dictionaries: %w", err)
 	}
 
-	var supportedLanguages []string
-
-	// Copy embedded dictionaries to the temp dir.
-	for _, file := range dictFiles {
-		name := filepath.Base(file.Name())
-
-		data, err := fs.ReadFile(dictFS, file.Name())
-		if err != nil {
-			return nil, fmt.Errorf("read embedded dictionary %q: %w",
-				name, err)
-		}
-
-		err = os.WriteFile(filepath.Join(tmpDir, name), data, 0o600)
-		if err != nil {
-			return nil, fmt.Errorf("copy embedded dictionary %q: %w",
-				name, err)
-		}
-
-		language, ok := strings.CutSuffix(name, ".dic")
-		if ok {
-			supportedLanguages = append(supportedLanguages, language)
-		}
+	handles := p.HunspellHandles
+	if handles == 0 {
+		handles = hunspell.DefaultHandles
 	}
 
-	languages := make(map[string]*Spellcheck, len(supportedLanguages))
+	languages := make(map[string]*Spellcheck)
 
-	// Instantiate one spellchecker per language.
-	for _, lang := range supportedLanguages {
-		checker, err := hunspell.NewChecker(
-			filepath.Join(tmpDir, lang+".aff"),
-			filepath.Join(tmpDir, lang+".dic"),
+	// Instantiate one spellchecker per language. Each checker loads its
+	// first hunspell handle now, and further handles from the embedded
+	// files when checks start waiting for one.
+	for _, file := range dictFiles {
+		lang, ok := strings.CutSuffix(file.Name(), ".dic")
+		if !ok {
+			continue
+		}
+
+		checker, err := hunspell.NewCheckerFS(
+			dictFS, lang+".aff", lang+".dic",
+			hunspell.WithHandles(handles),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("create hunspell checker for %q: %w",
@@ -171,6 +147,11 @@ func NewApplication(
 		}
 
 		languages[code] = spell
+	}
+
+	_, err = NewMetrics(p.Registerer, languages)
+	if err != nil {
+		return nil, fmt.Errorf("register metrics: %w", err)
 	}
 
 	// FanOut signals the in-process consumer that the eventlog has advanced;
@@ -1135,10 +1116,9 @@ func (a *Application) Suggestions(
 			"unsupported language %q", req.Language)
 	}
 
-	sugg, err := lang.Suggestions(req.Text, req.CustomOnly)
+	sugg, err := lang.Suggestions(ctx, req.Text, req.CustomOnly)
 	if err != nil {
-		return nil, rpc.Internalf(
-			"generate suggestions: %v", err)
+		return nil, fmt.Errorf("generate suggestions: %w", err)
 	}
 
 	return &spell.SuggestionsResponse{

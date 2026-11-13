@@ -75,7 +75,7 @@ The startup pass that loads every current entry and rule from the database as th
 _Avoid_: bootstrap, initial load, warm-up
 
 **Spellchecker**:
-The per-language `*Spellcheck`: one hunspell instance, four tries, and the compiled rules. One per supported language, per replica.
+The per-language `*Spellcheck`: one hunspell checker, with its pool of handles, four tries, and the compiled rules. One per supported language, per replica.
 _Avoid_: checker (which is the hunspell binding), engine
 
 **Phrase**:

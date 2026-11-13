@@ -53,7 +53,12 @@ func wantSuggestions(
 func wantSpelling(t *testing.T, check *Spellcheck, word string, want bool) {
 	t.Helper()
 
-	if got := check.hunspell.Spell(word); got != want {
+	got, err := check.hunspell.Spell(t.Context(), word)
+	if err != nil {
+		t.Fatalf("spell %q: %v", word, err)
+	}
+
+	if got != want {
 		t.Errorf("hunspell accepts %q = %v, want %v", word, got, want)
 	}
 }
@@ -131,7 +136,7 @@ func TestEntriesSharingAMistake(t *testing.T) {
 	wantSuggestions(t, misspelledTexts(t, check, "en qqq här", true),
 		"qqq", "alfa")
 
-	sugg, err := check.Suggestions("qqq", true)
+	sugg, err := check.Suggestions(t.Context(), "qqq", true)
 	if err != nil {
 		t.Fatalf("suggestions: %v", err)
 	}

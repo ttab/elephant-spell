@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	spell "github.com/ttab/elephant-spell"
 	"github.com/ttab/elephant-spell/docs"
+	"github.com/ttab/elephant-spell/hunspell"
 	"github.com/ttab/elephant-spell/internal"
 	"github.com/ttab/elephantine"
 	"github.com/ttab/elephantine/pg"
@@ -114,6 +115,15 @@ func main() {
 					" configured the direct pool is fixed at 2 and this applies" +
 					" to the bouncer pool.",
 			},
+			&cli.IntFlag{
+				Name:    "hunspell-handles",
+				Sources: cli.EnvVars("HUNSPELL_HANDLES"),
+				Value:   hunspell.DefaultHandles,
+				Usage: "Maximum number of hunspell handles per language, and" +
+					" so how many checks run hunspell for one language at" +
+					" once. Each language loads one at startup and another" +
+					" whenever a check finds every handle busy.",
+			},
 			&cli.StringSliceFlag{
 				Name:    "cors-host",
 				Usage:   "CORS hosts to allow, supports wildcards",
@@ -202,6 +212,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		connString        = c.String("db")
 		bouncerConnString = c.String("db-bouncer")
 		dbMaxConns        = c.Int("db-max-conns")
+		hunspellHandles   = c.Int("hunspell-handles")
 		pingInterval      = c.Duration("ping-interval")
 		pingGrace         = c.Duration("ping-grace")
 		oidcProviderURL   = c.String("oidc-provider")
@@ -213,6 +224,11 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 	)
 
 	logger := elephantine.SetUpLogger(logLevel, os.Stdout)
+
+	if hunspellHandles < 1 {
+		return fmt.Errorf("--hunspell-handles must be at least 1, got %d",
+			hunspellHandles)
+	}
 
 	defer func() {
 		if p := recover(); p != nil {
@@ -269,6 +285,7 @@ func runSpell(ctx context.Context, c *cli.Command) error {
 		PingInterval:    pingInterval,
 		PingGrace:       pingGrace,
 		DefaultLanguage: defaultLanguage,
+		HunspellHandles: hunspellHandles,
 		InsecureCookies: c.Bool("insecure-cookies"),
 	}
 

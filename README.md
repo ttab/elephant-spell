@@ -96,6 +96,7 @@ All flags can also be set via environment variables.
 | `--db` | `CONN_STRING` | `postgres://elephant-spell:pass@localhost/elephant-spell` | Primary database connection (used for LISTEN/NOTIFY) |
 | `--db-bouncer` | `BOUNCER_CONN_STRING` | | Optional PgBouncer connection for regular queries |
 | `--db-max-conns` | `DB_MAX_CONNS` | `8` | Size of the pool queries run on: the bouncer pool when `BOUNCER_CONN_STRING` is set, otherwise the direct pool. With a bouncer the direct pool is fixed at 2. Zero or less leaves it to pgx |
+| `--hunspell-handles` | `HUNSPELL_HANDLES` | `4` | Most hunspell handles per language, so how many checks run hunspell for one language at once. Each language loads one at startup and another whenever a check finds every handle busy; an extra handle costs 4–41 MiB depending on the language |
 | `--log-level` | `LOG_LEVEL` | `debug` | Log level |
 | `--cors-host` | `CORS_HOSTS` | | CORS hosts (supports wildcards) |
 | `--oidc-provider` | `OIDC_PROVIDER` | | OIDC provider URL (required for web UI) |

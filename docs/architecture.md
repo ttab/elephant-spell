@@ -26,11 +26,11 @@ This document does not cover operating the service — no runbooks, no failure s
 
 The two shutdown signals are not interchangeable. `server` stops on *quit*, which is the later of the two phases: it keeps serving while the background workers are already winding down, so a request in flight still finds a working spellchecker.
 
-### Startup: dictionaries exist only during construction
+### Startup: one hunspell handle per language
 
-`NewApplication` creates a temp directory, writes every embedded hunspell dictionary into it, and constructs one `hunspell.Checker` per language from the files. **The temp directory is then removed by a deferred `RemoveAll` before `NewApplication` returns.** This is not a leak being cleaned up late — hunspell reads the affix and dictionary files into its own memory at `Hunspell_create`, so by the time the constructor returns the files have no further purpose.
+`NewApplication` constructs one `hunspell.Checker` per language with `hunspell.NewCheckerFS`, straight from the embedded dictionaries. Hunspell only reads from the file system, so loading a handle writes the language's `.aff` and `.dic` to a fresh temp directory, calls `Hunspell_create`, which reads both files into its own memory, and removes the directory again. A missing file fails construction: `Hunspell_create` itself reports nothing and would return a handle that accepts no words, so the checker checks the files first.
 
-The consequence worth knowing: the service needs writable temp space at startup and none afterwards, and a dictionary cannot be swapped without a restart.
+Each checker loads one handle at startup and more later, under load (see [the hunspell handle pool](#the-hunspell-handle-pool)), so the service needs writable temp space whenever a handle is loaded, not only at startup. A dictionary cannot be swapped without a restart.
 
 Language codes are derived from the filenames — `sv_SE.dic` becomes `sv-se` — so adding a language is a matter of dropping the pair into `dictionaries/` and nothing else.
 
@@ -129,7 +129,7 @@ A failed prune is logged and not fatal; the lock is kept and the next tick retri
 
 ## The spellchecker
 
-One `*Spellcheck` per language, each holding a hunspell instance, four tries, the loaded entries by text, a rule map and a count of the words the entries have added to hunspell, behind a single `sync.RWMutex`. Checks take the read lock; eventlog application takes the write lock.
+One `*Spellcheck` per language, each holding a hunspell checker with its pool of handles, four tries, the loaded entries by text, a rule map and a count of the words the entries have added to hunspell, behind a single `sync.RWMutex`. Checks take the read lock; eventlog application takes the write lock.
 
 ### Four tries, not one
 
@@ -145,6 +145,14 @@ Entries are case-insensitive by default: a lowercase common mistake is caught wh
 **An entry lives in exactly one pair, chosen at insert time**, so a lookup consults both and the routing decision is never made on the hot path.
 
 **A key holds every entry that claims it.** Two entries can share a common mistake, one entry's text can be another's form target, and two case-insensitive entries can differ only in case ("Polen" and "polen" are two rows, since the primary key is case-sensitive). A match reports the suggestions of all the entries on its key, deduplicated, with the level and status of the first entry at the most severe level. An entry is identified by its exact text, so updating or removing it takes out its own claims and leaves the other entries on a shared key alone.
+
+### The hunspell handle pool
+
+A hunspell handle is not safe for concurrent use, and a suggestion search on one takes 20–110 ms per misspelled word in Swedish, so a single handle per language would serialise every check that runs hunspell. **Each `hunspell.Checker` holds a pool of handles loaded from the same dictionary** and lends one to each `Spell`, `Suggest` or `Stem` call, which keeps it until the call is done, including freeing hunspell's result list.
+
+The pool starts with one handle and grows to at most `HUNSPELL_HANDLES` (`hunspell.DefaultHandles`, 4). When a call finds every handle busy it starts loading one more in the background, if the pool has room, and waits for whichever handle comes free first; the wait ends with the caller's context. Loading continues while calls are still waiting. A pool never shrinks. **Growing on contention keeps the memory where the traffic is**: an extra handle costs as much as the first one (measured RSS: fi-fi 41 MiB, nb-no 20 MiB, nn-no 13 MiB, da-dk 12 MiB, sv-se 9 MiB, en-gb and en-us 4 MiB each), so a full pool for all seven languages would add about 310 MiB and three seconds of startup, where in practice only the languages under concurrent load grow.
+
+**Custom words reach every handle at once.** `Add` and `Remove` take the checker's write lock, take every handle out of the pool, change each one, and put them all back, so a call sees either none of the handles changed or all of them, and never a handle that is half-way through an update. While that happens, checks for the language wait. Every update is also kept in an ordered log that a newly loaded handle replays before it is handed out. The log is not compacted, because hunspell's add and remove change a word's affix flags, so their combined effect depends on the order of the whole history.
 
 **Words are only removed from hunspell if an entry put them there.** An entry's text and form targets are added to hunspell so the hunspell pass accepts them. Each such word is reference-counted across entries, and on the first claim the spellchecker records whether hunspell already accepted it. A word is removed only when the last claim goes away and hunspell did not know it before, because hunspell's remove marks a word forbidden: removing a base dictionary word would make it and its inflections misspelled until restart.
 

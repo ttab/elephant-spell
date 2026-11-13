@@ -129,7 +129,7 @@ A failed prune is logged and not fatal; the lock is kept and the next tick retri
 
 ## The spellchecker
 
-One `*Spellcheck` per language, each holding a hunspell instance, four tries, a rule map and a buffer pool, behind a single `sync.RWMutex`. Checks take the read lock; eventlog application takes the write lock.
+One `*Spellcheck` per language, each holding a hunspell instance, four tries, the loaded entries by text, a rule map and a count of the words the entries have added to hunspell, behind a single `sync.RWMutex`. Checks take the read lock; eventlog application takes the write lock.
 
 ### Four tries, not one
 
@@ -143,6 +143,10 @@ One `*Spellcheck` per language, each holding a hunspell instance, four tries, a 
 Entries are case-insensitive by default: a lowercase common mistake is caught when the word appears capitalised at the start of a sentence, and the suggestion takes on the matched word's leading capital. An entry that sets `case_sensitive` is routed to the exact-case pair instead, which is what a proper noun needs.
 
 **An entry lives in exactly one pair, chosen at insert time**, so a lookup consults both and the routing decision is never made on the hot path.
+
+**A key holds every entry that claims it.** Two entries can share a common mistake, one entry's text can be another's form target, and two case-insensitive entries can differ only in case ("Polen" and "polen" are two rows, since the primary key is case-sensitive). A match reports the suggestions of all the entries on its key, deduplicated, with the level and status of the first entry at the most severe level. An entry is identified by its exact text, so updating or removing it takes out its own claims and leaves the other entries on a shared key alone.
+
+**Words are only removed from hunspell if an entry put them there.** An entry's text and form targets are added to hunspell so the hunspell pass accepts them. Each such word is reference-counted across entries, and on the first claim the spellchecker records whether hunspell already accepted it. A word is removed only when the last claim goes away and hunspell did not know it before, because hunspell's remove marks a word forbidden: removing a base dictionary word would make it and its inflections misspelled until restart.
 
 ### Phone numbers, email addresses and URLs are masked first
 
@@ -163,6 +167,8 @@ A word that mixes letters and digits (`2o24`) is not a number and is still check
 A sliding window of up to three words runs over the text via `PhraseIterator`, and each window is looked up in the tries. Longer matches win: `resolveLongest` sorts candidates by length and suppresses any that overlap an accepted longer one, so "Mexico City" is not also reported as a match on "Mexico".
 
 Context guards are evaluated after the trie has located a match — `before`, `after`, `not_before`, `not_after` against the neighbouring word — which is cheap precisely because it happens last.
+
+Every valid phrase and every reported mistake is then hidden from the hunspell pass by masking its byte span with `maskSpans`, so only that occurrence is skipped: a valid entry "hen" does not take the letters out of "hennes".
 
 ### Pattern rules
 

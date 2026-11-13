@@ -1,10 +1,8 @@
 package internal
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -13,7 +11,6 @@ import (
 
 	"github.com/blevesearch/segment"
 	"github.com/dghubble/trie"
-	"github.com/jackc/puddle/v2"
 	"github.com/ttab/elephant-api/spell"
 	"github.com/ttab/elephant-spell/hunspell"
 	"github.com/ttab/elephant-spell/postgres"
@@ -41,24 +38,15 @@ type Phrase struct {
 }
 
 func NewSpellcheck(lang string, checker *hunspell.Checker) (*Spellcheck, error) {
-	bufs, err := puddle.NewPool(&puddle.Config[*bytes.Buffer]{
-		MaxSize: 10,
-		Constructor: func(_ context.Context) (res *bytes.Buffer, err error) {
-			return &bytes.Buffer{}, nil
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create spellcheck buffer pool: %w", err)
-	}
-
 	return &Spellcheck{
 		lang:          lang,
 		trie:          trie.NewRuneTrie(),
 		mistakeTrie:   trie.NewRuneTrie(),
 		ciTrie:        trie.NewRuneTrie(),
 		ciMistakeTrie: trie.NewRuneTrie(),
+		entries:       make(map[string]*Phrase),
+		words:         make(map[string]*wordClaim),
 		hunspell:      checker,
-		bufs:          bufs,
 		rules:         make(map[int64]*compiledRule),
 	}, nil
 }
@@ -67,14 +55,20 @@ type Spellcheck struct {
 	lang string
 	m    sync.RWMutex
 	// trie and mistakeTrie hold case-sensitive entries, keyed by exact text.
+	// Every key holds a []*Phrase of all the entries that claim it.
 	trie        *trie.RuneTrie
 	mistakeTrie *trie.RuneTrie
 	// ciTrie and ciMistakeTrie hold case-insensitive entries, keyed by their
 	// case-folded text so lookups can match any casing.
 	ciTrie        *trie.RuneTrie
 	ciMistakeTrie *trie.RuneTrie
-	hunspell      *hunspell.Checker
-	bufs          *puddle.Pool[*bytes.Buffer]
+	// entries holds every loaded entry by its exact database text, which is
+	// what identifies an entry: the primary key is (language, entry) and
+	// case-sensitive, so "Polen" and "polen" are two entries.
+	entries map[string]*Phrase
+	// words reference-counts the words the entries have added to hunspell.
+	words    map[string]*wordClaim
+	hunspell *hunspell.Checker
 	// rules holds user-defined pattern rules keyed by rule id.
 	rules map[int64]*compiledRule
 }
@@ -317,50 +311,138 @@ func (s *Spellcheck) tries(caseSensitive bool) (
 	return s.ciTrie, s.ciMistakeTrie, foldKey
 }
 
-// findExisting locates a stored phrase for an entry text regardless of whether
-// it was registered as case-sensitive, so an update that flips the case
-// sensitivity still finds the old data to clear.
-func (s *Spellcheck) findExisting(text string) *Phrase {
-	if old, ok := s.trie.Get(text).(*Phrase); ok && old != nil {
-		return old
-	}
-
-	if old, ok := s.ciTrie.Get(foldKey(text)).(*Phrase); ok && old != nil {
-		return old
-	}
-
-	return nil
+// wordClaim tracks the entries that have added a word to hunspell.
+type wordClaim struct {
+	// refs is the number of entries claiming the word.
+	refs int
+	// known records that hunspell already accepted the word before the first
+	// claim, typically because it is in the base dictionary. Such a word is
+	// never added or removed: hunspell's Remove marks a word forbidden, so
+	// removing it would make a base dictionary word, and its inflections,
+	// misspelled.
+	known bool
 }
 
-// clearPhrase removes all trie and hunspell entries for a phrase. It uses
+// claimWord registers an entry's claim on a word, adding it to hunspell on
+// the first claim unless hunspell already accepts it.
+func (s *Spellcheck) claimWord(word string) {
+	c, ok := s.words[word]
+	if !ok {
+		c = &wordClaim{known: s.hunspell.Spell(word)}
+		s.words[word] = c
+
+		if !c.known {
+			s.hunspell.Add(word)
+		}
+	}
+
+	c.refs++
+}
+
+// releaseWord drops an entry's claim on a word, removing it from hunspell when
+// the last claim on a word the entries added goes away.
+func (s *Spellcheck) releaseWord(word string) {
+	c, ok := s.words[word]
+	if !ok {
+		return
+	}
+
+	c.refs--
+	if c.refs > 0 {
+		return
+	}
+
+	delete(s.words, word)
+
+	if !c.known {
+		s.hunspell.Remove(word)
+	}
+}
+
+// hunspellWords returns the words a phrase adds to hunspell: its text and the
+// targets of its forms, each once.
+func hunspellWords(p *Phrase) []string {
+	words := []string{p.Text}
+
+	for _, correct := range p.Forms {
+		words = append(words, correct)
+	}
+
+	return dedupeStrings(words)
+}
+
+// trieGet returns the entries stored under a key.
+func trieGet(t *trie.RuneTrie, key string) []*Phrase {
+	ps, _ := t.Get(key).([]*Phrase)
+
+	return ps
+}
+
+// trieAdd adds an entry to the set stored under a key.
+func trieAdd(t *trie.RuneTrie, key string, p *Phrase) {
+	cur := trieGet(t, key)
+	if slices.Contains(cur, p) {
+		return
+	}
+
+	next := make([]*Phrase, 0, len(cur)+1)
+	next = append(next, cur...)
+	next = append(next, p)
+
+	t.Put(key, next)
+}
+
+// trieRemove removes an entry from the set stored under a key, leaving any
+// other entries on the key in place. An emptied key is cleared with
 // Put(key, nil) instead of Delete(key) to work around a bug in dghubble/trie
 // v0.1.0 where RuneTrie.Delete panics on multi-byte UTF-8 keys.
+func trieRemove(t *trie.RuneTrie, key string, p *Phrase) {
+	cur := trieGet(t, key)
+	if !slices.Contains(cur, p) {
+		return
+	}
+
+	next := slices.DeleteFunc(slices.Clone(cur), func(e *Phrase) bool {
+		return e == p
+	})
+
+	if len(next) == 0 {
+		t.Put(key, nil)
+
+		return
+	}
+
+	t.Put(key, next)
+}
+
+// clearPhrase removes a stored entry's trie keys and hunspell claims. Other
+// entries sharing a key or a word are left in place.
 func (s *Spellcheck) clearPhrase(p *Phrase) {
 	valid, mistake, key := s.tries(p.CaseSensitive)
 
-	valid.Put(key(p.Text), nil)
-	s.hunspell.Remove(p.Text)
+	trieRemove(valid, key(p.Text), p)
 
 	for _, cm := range p.CommonMistakes {
-		mistake.Put(key(cm), nil)
+		trieRemove(mistake, key(cm), p)
 	}
 
 	for form, correct := range p.Forms {
-		valid.Put(key(correct), nil)
-		s.hunspell.Remove(correct)
-		mistake.Put(key(form), nil)
+		trieRemove(valid, key(correct), p)
+		trieRemove(mistake, key(form), p)
 	}
+
+	for _, w := range hunspellWords(p) {
+		s.releaseWord(w)
+	}
+
+	delete(s.entries, p.Text)
 }
 
+// AddPhrase adds an entry, replacing the entry with the same exact text if
+// there is one.
 func (s *Spellcheck) AddPhrase(p Phrase) {
 	s.m.Lock()
 	defer s.m.Unlock()
-
-	// Remove any existing data for this entry before adding the new version,
-	// so updates don't leave stale keys behind.
-	if old := s.findExisting(p.Text); old != nil {
-		s.clearPhrase(old)
-	}
 
 	var commonMistakes []string
 
@@ -397,33 +479,97 @@ func (s *Spellcheck) AddPhrase(p Phrase) {
 
 	p.CommonMistakes = commonMistakes
 
+	// Claim the new version's words before the old version releases its own,
+	// so a word both versions add is never removed from hunspell in between.
+	for _, w := range hunspellWords(&p) {
+		s.claimWord(w)
+	}
+
+	// Remove the previous version of this entry, so updates don't leave stale
+	// keys behind.
+	if old, ok := s.entries[p.Text]; ok {
+		s.clearPhrase(old)
+	}
+
+	s.entries[p.Text] = &p
+
 	valid, mistake, key := s.tries(p.CaseSensitive)
 
-	valid.Put(key(p.Text), &p)
-	s.hunspell.Add(p.Text)
+	trieAdd(valid, key(p.Text), &p)
 
 	for _, m := range p.CommonMistakes {
-		mistake.Put(key(m), &p)
+		trieAdd(mistake, key(m), &p)
 	}
 
 	for form, correct := range p.Forms {
-		valid.Put(key(correct), &p)
-		s.hunspell.Add(correct)
-		mistake.Put(key(form), &p)
+		trieAdd(valid, key(correct), &p)
+		trieAdd(mistake, key(form), &p)
 	}
 }
 
+// RemovePhrase removes the entry with exactly this text.
 func (s *Spellcheck) RemovePhrase(text string) {
 	s.m.Lock()
 	defer s.m.Unlock()
 
-	if old := s.findExisting(text); old != nil {
+	if old, ok := s.entries[text]; ok {
 		s.clearPhrase(old)
 	}
 }
 
+// lookupMistake returns the entries that have text as a common mistake or
+// form, preferring case-sensitive entries, and whether they were found by
+// the case-folded key. The caller must hold at least a read lock.
+func (s *Spellcheck) lookupMistake(text string) ([]*Phrase, bool) {
+	if ps := trieGet(s.mistakeTrie, text); len(ps) > 0 {
+		return ps, false
+	}
+
+	return trieGet(s.ciMistakeTrie, foldKey(text)), true
+}
+
+// phraseSuggestions returns the suggestions an entry makes for a matched
+// mistake.
+func phraseSuggestions(p *Phrase, text string, ci bool) []*spell.Suggestion {
+	var out []*spell.Suggestion
+
+	if containsKey(p.CommonMistakes, text, ci) {
+		out = append(out, &spell.Suggestion{
+			Text:        matchLeadingCase(p.Text, text, ci),
+			Description: p.Description,
+		})
+	}
+
+	if formVal, isForm := lookupForm(p.Forms, text, ci); isForm {
+		out = append(out, &spell.Suggestion{
+			Text:        matchLeadingCase(formVal, text, ci),
+			Description: p.Description,
+		})
+	}
+
+	return out
+}
+
+// appendSuggestions appends the suggestions whose text is not already in
+// list.
+func appendSuggestions(
+	list []*spell.Suggestion, add ...*spell.Suggestion,
+) []*spell.Suggestion {
+	for _, sg := range add {
+		if slices.ContainsFunc(list, func(e *spell.Suggestion) bool {
+			return e.Text == sg.Text
+		}) {
+			continue
+		}
+
+		list = append(list, sg)
+	}
+
+	return list
+}
+
 func (s *Spellcheck) Check(
-	ctx context.Context,
+	_ context.Context,
 	text string,
 	withSuggestions bool,
 	customOnly bool,
@@ -441,7 +587,9 @@ func (s *Spellcheck) Check(
 	source := text
 	masked := maskSpans(source, ignoredSpans(source))
 	textData := []byte(masked)
-	replacements := []string{}
+
+	// Spans handled through the tries, hidden from the hunspell pass.
+	var handled []span
 
 	s.m.RLock()
 
@@ -460,66 +608,25 @@ func (s *Spellcheck) Check(
 		// A valid phrase is also a (silent) candidate so that, as a known-good
 		// span, it suppresses shorter overlapping corrections — e.g. the valid
 		// "Mexico City" stops the "Mexico"→"Mexiko" rule from firing inside it.
-		if s.trie.Get(text) != nil || s.ciTrie.Get(folded) != nil {
-			replacements = append(replacements, text, "")
+		if len(trieGet(s.trie, text)) > 0 || len(trieGet(s.ciTrie, folded)) > 0 {
+			handled = append(handled, span{start: m.Start, end: m.End})
 			validCands = append(validCands,
 				candidateMatch{start: m.Start, end: m.End})
 		}
 
-		v := s.mistakeTrie.Get(text)
-		ci := false
+		ps, ci := s.lookupMistake(text)
 
-		if v == nil {
-			v = s.ciMistakeTrie.Get(folded)
-			ci = true
-		}
-
-		p, ok := v.(*Phrase)
-		if !ok {
+		entry := mistakeEntry(ps, masked, m.Start, m.End, text, ci,
+			withSuggestions)
+		if entry == nil {
 			continue
-		}
-
-		// Honour the entry's context guards against this occurrence's
-		// neighbours. The trie already located the match, so this is an O(1)
-		// check per hit. A guarded-out occurrence is skipped; the same phrase
-		// elsewhere can still match.
-		if !p.Guards.pass(masked, m.Start, m.End) {
-			continue
-		}
-
-		level, _ := entryLevelToRPC(p.Level)
-
-		entry := spell.MisspelledEntry{
-			Text:   text,
-			Level:  level,
-			Status: p.Status,
-		}
-
-		if withSuggestions && containsKey(p.CommonMistakes, text, ci) {
-			entry.Suggestions = append(entry.Suggestions,
-				&spell.Suggestion{
-					Text:        matchLeadingCase(p.Text, text, ci),
-					Description: p.Description,
-				})
-		}
-
-		if withSuggestions {
-			if formVal, isForm := lookupForm(p.Forms, text, ci); isForm {
-				entry.Suggestions = append(entry.Suggestions,
-					&spell.Suggestion{
-						Text:        matchLeadingCase(formVal, text, ci),
-						Description: p.Description,
-					})
-			}
 		}
 
 		entryCands = append(entryCands, candidateMatch{
-			start: m.Start, end: m.End, entry: &entry,
+			start: m.Start, end: m.End, entry: entry,
 		})
 
-		// Save away the replacements that should be performed before we
-		// send the word to spellcheck.
-		replacements = append(replacements, text, "")
+		handled = append(handled, span{start: m.Start, end: m.End})
 	}
 
 	// Pattern rules match over the token stream rather than the trie windows,
@@ -588,32 +695,9 @@ func (s *Spellcheck) Check(
 		return &res, nil
 	}
 
-	var textReader io.Reader
-
-	if len(replacements) > 0 {
-		// Create a replacer that removes everything that we have handled
-		// through the trie.
-		repl := strings.NewReplacer(replacements...)
-
-		bufRes, err := s.bufs.Acquire(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("acquire buffer pool: %w", err)
-		}
-
-		defer bufRes.Release()
-
-		buf := bufRes.Value()
-
-		buf.Reset()
-
-		_, _ = repl.WriteString(buf, masked)
-
-		textReader = buf
-	} else {
-		textReader = bytes.NewReader(textData)
-	}
-
-	seg := segment.NewSegmenter(textReader)
+	// Blank out the occurrences handled through the tries, and only those:
+	// the same letters inside another word are still that word's business.
+	seg := segment.NewSegmenter(strings.NewReader(maskSpans(masked, handled)))
 
 	seen := make(map[string]bool)
 
@@ -672,31 +756,11 @@ func (s *Spellcheck) Suggestions(
 
 	s.m.RLock()
 
-	v := s.mistakeTrie.Get(text)
-	ci := false
+	ps, ci := s.lookupMistake(text)
 
-	if v == nil {
-		v = s.ciMistakeTrie.Get(foldKey(text))
-		ci = true
-	}
-
-	p, ok := v.(*Phrase)
-	if ok {
-		if containsKey(p.CommonMistakes, text, ci) {
-			suggestions = append(suggestions,
-				&spell.Suggestion{
-					Text:        matchLeadingCase(p.Text, text, ci),
-					Description: p.Description,
-				})
-		}
-
-		if formVal, isForm := lookupForm(p.Forms, text, ci); isForm {
-			suggestions = append(suggestions,
-				&spell.Suggestion{
-					Text:        matchLeadingCase(formVal, text, ci),
-					Description: p.Description,
-				})
-		}
+	for _, p := range ps {
+		suggestions = appendSuggestions(suggestions,
+			phraseSuggestions(p, text, ci)...)
 	}
 
 	// Pattern rules can also produce suggestions for the phrase, e.g. a number
@@ -719,6 +783,51 @@ func (s *Spellcheck) Suggestions(
 	}
 
 	return suggestions, nil
+}
+
+// mistakeEntry builds the correction for an occurrence at source[start:end]
+// of a key that the entries ps hold as a common mistake or form, or returns
+// nil when every entry's context guards rule the occurrence out. Several
+// entries on one key report together: the suggestions of all of them,
+// deduplicated by text, and the level and status of the first entry with the
+// most severe level.
+func mistakeEntry(
+	ps []*Phrase, source string, start, end int, text string, ci bool,
+	withSuggestions bool,
+) *spell.MisspelledEntry {
+	var entry *spell.MisspelledEntry
+
+	for _, p := range ps {
+		// Honour the entry's context guards against this occurrence's
+		// neighbours. The trie already located the match, so this is an
+		// O(1) check per hit. A guarded-out occurrence is skipped; the same
+		// phrase elsewhere can still match.
+		if !p.Guards.pass(source, start, end) {
+			continue
+		}
+
+		level, _ := entryLevelToRPC(p.Level)
+
+		switch {
+		case entry == nil:
+			entry = &spell.MisspelledEntry{
+				Text:   text,
+				Level:  level,
+				Status: p.Status,
+			}
+		case entry.Level != spell.CorrectionLevel_LEVEL_ERROR &&
+			level == spell.CorrectionLevel_LEVEL_ERROR:
+			entry.Level = level
+			entry.Status = p.Status
+		}
+
+		if withSuggestions {
+			entry.Suggestions = appendSuggestions(entry.Suggestions,
+				phraseSuggestions(p, text, ci)...)
+		}
+	}
+
+	return entry
 }
 
 // containsKey reports whether text matches one of keys, comparing
